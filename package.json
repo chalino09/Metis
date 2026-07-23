@@ -1,0 +1,48 @@
+{
+  "name": "satrapy",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test": "npm run build",
+    "lint": "eslint . --ignore-pattern .next",
+    "test:imports": "node --experimental-strip-types --test tests/*.test.ts",
+    "test:sql": "bash scripts/run-sql-validation.sh",
+    "test:go-data": "bash scripts/run-go-data-validation.sh",
+    "inspect:alpha": "node --experimental-strip-types scripts/inspect-alpha-exports.ts",
+    "inspect:alpha-purchasing": "node --env-file=.env --experimental-strip-types scripts/inspect-alpha-purchasing.ts",
+    "validate:alpha-suppliers": "node --env-file=.env --experimental-strip-types scripts/run-real-alpha-supplier-validation.ts",
+    "validate:alpha-purchase-orders": "node --env-file=.env --experimental-strip-types scripts/run-real-alpha-purchase-order-validation.ts"
+  },
+  "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.19",
+    "@radix-ui/react-select": "^2.3.3",
+    "@radix-ui/react-tabs": "^1.1.17",
+    "@radix-ui/react-toast": "^1.2.19",
+    "@supabase/supabase-js": "^2.110.2",
+    "exceljs": "^4.4.0",
+    "geist": "^1.7.2",
+    "lucide-react": "^1.24.0",
+    "next": "16.2.6",
+    "pdf-lib": "^1.17.1",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.2.1",
+    "@types/node": "22.19.19",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.2.6",
+    "tailwindcss": "4.2.1",
+    "typescript": "5.9.3"
+  },
+  "type": "module"
+}

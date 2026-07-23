@@ -1,0 +1,10 @@
+Terminacion cuenta,ABCD,,,,,
+Moneda,MXN,,,,,
+Periodo inicio,2026-07-01,,,,,
+Periodo fin,2026-07-31,,,,,
+Saldo inicial,1000,,,,,
+Saldo final,1150,,,,,
+,,,,,,
+Fecha,Fecha valor,Referencia,Descripcion,Abono,Cargo,Saldo
+2026-07-05,2026-07-05,COBRO-001,Cobro bancario,500,0,1500
+2026-07-10,2026-07-10,PAGO-001,Pago confirmado,0,350,1150

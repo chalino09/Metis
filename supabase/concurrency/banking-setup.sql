@@ -1,0 +1,8 @@
+insert into public.companies(id,legal_name,display_name) values('4c100000-0000-4000-8000-000000000001','Concurrencia bancaria','Concurrencia bancaria');
+insert into auth.users(id,aud,role,email,encrypted_password) values('4c100000-0000-4000-8000-000000000002','authenticated','authenticated','m4c-concurrency@example.com','');
+insert into public.user_roles(user_id,role_id,company_id) select '4c100000-0000-4000-8000-000000000002',id,'4c100000-0000-4000-8000-000000000001' from public.roles where code='direccion_admin';
+insert into public.supplier_paying_accounts(id,company_id,bank_name,alias,currency_code,account_last4) values('4c100000-0000-4000-8000-000000000003','4c100000-0000-4000-8000-000000000001','Institución controlada','Cuenta concurrente','MXN','9876');
+insert into public.bank_statement_batches(id,company_id,financial_account_id,content_sha256,original_name,period_start,period_end,currency_code,opening_balance,closing_balance,total_credits,total_debits,calculated_closing_balance,balance_difference,balance_valid,status,row_count)
+values('4c100000-0000-4000-8000-000000000004','4c100000-0000-4000-8000-000000000001','4c100000-0000-4000-8000-000000000003',repeat('c',64),'concurrente.csv',current_date,current_date,'MXN',100,110,10,0,110,0,true,'ready',1);
+insert into public.bank_statement_staging_rows(id,batch_id,company_id,row_number,transaction_date,reference,description,credit,debit,running_balance,row_sha256,raw_data,validation_status)
+values('4c100000-0000-4000-8000-000000000005','4c100000-0000-4000-8000-000000000004','4c100000-0000-4000-8000-000000000001',1,current_date,'CONCURRENT-1','Abono',10,0,110,repeat('d',64),'{}','valid');

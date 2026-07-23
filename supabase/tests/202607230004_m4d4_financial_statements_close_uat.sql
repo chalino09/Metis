@@ -1,0 +1,31 @@
+begin;
+do $m4d4$
+declare c uuid:='4d400000-0000-4000-8000-000000000001';u1 uuid:='4d400000-0000-4000-8000-000000000002';u2 uuid:='4d400000-0000-4000-8000-000000000003';u3 uuid:='4d400000-0000-4000-8000-000000000004';u4 uuid:='4d400000-0000-4000-8000-000000000005';p uuid:='4d400000-0000-4000-8000-000000000010';p2 uuid:='4d400000-0000-4000-8000-000000000015';cash uuid:='4d400000-0000-4000-8000-000000000011';eq uuid:='4d400000-0000-4000-8000-000000000012';loc uuid:='4d400000-0000-4000-8000-000000000013';j uuid:='4d400000-0000-4000-8000-000000000014';run jsonb;r jsonb;rid uuid;h text;
+begin
+ insert into public.companies(id,legal_name,display_name) values(c,'M4D4 prueba','M4D4 prueba');
+ insert into auth.users(id,aud,role,email,encrypted_password) values(u1,'authenticated','authenticated','m4d4a@example.com',''),(u2,'authenticated','authenticated','m4d4b@example.com',''),(u3,'authenticated','authenticated','m4d4c@example.com',''),(u4,'authenticated','authenticated','m4d4outsider@example.com','');
+ insert into public.user_roles(user_id,role_id,company_id) select x,id,c from (values(u1),(u2),(u3))v(x) cross join public.roles where code='direccion_admin';
+ insert into public.accounting_accounts(id,company_id,code,name,account_type,normal_balance,level) values(cash,c,'100','Caja','asset','debit',1),(eq,c,'300','Capital','equity','credit',1);
+ insert into public.accounting_periods(id,company_id,period_code,starts_on,ends_on) values(p,c,'2026-07','2026-07-01','2026-07-31'),(p2,c,'2026-08','2026-08-01','2026-08-31');
+ insert into public.locations(id,company_id,external_code,name,location_type,classification_source) values(loc,c,'D4','Ubicación D4','campo','manual_review');
+ insert into public.accounting_journal_entries(id,company_id,period_id,entry_number,entry_date,description,source_type,status,immutable,client_request_id) values(j,c,p,44001,'2026-07-10','Apertura M4D4','manual_adjustment','draft',false,gen_random_uuid());
+ insert into public.accounting_journal_lines(company_id,journal_entry_id,line_number,account_id,description,debit,credit,location_id) values(c,j,1,cash,'Caja',100,0,loc),(c,j,2,eq,'Capital',0,100,loc);
+ update public.accounting_journal_entries set status='posted',immutable=true,posted_by=u1,posted_at='2026-07-10' where id=j;
+ perform set_config('request.jwt.claim.role','authenticated',true);perform set_config('request.jwt.claim.sub',u1::text,true);
+ r:=public.list_financial_report(c,'enterprise_consolidated','2026-07-01','2026-07-31',null,false,1,1);if r->>'scope'<>'official_enterprise_consolidated' or (r->>'total')::int<>2 then raise exception 'Consolidado oficial/paginación incorrectos: %',r;end if;
+ r:=public.list_financial_report(c,'trial_balance','2026-07-01','2026-07-31',loc,false,1,1);if r->>'scope'<>'administrative_location_filter' or (r->>'total')::int<>2 or (r#>>'{totals,debit}')::numeric<>100 then raise exception 'Filtro administrativo por ubicación incorrecto: %',r;end if;
+ r:=public.list_financial_report(c,'trial_balance','2026-07-01','2026-07-31',null,true,1,50);if (r->>'total')::int<>0 or r->>'location_label'<>'Sin asignar' then raise exception 'Sin asignar incorrecto: %',r;end if;
+ run:=public.prepare_accounting_close(c,p,'4d400000-0000-4000-8000-000000000101');rid:=(run->>'id')::uuid;h:=run->>'snapshot_sha256';if run->>'status'<>'prepared' or h is null then raise exception 'Vista previa/hash no creada: %',run;end if;
+ if (public.prepare_accounting_close(c,p,'4d400000-0000-4000-8000-000000000101')->>'idempotent')::boolean is not true then raise exception 'Preparación no idempotente';end if;
+ perform set_config('request.jwt.claim.sub',u2::text,true);run:=public.approve_accounting_close(rid,'Conciliado','4d400000-0000-4000-8000-000000000102');if run->>'status'<>'approved' then raise exception 'Aprobación separada falló: %',run;end if;
+ run:=public.confirm_accounting_close(rid,'4d400000-0000-4000-8000-000000000103');if run->>'status'<>'closed' or not exists(select 1 from public.accounting_periods where id=p and status='closed') then raise exception 'Cierre atómico falló: %',run;end if;
+ if (public.confirm_accounting_close(rid,'4d400000-0000-4000-8000-000000000103')->>'idempotent')::boolean is not true then raise exception 'Confirmación no idempotente';end if;
+ perform set_config('request.jwt.claim.sub',u3::text,true);run:=public.reopen_accounting_close(rid,'Corrección excepcional','4d400000-0000-4000-8000-000000000104');if run->>'status'<>'reopened' or not exists(select 1 from public.accounting_periods where id=p and status='open') then raise exception 'Reapertura segregada falló: %',run;end if;
+ perform set_config('request.jwt.claim.sub',u1::text,true);if (public.prepare_accounting_close(c,p,'4d400000-0000-4000-8000-000000000108')->>'status')<>'prepared' then raise exception 'La reapertura no habilitó un nuevo cierre.';end if;
+ perform set_config('request.jwt.claim.sub',u1::text,true);insert into public.accounting_events(company_id,event_type,source_entity_type,source_entity_id,accounting_date,occurred_at,payload,requested_lines,status) values(c,'sale_confirmed','fixture',gen_random_uuid(),'2026-07-31','2026-07-31','{}','[]','pending');
+ run:=public.prepare_accounting_close(c,p2,'4d400000-0000-4000-8000-000000000105');rid:=(run->>'id')::uuid;perform set_config('request.jwt.claim.sub',u2::text,true);perform public.approve_accounting_close(rid,'Revisión','4d400000-0000-4000-8000-000000000106');
+ begin perform public.confirm_accounting_close(rid,'4d400000-0000-4000-8000-000000000107');raise exception 'Permitió diferencias bloqueantes';exception when others then if position('bloqueantes' in lower(sqlerrm))=0 then raise;end if;end;
+ perform set_config('request.jwt.claim.sub',u4::text,true);begin perform public.list_financial_report(c,'trial_balance','2026-07-01','2026-07-31');raise exception 'RLS permitió otra empresa';exception when others then if position('no autorizado' in lower(sqlerrm))=0 then raise;end if;end;
+ raise notice 'M4D4: consolidado, ubicación/Sin asignar, corte hash, segregación, idempotencia, bloqueo y RLS aprobados.';
+end $m4d4$;
+rollback;

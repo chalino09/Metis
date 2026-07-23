@@ -1,0 +1,16 @@
+{
+  "approved_at": "2026-07-15",
+  "currency_mappings": {
+    "PESOS": "MXN"
+  },
+  "price_list_mappings": {
+    "ALPHA_LIST_1": { "semantic_code": "primera", "is_default": true },
+    "ALPHA_LIST_2": { "semantic_code": "segunda", "is_default": false },
+    "ALPHA_LIST_3": { "semantic_code": "tercera", "is_default": false },
+    "ALPHA_LIST_4": { "semantic_code": "top", "is_default": false }
+  },
+  "warning_reconciliation": {
+    "PRECIO_FALTANTE": "Se conserva sin precio; no se inventa importe. Los productos afectados quedan fuera del surtido operativo hasta recibir precio fuente.",
+    "COSTO_FALTANTE": "Se conserva sin costo; no se inventa importe. Los registros afectados son activos/servicios no inventariables y no bloquean la venta del surtido validado."
+  }
+}
