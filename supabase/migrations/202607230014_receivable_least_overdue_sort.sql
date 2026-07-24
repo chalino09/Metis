@@ -1,0 +1,82 @@
+-- Prioriza server-side los saldos vencidos positivos de menor a mayor.
+-- Los clientes sin saldo vencido permanecen al final porque no requieren cobranza vencida.
+
+create or replace function public.list_receivable_customers(
+  p_company_id uuid,
+  p_query text default null,
+  p_page integer default 1,
+  p_page_size integer default 50,
+  p_sort text default 'largest_balance'
+) returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare
+  v_page integer:=greatest(coalesce(p_page,1),1);
+  v_size integer:=least(greatest(coalesce(p_page_size,50),1),100);
+  v_query text:=lower(trim(coalesce(p_query,'')));
+  v_sort text:=coalesce(p_sort,'largest_balance');
+  v_total integer;
+  v_items jsonb;
+  v_summary jsonb;
+begin
+  if auth.uid() is null or not public.has_company_permission(p_company_id,'view_customer_credit') then
+    raise exception 'No autorizado para consultar cuentas por cobrar.';
+  end if;
+  if v_sort not in ('largest_balance','smallest_balance','most_overdue','least_overdue','due_first') then
+    raise exception 'Orden de cobranza no válido.';
+  end if;
+
+  with balances as materialized (
+    select r.customer_id,
+      sum(r.outstanding_amount) as outstanding,
+      sum(r.outstanding_amount) filter(where r.due_date<current_date) as overdue,
+      min(r.due_date) as next_due
+    from public.customer_receivables r
+    where r.company_id=p_company_id and r.outstanding_amount>0
+    group by r.customer_id
+  ), visible as materialized (
+    select c.id,c.code,c.display_name,b.outstanding,coalesce(b.overdue,0) as overdue,b.next_due
+    from balances b
+    join public.customers c on c.id=b.customer_id
+    where c.company_id=p_company_id and c.is_active
+  )
+  select jsonb_build_object(
+    'total_outstanding',coalesce(sum(outstanding),0),
+    'overdue',coalesce(sum(overdue),0),
+    'due_next_7_days',coalesce(sum(outstanding) filter(where next_due between current_date and current_date+7),0),
+    'customers',count(*)
+  ) into v_summary from visible;
+
+  with balances as materialized (
+    select r.customer_id,sum(r.outstanding_amount) as outstanding,sum(r.outstanding_amount) filter(where r.due_date<current_date) as overdue,min(r.due_date) as next_due
+    from public.customer_receivables r where r.company_id=p_company_id and r.outstanding_amount>0 group by r.customer_id
+  )
+  select count(*) into v_total
+  from balances b join public.customers c on c.id=b.customer_id
+  where c.company_id=p_company_id and c.is_active and public.customer_matches_query(c.id,v_query);
+
+  with balances as materialized (
+    select r.customer_id,sum(r.outstanding_amount) as outstanding,sum(r.outstanding_amount) filter(where r.due_date<current_date) as overdue,min(r.due_date) as next_due
+    from public.customer_receivables r where r.company_id=p_company_id and r.outstanding_amount>0 group by r.customer_id
+  ), paged as (
+    select c.id,c.code,c.display_name,b.outstanding,coalesce(b.overdue,0) as overdue,b.next_due
+    from balances b join public.customers c on c.id=b.customer_id
+    where c.company_id=p_company_id and c.is_active and public.customer_matches_query(c.id,v_query)
+    order by case when v_sort='largest_balance' then b.outstanding end desc nulls last,
+      case when v_sort='smallest_balance' then b.outstanding end asc nulls last,
+      case when v_sort='most_overdue' then coalesce(b.overdue,0) end desc nulls last,
+      case when v_sort='least_overdue' then nullif(coalesce(b.overdue,0),0) end asc nulls last,
+      case when v_sort='due_first' then b.next_due end asc nulls last,c.display_name,c.id
+    limit v_size offset (v_page-1)*v_size
+  )
+  select coalesce(jsonb_agg(jsonb_build_object('id',id,'code',code,'display_name',display_name,'outstanding_amount',outstanding,'overdue_amount',overdue,'next_due_date',next_due)
+    order by case when v_sort='largest_balance' then outstanding end desc nulls last,
+      case when v_sort='smallest_balance' then outstanding end asc nulls last,
+      case when v_sort='most_overdue' then overdue end desc nulls last,
+      case when v_sort='least_overdue' then nullif(overdue,0) end asc nulls last,
+      case when v_sort='due_first' then next_due end asc nulls last,display_name,id),'[]'::jsonb)
+  into v_items from paged;
+
+  return jsonb_build_object('items',v_items,'total',v_total,'page',v_page,'page_size',v_size,'summary',v_summary);
+end $$;
+
+revoke all on function public.list_receivable_customers(uuid,text,integer,integer,text) from public;
+grant execute on function public.list_receivable_customers(uuid,text,integer,integer,text) to authenticated;

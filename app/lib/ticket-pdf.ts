@@ -1,55 +1,52 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 
-type TicketItem = {
-  product_name?: string;
-  quantity?: number;
-  total_amount?: number;
-};
-
+type TicketItem = { product_name?: string; product_code?: string; quantity?: number; total_amount?: number };
 type CanonicalTicket = {
   folio?: string;
   issued_at?: string;
-  sale?: {
-    total_amount?: number;
-    currency_code?: string;
-    customer?: { display_name?: string } | null;
-  };
-  payment?: {
-    method_code?: string;
-    received_amount?: number;
-    change_amount?: number;
-  };
+  sale?: { total_amount?: number; currency_code?: string; customer?: { display_name?: string } | null };
+  payment?: { method_code?: string; received_amount?: number; change_amount?: number; reference?: string };
   items?: TicketItem[];
 };
 
-const TICKET_WIDTH = 226.77;
-const SIDE_MARGIN = 15;
-const TEXT_WIDTH = TICKET_WIDTH - SIDE_MARGIN * 2;
-const BODY_SIZE = 8.5;
-const LINE_HEIGHT = 11;
+export type TicketBranding = {
+  display_name?: string;
+  legal_name?: string | null;
+  tax_id?: string | null;
+  contact_line?: string | null;
+  document_title?: string | null;
+  header_message?: string | null;
+  website?: string | null;
+  return_policy?: string | null;
+  footer_message?: string | null;
+  paper_width?: "58mm" | "80mm" | null;
+  show_customer?: boolean;
+  show_product_code?: boolean;
+  show_payment_details?: boolean;
+  show_tax_id?: boolean;
+  logo_url?: string | null;
+};
+
+type TicketLayout = { width: number; sideMargin: number; textWidth: number; bodySize: number; lineHeight: number };
+
+function layoutFor(branding: TicketBranding): TicketLayout {
+  const width = branding.paper_width === "58mm" ? 164.41 : 226.77;
+  const sideMargin = branding.paper_width === "58mm" ? 10 : 15;
+  return { width, sideMargin, textWidth: width - sideMargin * 2, bodySize: branding.paper_width === "58mm" ? 7.5 : 8.5, lineHeight: branding.paper_width === "58mm" ? 10 : 11 };
+}
 
 function money(value: number | undefined, currency?: string) {
   const currencyCode = /^[A-Z]{3}$/.test(currency ?? "") ? currency! : "MXN";
-  return new Intl.NumberFormat("es-MX", {
-    style: "currency",
-    currency: currencyCode,
-    minimumFractionDigits: 2,
-  }).format(Number(value ?? 0));
+  return new Intl.NumberFormat("es-MX", { style: "currency", currency: currencyCode, minimumFractionDigits: 2 }).format(Number(value ?? 0));
 }
 
 function ticketDate(value?: string) {
   if (!value) return "";
-  return new Intl.DateTimeFormat("es-MX", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+  return new Intl.DateTimeFormat("es-MX", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
 function safePdfText(value: unknown) {
-  return String(value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\x20-\x7E]/g, "");
+  return String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\x20-\x7E]/g, "");
 }
 
 function wrapText(text: string, font: PDFFont, size: number, maxWidth: number) {
@@ -59,10 +56,7 @@ function wrapText(text: string, font: PDFFont, size: number, maxWidth: number) {
   let current = "";
   for (const word of words) {
     const candidate = current ? `${current} ${word}` : word;
-    if (font.widthOfTextAtSize(candidate, size) <= maxWidth) {
-      current = candidate;
-      continue;
-    }
+    if (font.widthOfTextAtSize(candidate, size) <= maxWidth) { current = candidate; continue; }
     if (current) lines.push(current);
     current = word;
   }
@@ -70,109 +64,99 @@ function wrapText(text: string, font: PDFFont, size: number, maxWidth: number) {
   return lines;
 }
 
-function drawCentered(page: PDFPage, text: string, y: number, font: PDFFont, size: number) {
+function drawCentered(page: PDFPage, layout: TicketLayout, text: string, y: number, font: PDFFont, size: number) {
   const normalized = safePdfText(text);
   const width = font.widthOfTextAtSize(normalized, size);
-  page.drawText(normalized, { x: Math.max(SIDE_MARGIN, (TICKET_WIDTH - width) / 2), y, font, size, color: rgb(0.08, 0.1, 0.09) });
+  page.drawText(normalized, { x: Math.max(layout.sideMargin, (layout.width - width) / 2), y, font, size, color: rgb(0.08, 0.1, 0.09) });
 }
 
-function drawRule(page: PDFPage, y: number) {
-  page.drawLine({
-    start: { x: SIDE_MARGIN, y },
-    end: { x: TICKET_WIDTH - SIDE_MARGIN, y },
-    thickness: 0.5,
-    color: rgb(0.72, 0.75, 0.73),
-  });
+function drawCenteredLines(page: PDFPage, layout: TicketLayout, text: string | null | undefined, y: number, font: PDFFont, size: number) {
+  if (!text) return y;
+  for (const line of wrapText(text, font, size, layout.textWidth)) { drawCentered(page, layout, line, y, font, size); y -= layout.lineHeight; }
+  return y;
 }
 
-export async function createTicketPdf(ticketInput: Record<string, unknown>) {
+function drawRule(page: PDFPage, layout: TicketLayout, y: number) {
+  page.drawLine({ start: { x: layout.sideMargin, y }, end: { x: layout.width - layout.sideMargin, y }, thickness: 0.5, color: rgb(0.72, 0.75, 0.73) });
+}
+
+async function embedTicketLogo(document: PDFDocument, logoUrl?: string | null) {
+  if (!logoUrl) return null;
+  try {
+    const response = await fetch(logoUrl);
+    if (!response.ok) return null;
+    const bytes = await response.arrayBuffer();
+    return (response.headers.get("content-type") ?? "").includes("png") ? document.embedPng(bytes) : document.embedJpg(bytes);
+  } catch { return null; }
+}
+
+export async function createTicketPdf(ticketInput: Record<string, unknown>, branding: TicketBranding = {}) {
   const ticket = ticketInput as CanonicalTicket;
+  const layout = layoutFor(branding);
   const document = await PDFDocument.create();
   const regular = await document.embedFont(StandardFonts.Helvetica);
   const bold = await document.embedFont(StandardFonts.HelveticaBold);
-  const items = ticket.items ?? [];
-  const itemLines = items.map((item) => ({
+  const itemLines = (ticket.items ?? []).map((item) => ({
     item,
-    lines: wrapText(`${Number(item.quantity ?? 0)} x ${item.product_name ?? "Producto"}`, regular, BODY_SIZE, TEXT_WIDTH - 58),
+    lines: wrapText(`${Number(item.quantity ?? 0)} x ${branding.show_product_code && item.product_code ? `${item.product_code} · ` : ""}${item.product_name ?? "Producto"}`, regular, layout.bodySize, layout.textWidth - 54),
   }));
-  const contentHeight = itemLines.reduce((sum, entry) => sum + Math.max(1, entry.lines.length) * LINE_HEIGHT + 5, 0);
-  const paymentRows = ticket.payment?.method_code ? 1 : 0;
-  const receivedRows = ticket.payment?.received_amount != null ? 1 : 0;
-  const changeRows = Number(ticket.payment?.change_amount ?? 0) > 0 ? 1 : 0;
-  const height = Math.max(340, 235 + contentHeight + (paymentRows + receivedRows + changeRows) * 14);
-  const page = document.addPage([TICKET_WIDTH, height]);
-  let y = height - 25;
+  const contentHeight = itemLines.reduce((sum, entry) => sum + Math.max(1, entry.lines.length) * layout.lineHeight + 5, 0);
+  const headerExtra = (branding.logo_url ? 46 : 0) + (branding.legal_name ? 12 : 0) + (branding.contact_line ? 12 : 0) + (branding.header_message ? 16 : 0) + (branding.show_tax_id && branding.tax_id ? 12 : 0) + (branding.show_customer !== false ? 15 : 0);
+  const footerExtra = (branding.website ? 12 : 0) + (branding.return_policy ? 24 : 0);
+  const paymentRows = branding.show_payment_details === false ? 0 : (ticket.payment?.method_code ? 1 : 0) + (ticket.payment?.received_amount != null ? 1 : 0) + (ticket.payment?.reference ? 1 : 0) + (Number(ticket.payment?.change_amount ?? 0) > 0 ? 1 : 0);
+  const height = Math.max(layout.width === 164.41 ? 330 : 360, 235 + headerExtra + footerExtra + contentHeight + paymentRows * 14);
+  const page = document.addPage([layout.width, height]);
+  let y = height - 23;
 
-  drawCentered(page, "SATRAPY", y, bold, 13);
-  y -= 16;
-  drawCentered(page, "TICKET DE VENTA", y, bold, 9);
-  y -= 18;
-  drawCentered(page, ticket.folio ?? "Sin folio", y, bold, 10);
-  y -= 15;
-  drawCentered(page, ticket.sale?.customer?.display_name ?? "Venta de mostrador", y, regular, BODY_SIZE);
-  y -= 13;
-  drawCentered(page, ticketDate(ticket.issued_at), y, regular, 7.5);
-  y -= 14;
-  drawRule(page, y);
-  y -= 15;
+  const logo = await embedTicketLogo(document, branding.logo_url);
+  if (logo) {
+    const scale = Math.min((layout.width - layout.sideMargin * 2) * .48 / logo.width, 34 / logo.height, 1);
+    const width = logo.width * scale; const logoHeight = logo.height * scale;
+    page.drawImage(logo, { x: (layout.width - width) / 2, y: y - logoHeight + 5, width, height: logoHeight }); y -= logoHeight + 7;
+  }
+  drawCentered(page, layout, branding.display_name || "SATRAPY", y, bold, layout.width === 164.41 ? 11 : 13); y -= 15;
+  if (branding.legal_name && branding.legal_name !== branding.display_name) y = drawCenteredLines(page, layout, branding.legal_name, y, regular, 7);
+  if (branding.show_tax_id && branding.tax_id) { drawCentered(page, layout, `RFC ${branding.tax_id}`, y, regular, 7); y -= 11; }
+  y = drawCenteredLines(page, layout, branding.contact_line, y, regular, 7.3);
+  y = drawCenteredLines(page, layout, branding.header_message, y, regular, 7.3);
+  drawCentered(page, layout, branding.document_title || "TICKET DE VENTA", y, bold, 8.5); y -= 17;
+  drawCentered(page, layout, ticket.folio ?? "Sin folio", y, bold, 9.5); y -= 14;
+  if (branding.show_customer !== false) { drawCentered(page, layout, ticket.sale?.customer?.display_name ?? "Venta de mostrador", y, regular, layout.bodySize); y -= 13; }
+  drawCentered(page, layout, ticketDate(ticket.issued_at), y, regular, 7.2); y -= 13;
+  drawRule(page, layout, y); y -= 14;
 
   for (const { item, lines } of itemLines) {
     lines.forEach((line, index) => {
-      page.drawText(line, { x: SIDE_MARGIN, y, font: regular, size: BODY_SIZE, color: rgb(0.08, 0.1, 0.09) });
-      if (index === 0) {
-        const amount = safePdfText(money(item.total_amount, ticket.sale?.currency_code));
-        page.drawText(amount, {
-          x: TICKET_WIDTH - SIDE_MARGIN - bold.widthOfTextAtSize(amount, BODY_SIZE),
-          y,
-          font: bold,
-          size: BODY_SIZE,
-          color: rgb(0.08, 0.1, 0.09),
-        });
-      }
-      y -= LINE_HEIGHT;
-    });
-    y -= 5;
+      page.drawText(line, { x: layout.sideMargin, y, font: regular, size: layout.bodySize, color: rgb(0.08, 0.1, 0.09) });
+      if (index === 0) { const amount = safePdfText(money(item.total_amount, ticket.sale?.currency_code)); page.drawText(amount, { x: layout.width - layout.sideMargin - bold.widthOfTextAtSize(amount, layout.bodySize), y, font: bold, size: layout.bodySize, color: rgb(0.08, 0.1, 0.09) }); }
+      y -= layout.lineHeight;
+    }); y -= 5;
   }
 
-  drawRule(page, y);
-  y -= 19;
-  page.drawText("TOTAL", { x: SIDE_MARGIN, y, font: bold, size: 11, color: rgb(0.04, 0.06, 0.05) });
+  drawRule(page, layout, y); y -= 18;
+  page.drawText("TOTAL", { x: layout.sideMargin, y, font: bold, size: 10.5, color: rgb(0.04, 0.06, 0.05) });
   const total = safePdfText(money(ticket.sale?.total_amount, ticket.sale?.currency_code));
-  page.drawText(total, { x: TICKET_WIDTH - SIDE_MARGIN - bold.widthOfTextAtSize(total, 11), y, font: bold, size: 11, color: rgb(0.04, 0.06, 0.05) });
-  y -= 18;
-
-  const drawPaymentRow = (label: string, value: string) => {
-    page.drawText(safePdfText(label), { x: SIDE_MARGIN, y, font: regular, size: BODY_SIZE, color: rgb(0.2, 0.23, 0.21) });
-    const normalized = safePdfText(value);
-    page.drawText(normalized, { x: TICKET_WIDTH - SIDE_MARGIN - bold.widthOfTextAtSize(normalized, BODY_SIZE), y, font: bold, size: BODY_SIZE, color: rgb(0.08, 0.1, 0.09) });
-    y -= 14;
-  };
-  if (ticket.payment?.method_code) drawPaymentRow("Pago", ticket.payment.method_code);
-  if (ticket.payment?.received_amount != null) drawPaymentRow("Recibido", money(ticket.payment.received_amount, ticket.sale?.currency_code));
-  if (Number(ticket.payment?.change_amount ?? 0) > 0) drawPaymentRow("Cambio", money(ticket.payment?.change_amount, ticket.sale?.currency_code));
-
-  y -= 4;
-  drawRule(page, y);
-  y -= 18;
-  drawCentered(page, "Gracias por su compra", y, regular, BODY_SIZE);
-
-  document.setTitle(`Ticket ${safePdfText(ticket.folio ?? "")}`);
-  document.setSubject("Comprobante de venta");
-  document.setCreator("Satrapy");
-  document.setProducer("Satrapy");
+  page.drawText(total, { x: layout.width - layout.sideMargin - bold.widthOfTextAtSize(total, 10.5), y, font: bold, size: 10.5, color: rgb(0.04, 0.06, 0.05) }); y -= 18;
+  if (branding.show_payment_details !== false) {
+    const drawPaymentRow = (label: string, value: string) => { page.drawText(safePdfText(label), { x: layout.sideMargin, y, font: regular, size: layout.bodySize, color: rgb(.2, .23, .21) }); const normalized = safePdfText(value); page.drawText(normalized, { x: layout.width - layout.sideMargin - bold.widthOfTextAtSize(normalized, layout.bodySize), y, font: bold, size: layout.bodySize, color: rgb(.08, .1, .09) }); y -= 14; };
+    if (ticket.payment?.method_code) drawPaymentRow("Pago", ticket.payment.method_code);
+    if (ticket.payment?.received_amount != null) drawPaymentRow("Recibido", money(ticket.payment.received_amount, ticket.sale?.currency_code));
+    if (ticket.payment?.reference) drawPaymentRow("Autorización", ticket.payment.reference);
+    if (Number(ticket.payment?.change_amount ?? 0) > 0) drawPaymentRow("Cambio", money(ticket.payment?.change_amount, ticket.sale?.currency_code));
+  }
+  y -= 4; drawRule(page, layout, y); y -= 16;
+  y = drawCenteredLines(page, layout, branding.footer_message || "Gracias por su compra", y, regular, layout.bodySize);
+  y = drawCenteredLines(page, layout, branding.return_policy, y - 2, regular, 7);
+  drawCenteredLines(page, layout, branding.website, y - 2, regular, 7);
+  document.setTitle(`Ticket ${safePdfText(ticket.folio ?? "")}`); document.setSubject("Comprobante de venta"); document.setCreator("Satrapy"); document.setProducer("Satrapy");
   return document.save();
 }
 
-export async function downloadTicketPdf(ticket: Record<string, unknown>) {
-  const bytes = await createTicketPdf(ticket);
-  const blob = new Blob([new Uint8Array(bytes)], { type: "application/pdf" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  const folio = safePdfText(ticket.folio ?? "venta").replace(/[^a-zA-Z0-9_-]+/g, "-");
-  link.href = url;
-  link.download = `ticket-${folio || "venta"}.pdf`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+export async function printTicketPdf(ticket: Record<string, unknown>, branding?: TicketBranding, printWindow?: Window | null) {
+  const target = printWindow ?? window.open("", "satrapy-ticket-print", "popup,width=480,height=720");
+  if (!target) throw new Error("El navegador bloqueó la ventana de impresión.");
+  const bytes = await createTicketPdf(ticket, branding); const blob = new Blob([new Uint8Array(bytes)], { type: "application/pdf" }); const url = URL.createObjectURL(blob);
+  target.addEventListener("load", () => { target.focus(); target.print(); }, { once: true });
+  target.location.replace(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }

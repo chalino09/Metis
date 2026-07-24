@@ -7,7 +7,7 @@ import {
   CircleDollarSign,
   ClipboardList,
   CreditCard,
-  Download,
+  Printer,
   ExternalLink,
   Minus,
   Pencil,
@@ -28,7 +28,9 @@ import { getSupabaseClient } from "@/app/lib/supabase";
 import { OperationIdempotencyKeys } from "@/app/lib/operation-idempotency";
 import { presentImportedSourceText } from "@/app/lib/presentation-text";
 import { PriceCatalogManagement } from "@/app/components/PriceCatalogManagement";
-import { downloadTicketPdf } from "@/app/lib/ticket-pdf";
+import { printTicketPdf, type TicketBranding } from "@/app/lib/ticket-pdf";
+import { TicketBrandingSettings } from "@/app/components/TicketBrandingSettings";
+import { QuoteBrandingSettings } from "@/app/components/QuoteBrandingSettings";
 
 type PosLocation = { id: string; name: string; code: string };
 type PosRegister = { id: string; location_id: string; name: string; code: string; currency_code: string };
@@ -39,7 +41,7 @@ type ProductSearchItem = { product_id: string; code: string | null; name: string
 type PosLocationStockItem = { location_id: string; location_code: string; location_name: string; quantity_on_hand: number; updated_at: string | null };
 type PosLocationStock = { product_name: string; unit: string | null; items: PosLocationStockItem[]; total: number; page: number; page_size: number };
 type BlockedProductSearchItem = ProductSearchItem & { blockers: string[] };
-type Customer = { id: string; code: string; display_name: string; credit_enabled: boolean; price_list_id?: string | null; credit_limit?: number; credit_term_days?: number; outstanding_amount?: number; available_credit?: number; migration_status?: "manual" | "promoted" | "adjustment_pending"; alpha_external_code?: string | null };
+type Customer = { id: string; code: string; display_name: string; credit_enabled: boolean; price_list_id?: string | null; credit_limit?: number; credit_term_days?: number; outstanding_amount?: number; overdue_amount?: number; next_due_date?: string | null; available_credit?: number; migration_status?: "manual" | "promoted" | "adjustment_pending"; alpha_external_code?: string | null };
 type CustomerAddress = { id: string; label: string; address_line: string; neighborhood: string | null; municipality: string | null; state_name: string | null; postal_code: string | null; is_primary: boolean };
 type CustomerContact = { id: string; display_name: string; role_name: string | null; phone: string | null; email: string | null; is_primary: boolean };
 type CustomerReceivable = { id: string; reference: string | null; issued_at: string; due_date: string; original_amount: number; outstanding_amount: number };
@@ -51,6 +53,7 @@ type CustomerMigrationAdjustment = { id: string; field_name: string; previous_va
 type CashDashboard = { cash_session_id: string; status: string; opened_at: string; register_name: string; register_code: string; location_name: string; location_code: string; cashier_name: string; currency_code: string; opening_amount: number; expected_cash: number; cash_sales: number; receivable_payments: number; paid_in: number; paid_out: number };
 type ReceivablesSummary = { document_count: number; outstanding_amount: number; overdue_count: number; overdue_amount: number; next_due_date?: string | null };
 type ReceivablesPage = { items?: ReceivableDocument[]; summary?: ReceivablesSummary; pagination?: { page: number; page_size: number; total: number } };
+type ReceivableCustomerContext = { customer: { id: string; code: string; display_name: string; tax_id: string | null; payment_manager: string | null; credit_term_days: number | null }; contact: CustomerContact | null; address: CustomerAddress | null; summary: ReceivablesSummary };
 type CustomerMaster = { id: string; code: string; display_name: string; tax_id: string | null; customer_type: "persona_fisica" | "persona_moral" | null; notes: string | null; is_active: boolean; is_imported: boolean; source_reference: string | null; migration_status: string; addresses: CustomerAddress[]; contacts: CustomerContact[]; commercial: { price_list_id: string | null; price_list_name: string | null; payment_manager: string | null; sales_agent: string | null; credit_enabled: boolean | null; credit_limit: number | null; credit_term_days: number | null; outstanding_amount: number | null; available_credit: number | null }; receivables_summary: ReceivablesSummary | null; open_receivables: CustomerReceivable[] };
 type CartItem = { cart_item_id: string; product_id: string; code: string | null; name: string; unit: string | null; quantity: number; quantity_on_hand: number; inventory_tracked: boolean; unit_price_amount: number; discount_percent: number; total_amount: number };
 type CartQuote = { cart_id: string; revision: number; customer_id: string | null; currency_code: string | null; items: CartItem[]; subtotal_amount: number; discount_amount: number; tax_amount: number; total_amount: number; can_checkout: boolean; pending_discount_approval: boolean };
@@ -74,8 +77,18 @@ function rpcError(error: { message?: string } | null, fallback: string) {
   return presentImportedSourceText(error?.message || fallback);
 }
 
+async function printCompanyTicket(companyId: string, ticket: Record<string, unknown>) {
+  const printWindow = window.open("", "satrapy-ticket-print", "popup,width=480,height=720");
+  if (!printWindow) throw new Error("El navegador bloqueó la ventana de impresión.");
+  printWindow.document.write("<title>Preparando ticket…</title><p style=\"font-family:system-ui;padding:24px\">Preparando ticket…</p>");
+  const { data } = await getSupabaseClient().rpc("get_ticket_branding", { p_company_id: companyId });
+  const branding = data as (TicketBranding & { logo_path?: string | null }) | null;
+  const logoUrl = branding?.logo_path ? getSupabaseClient().storage.from("ticket-branding-assets").getPublicUrl(branding.logo_path).data.publicUrl : null;
+  await printTicketPdf(ticket, { ...branding, logo_url: logoUrl }, printWindow);
+}
+
 function posBlockerLabel(code: string) {
-  const labels: Record<string, string> = { inactive: "Producto inactivo", not_sellable: "No habilitado para venta", commercial_review_required: "Revisión comercial pendiente", missing_sales_unit: "Falta unidad de venta", missing_tax_category: "Falta categoría fiscal", missing_current_tax_rate: "Falta impuesto vigente", missing_or_zero_price: "Falta precio vigente", out_of_stock: "Sin existencia en esta sucursal" };
+  const labels: Record<string, string> = { outside_assortment: "Fuera del surtido de esta sucursal", inactive: "Producto inactivo", not_sellable: "No habilitado para venta", commercial_review_required: "Revisión comercial pendiente", missing_sales_unit: "Falta unidad de venta", missing_tax_category: "Falta categoría fiscal", missing_current_tax_rate: "Falta impuesto vigente", missing_or_zero_price: "Falta precio vigente", out_of_stock: "Sin existencia en esta sucursal" };
   return labels[code] ?? code.replaceAll("_", " ");
 }
 
@@ -122,9 +135,11 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
   const [customerResults, setCustomerResults] = useState<Customer[]>([]);
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
   const [customer, setCustomer] = useState<Customer | null>(null);
-  const [saleType, setSaleType] = useState<"cash" | "credit">("cash");
+  const [saleType, setSaleType] = useState<"cash" | "credit" | "deferred">("cash");
   const [paymentMethodId, setPaymentMethodId] = useState("");
   const [received, setReceived] = useState("");
+  const [paymentReference, setPaymentReference] = useState("");
+  const [expectedDeliveryDate, setExpectedDeliveryDate] = useState("");
   const [busy, setBusy] = useState(false);
   const [quickCustomerOpen, setQuickCustomerOpen] = useState(false);
   const [quickCustomerName, setQuickCustomerName] = useState("");
@@ -156,6 +171,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
   const isCashPayment = saleType === "cash" && selectedPayment?.settlement_kind === "cash_drawer";
   const validReceivedAmount = Number.isFinite(receivedAmount) && receivedAmount >= saleTotal;
   const changeAmount = isCashPayment && validReceivedAmount ? receivedAmount - saleTotal : 0;
+  const validOrderPayment = received === "" || (Number.isFinite(receivedAmount) && receivedAmount >= 0 && receivedAmount <= saleTotal);
 
   useEffect(() => {
     if (!context) return;
@@ -374,8 +390,51 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
 
   async function complete() {
     if (!cartId || !quote || !quote.can_checkout) return;
+    if (saleType === "deferred") {
+      if (!customer) {
+        toast({ title: "Selecciona un cliente", description: "La orden necesita un cliente para conservar pagos, saldo y entrega.", tone: "error" });
+        customerRef.current?.focus();
+        return;
+      }
+      if (!validOrderPayment) {
+        toast({ title: "Revisa el pago inicial", description: "Puede ser cero o cualquier importe hasta el total de la orden.", tone: "error" });
+        return;
+      }
+      if (receivedAmount > 0 && (!selectedPayment || (selectedPayment.settlement_kind === "external" && !paymentReference.trim()))) {
+        toast({ title: "Completa el pago inicial", description: "Selecciona forma de pago y captura la referencia cuando sea externa.", tone: "error" });
+        return;
+      }
+      setBusy(true);
+      const orderFingerprint = JSON.stringify({ cartId, revision: quote.revision, customerId: customer.id, expectedDeliveryDate: expectedDeliveryDate || null, paymentMethodId: receivedAmount > 0 ? paymentMethodId : null, amount: receivedAmount || 0, paymentReference });
+      const { data, error } = await getSupabaseClient().rpc("create_sales_order_from_cart", {
+        p_company_id: companyId,
+        p_cart_id: cartId,
+        p_expected_revision: quote.revision,
+        p_expected_delivery_date: expectedDeliveryDate || null,
+        p_initial_payment_method_id: receivedAmount > 0 ? paymentMethodId : null,
+        p_initial_amount: receivedAmount || 0,
+        p_payment_reference: paymentReference.trim() || null,
+        p_client_request_id: idempotency.get("create-sales-order", orderFingerprint),
+      });
+      if (error || !data) {
+        toast({ title: "No se creó la orden", description: rpcError(error, "No se hicieron cambios parciales."), tone: "error" });
+      } else {
+        idempotency.clear("create-sales-order");
+        const order = data as { folio: string; paid_amount: number; outstanding_amount: number };
+        toast({ title: `Orden ${order.folio} creada`, description: `${money(order.paid_amount)} pagado · ${money(order.outstanding_amount)} pendiente.`, tone: "success" });
+        setCustomer(null); setSearch(""); setReceived(""); setPaymentReference(""); setExpectedDeliveryDate(""); setCartId(null); setQuote(null);
+        await reloadContext();
+        await ensureCart();
+      }
+      setBusy(false);
+      return;
+    }
     if (isCashPayment && !validReceivedAmount) {
       toast({ title: "Revisa el efectivo recibido", description: "El importe recibido debe cubrir el total de la venta.", tone: "error" });
+      return;
+    }
+    if (saleType === "cash" && selectedPayment?.settlement_kind === "external" && !paymentReference.trim()) {
+      toast({ title: "Falta la autorización", description: "Captura el folio o referencia emitido por la terminal.", tone: "error" });
       return;
     }
     if (saleType === "credit" && (!customer || !customer.credit_enabled || (customer.alpha_external_code && customer.migration_status !== "promoted") || !permissions.includes("view_customer_credit"))) {
@@ -384,14 +443,15 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
       return;
     }
     setBusy(true);
-    const operationFingerprint = JSON.stringify({ cartId, revision: quote.revision, saleType, paymentMethodId: saleType === "cash" ? paymentMethodId : null, received: saleType === "cash" ? received : null, total: quote.total_amount });
-    const { data, error } = await getSupabaseClient().rpc("complete_sale", {
+    const operationFingerprint = JSON.stringify({ cartId, revision: quote.revision, saleType, paymentMethodId: saleType === "cash" ? paymentMethodId : null, received: saleType === "cash" ? received : null, paymentReference: paymentReference.trim() || null, total: quote.total_amount });
+    const { data, error } = await getSupabaseClient().rpc("complete_pos_sale", {
       p_cart_id: cartId,
       p_expected_revision: quote.revision,
       p_sale_type: saleType,
       p_payment_method_id: saleType === "cash" ? paymentMethodId : null,
       p_received_amount: saleType === "cash" && selectedPayment?.settlement_kind === "cash_drawer" ? Number(received || 0) : quote.total_amount,
       p_client_request_id: idempotency.get("complete-sale", operationFingerprint),
+      p_payment_reference: saleType === "cash" && selectedPayment?.settlement_kind === "external" ? paymentReference.trim() : null,
     });
     if (error) {
       toast({ title: "La venta no se confirmó", description: rpcError(error, "No se hicieron cambios parciales."), tone: "error" });
@@ -399,7 +459,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
       idempotency.clear("complete-sale");
       const result = data as { folio: string; ticket: Record<string, unknown> };
       setTicket(result);
-      setCustomer(null); setSearch(""); setReceived("");
+      setCustomer(null); setSearch(""); setReceived(""); setPaymentReference("");
       await reloadContext();
     }
     setBusy(false);
@@ -433,12 +493,12 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
     setBusy(false);
   }
 
-  async function downloadCompletedTicket() {
+  async function printCompletedTicket() {
     if (!ticket) return;
     setTicketDownloading(true);
     try {
-      await downloadTicketPdf(ticket.ticket);
-      toast({ title: "Ticket listo", description: "Se descargó el PDF para abrirlo o imprimirlo.", tone: "success" });
+      await printCompanyTicket(companyId, ticket.ticket);
+      toast({ title: "Ticket listo", description: "Se abrió el diálogo de impresión.", tone: "success" });
     } catch {
       toast({ title: "No se pudo generar el ticket", description: "Intenta nuevamente; la venta permanece guardada.", tone: "error" });
     } finally {
@@ -462,8 +522,8 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
             {products.map((product) => <div className="pos-product-row" key={product.product_id}><button className="pos-product" disabled={busy} onClick={() => void changeItem(product.product_id, 1, true)}><span><strong>{product.name}</strong><small>{product.code ?? "Sin código"} · {product.unit ?? "Unidad"}</small></span><span className="pos-product__right"><b>{money(product.price_amount, product.currency_code)}</b><small>Precio total</small>{product.inventory_tracked && <em className={product.quantity_on_hand <= 3 ? "is-low" : ""}>{product.quantity_on_hand} disp.</em>}</span></button>{product.inventory_tracked && permissions.includes("view_inventory") && <Button className="pos-product-stock" size="sm" variant="ghost" disabled={busy} onClick={() => openLocationStock(product)}><ClipboardList size={14} /> Otras sucursales</Button>}</div>)}
             {!productLoading && !products.length && <p className="pos-list-empty">No hay productos listos y disponibles para esta búsqueda.</p>}
             {!productLoading && products.length < productTotal && <Button className="pos-load-more" variant="secondary" loading={productLoadingMore} disabled={busy} onClick={() => void loadMoreProducts()}>Cargar más productos</Button>}
-            {!productLoading && search.trim() && <Button className="pos-blocked-trigger" variant="ghost" loading={blockedLoading} onClick={() => void loadBlockedProducts()}>Ver productos bloqueados</Button>}
-            {blockedOpen && <section className="pos-blocked-results"><header><strong>Productos bloqueados</strong><span>{blockedTotal} coincidencias</span></header>{blockedProducts.length ? blockedProducts.map((product) => <article key={product.product_id}><span><strong>{product.name}</strong><small>{product.code ?? "Sin código"} · {product.unit ?? "Sin unidad"}</small></span><div>{product.blockers.map((blocker) => <Badge tone="danger" key={blocker}>{posBlockerLabel(blocker)}</Badge>)}</div></article>) : <p>No hay coincidencias bloqueadas para esta búsqueda.</p>}</section>}
+            {!productLoading && search.trim() && <Button className="pos-blocked-trigger" variant="ghost" loading={blockedLoading} onClick={() => void loadBlockedProducts()}>Revisar productos no disponibles</Button>}
+            {blockedOpen && <section className="pos-blocked-results"><header><strong>Productos no disponibles</strong><span>{blockedTotal} coincidencias</span></header>{blockedProducts.length ? blockedProducts.map((product) => <article key={product.product_id}><span><strong>{product.name}</strong><small>{product.code ?? "Sin código"} · {product.unit ?? "Sin unidad"}</small></span><div>{product.blockers.map((blocker) => <Badge tone={blocker === "outside_assortment" ? "warning" : "danger"} key={blocker}>{posBlockerLabel(blocker)}</Badge>)}</div></article>) : <p>No hay productos no disponibles para esta búsqueda.</p>}</section>}
           </div>
         </section>
         <aside className="pos-cart" id="pos-checkout">
@@ -473,11 +533,38 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
           <div className="pos-cart-lines">{quote?.items.map((item) => <article key={item.cart_item_id}><div><strong>{item.name}</strong><small>{item.code ?? ""} · {money(item.total_amount / item.quantity, quote.currency_code ?? "MXN")} precio total unitario</small></div><div className="pos-line-controls"><button aria-label={`Restar ${item.name}`} disabled={busy} onClick={() => void changeItem(item.product_id, -1)}><Minus size={14} /></button><Input key={`${item.cart_item_id}:${quote.revision}`} className="pos-quantity-input" type="number" min="0" max={item.inventory_tracked ? item.quantity_on_hand : undefined} step="any" inputMode="decimal" defaultValue={item.quantity} aria-label={`Cantidad de ${item.name}`} disabled={busy} onBlur={(event) => setItemQuantity(item.product_id, item.quantity, event.currentTarget)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); if (event.key === "Escape") { event.currentTarget.value = String(item.quantity); event.currentTarget.blur(); } }} /><button aria-label={`Sumar ${item.name}`} disabled={busy} onClick={() => void changeItem(item.product_id, 1)}><Plus size={14} /></button><strong>{money(item.total_amount, quote.currency_code ?? "MXN")}</strong></div></article>)}</div>
           <div className="pos-cart-summary"><dl><div><dt>Subtotal</dt><dd>{money(quote?.subtotal_amount, quote?.currency_code ?? "MXN")}</dd></div><div><dt>Descuentos</dt><dd>−{money(quote?.discount_amount, quote?.currency_code ?? "MXN")}</dd></div><div><dt>Impuestos</dt><dd>{money(quote?.tax_amount, quote?.currency_code ?? "MXN")}</dd></div><div className="pos-cart-summary__total"><dt>Total</dt><dd>{money(quote?.total_amount, quote?.currency_code ?? "MXN")}</dd></div></dl></div>
           {quote?.pending_discount_approval && <div className="pos-credit-alert is-blocked"><AlertCircle size={18} /><div><strong>Descuento pendiente</strong><span>Otro usuario autorizado debe aprobarlo antes de cobrar.</span></div></div>}
-          <div className="pos-checkout"><div className="pos-sale-type"><button className={saleType === "cash" ? "is-active" : ""} onClick={() => setSaleType("cash")}>Contado</button>{permissions.includes("sell_credit") && <button className={saleType === "credit" ? "is-active" : ""} onClick={() => setSaleType("credit")}>Crédito</button>}</div>{saleType === "cash" && <><Select ariaLabel="Forma de pago" value={paymentMethodId} onValueChange={(value) => { setPaymentMethodId(value); setReceived(""); }} options={paymentMethods.map((method) => ({ value: method.id, label: method.name }))} />{selectedPayment && <div className="pos-payment-context">{selectedPayment.settlement_kind === "cash_drawer" ? <Banknote size={17} /> : <CreditCard size={17} />}<span><strong>{selectedPayment.name}</strong><small>{selectedPayment.settlement_kind === "cash_drawer" ? "Captura el importe entregado por el cliente." : "Confirma el cobro en la terminal antes de completar."}</small></span></div>}{selectedPayment?.settlement_kind === "cash_drawer" && <><label className="pos-received">Recibido<Input type="number" min="0" step="0.01" inputMode="decimal" value={received} onChange={(event) => setReceived(event.target.value)} placeholder="0.00" aria-describedby="pos-change-summary" /></label><div id="pos-change-summary" className={`pos-change-summary${received && !validReceivedAmount ? " is-insufficient" : ""}`} aria-live="polite"><span>{received && !validReceivedAmount ? "Falta por recibir" : "Cambio"}</span><strong>{money(received && !validReceivedAmount ? saleTotal - receivedAmount : changeAmount, quote?.currency_code ?? "MXN")}</strong></div></>} </>} {saleType === "credit" && <p className="pos-checkout-note">Se generará un cargo con el plazo configurado del cliente.</p>}<Button variant="primary" size="lg" loading={busy} disabled={!quote?.can_checkout || (saleType === "cash" && (!paymentMethodId || (isCashPayment && !validReceivedAmount))) || (saleType === "credit" && (!customer?.credit_enabled || Boolean(customer.alpha_external_code && customer.migration_status !== "promoted")))} onClick={() => void complete()}>{saleType === "cash" ? "Cobrar" : "Confirmar crédito"} <kbd>F8</kbd></Button></div>
+          <div className="pos-checkout">
+            <div className="pos-sale-type">
+              <button className={saleType === "cash" ? "is-active" : ""} onClick={() => setSaleType("cash")}>Contado</button>
+              {permissions.includes("sell_credit") && <button className={saleType === "credit" ? "is-active" : ""} onClick={() => setSaleType("credit")}>Crédito</button>}
+              {permissions.includes("manage_sales_orders") && <button className={saleType === "deferred" ? "is-active" : ""} onClick={() => { setSaleType("deferred"); setReceived(""); setPaymentReference(""); }}>Entrega posterior</button>}
+            </div>
+            {saleType === "cash" && <>
+              <Select ariaLabel="Forma de pago" value={paymentMethodId} onValueChange={(value) => { setPaymentMethodId(value); setReceived(""); setPaymentReference(""); }} options={paymentMethods.map((method) => ({ value: method.id, label: method.name }))} />
+              {selectedPayment && <div className="pos-payment-context">{selectedPayment.settlement_kind === "cash_drawer" ? <Banknote size={17} /> : <CreditCard size={17} />}<span><strong>{selectedPayment.name}</strong><small>{selectedPayment.settlement_kind === "cash_drawer" ? "Captura el importe entregado por el cliente." : "Confirma el cobro en la terminal antes de completar."}</small></span></div>}
+              {selectedPayment?.settlement_kind === "cash_drawer" && <><label className="pos-received">Recibido<Input type="number" min="0" step="0.01" inputMode="decimal" value={received} onChange={(event) => setReceived(event.target.value)} placeholder="0.00" aria-describedby="pos-change-summary" /></label><div id="pos-change-summary" className={`pos-change-summary${received && !validReceivedAmount ? " is-insufficient" : ""}`} aria-live="polite"><span>{received && !validReceivedAmount ? "Falta por recibir" : "Cambio"}</span><strong>{money(received && !validReceivedAmount ? saleTotal - receivedAmount : changeAmount, quote?.currency_code ?? "MXN")}</strong></div></>}
+              {selectedPayment?.settlement_kind === "external" && <label className="pos-payment-reference">Autorización o referencia<Input required value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} placeholder="Folio emitido por la terminal" /><small>Satrapy registra la evidencia; la terminal procesa el cobro.</small></label>}
+            </>}
+            {saleType === "credit" && <p className="pos-checkout-note">Se generará un cargo con el plazo configurado del cliente.</p>}
+            {saleType === "deferred" && <section className="pos-deferred-sale">
+              <div className="sales-order-notice pos-deferred-explainer">
+                <ClipboardList size={18} aria-hidden="true" />
+                <span>
+                  <strong>Se guardará como orden de venta</strong>
+                  <small>El inventario y el ticket se actualizan al confirmar la entrega.</small>
+                </span>
+              </div>
+              <label>Entrega esperada<Input type="date" value={expectedDeliveryDate} onChange={(event) => setExpectedDeliveryDate(event.target.value)} /></label>
+              <label>Pago inicial <small>Opcional</small><Input type="number" min="0" max={saleTotal} step="0.01" inputMode="decimal" value={received} onChange={(event) => setReceived(event.target.value)} placeholder="0.00" /></label>
+              {Number(received || 0) > 0 && <><Select ariaLabel="Forma del pago inicial" value={paymentMethodId} onValueChange={(value) => { setPaymentMethodId(value); setPaymentReference(""); }} options={paymentMethods.map((method) => ({ value: method.id, label: method.name }))} />{selectedPayment?.settlement_kind === "external" && <label>Referencia<Input required value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} placeholder="Transferencia, depósito o terminal" /></label>}</>}
+              <div className="pos-deferred-balance"><span>Saldo después del pago</span><strong>{money(Math.max(0, saleTotal - Number(received || 0)), quote?.currency_code ?? "MXN")}</strong></div>
+            </section>}
+            <Button variant="primary" size="lg" loading={busy} disabled={!quote?.can_checkout || (saleType === "cash" && (!paymentMethodId || (isCashPayment && !validReceivedAmount) || (selectedPayment?.settlement_kind === "external" && !paymentReference.trim()))) || (saleType === "credit" && (!customer?.credit_enabled || Boolean(customer.alpha_external_code && customer.migration_status !== "promoted"))) || (saleType === "deferred" && (!customer || !validOrderPayment))} onClick={() => void complete()}>{saleType === "cash" ? "Cobrar" : saleType === "credit" ? "Confirmar crédito" : "Crear orden"} <kbd>F8</kbd></Button>
+          </div>
         </aside>
       </div>
     </>}
-    <Modal open={Boolean(ticket)} onOpenChange={(open) => { if (!open) finishTicket(); }} eyebrow="Venta confirmada" title={`Ticket ${ticket?.folio ?? ""}`} description="El cliente ve precios totales; el desglose fiscal permanece disponible internamente." footer={<><Button variant="secondary" loading={ticketDownloading} onClick={() => void downloadCompletedTicket()}><Download size={15} /> Imprimir ticket</Button><Button variant="primary" onClick={finishTicket}>Nueva venta</Button></>}><TicketPreview ticket={ticket?.ticket} /></Modal>
+    <Modal open={Boolean(ticket)} onOpenChange={(open) => { if (!open) finishTicket(); }} eyebrow="Venta confirmada" title={`Ticket ${ticket?.folio ?? ""}`} description="El cliente ve precios totales; el desglose fiscal permanece disponible internamente." footer={<><Button variant="secondary" loading={ticketDownloading} onClick={() => void printCompletedTicket()}><Printer size={15} /> Imprimir ticket</Button><Button variant="primary" onClick={finishTicket}>Nueva venta</Button></>}><TicketPreview ticket={ticket?.ticket} /></Modal>
     <Modal open={Boolean(stockProduct)} onOpenChange={(open) => { if (!open) { setStockProduct(null); setLocationStock(null); } }} eyebrow="Consulta de inventario" title={`Otras sucursales: ${stockProduct?.name ?? ""}`} description={`Solo lectura. La venta sigue usando la existencia de ${selectedLocation?.name ?? "la sucursal activa"}.`} footer={<Button onClick={() => { setStockProduct(null); setLocationStock(null); }}>Cerrar</Button>}>{locationStockLoading ? <DataState loading error={null} hasData={0} empty="">{null}</DataState> : locationStock ? <section className="pos-location-stock"><header><span>Mostrando sucursales a las que tienes acceso</span><Badge>{locationStock.total}</Badge></header>{locationStock.items.length ? <div style={{ display: "grid", gap: 6 }}>{locationStock.items.map((item) => <article key={item.location_id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, border: "1px solid var(--line)", borderRadius: "var(--radius-md)", background: "var(--surface-subtle)", padding: "10px 11px" }}><span style={{ display: "grid", gap: 2, minWidth: 0 }}><strong>{item.location_name}</strong><small>{item.location_code}</small></span><Badge tone={Number(item.quantity_on_hand) > 0 ? "success" : "neutral"}>{Number(item.quantity_on_hand).toLocaleString("es-MX", { maximumFractionDigits: 3 })} {locationStock.unit ?? stockProduct?.unit ?? ""}</Badge></article>)}</div> : <p>No hay otras sucursales autorizadas para consultar.</p>}{locationStock.total > locationStock.page_size && <DataPagination page={locationStock.page} total={locationStock.total} pageSize={locationStock.page_size} label="sucursales" onChange={(page) => { if (stockProduct) void loadLocationStock(stockProduct, page); }} />}</section> : null}</Modal>
     <Drawer open={quickCustomerOpen} onOpenChange={setQuickCustomerOpen} title="Alta rápida de cliente"><form className="sales-form" onSubmit={createQuickCustomer}><p className="settings-note">Solo lo necesario para continuar la venta. Se crea de contado y hereda la lista de precios de esta ubicación.</p><label>Nombre<Input required autoFocus value={quickCustomerName} onChange={(event) => setQuickCustomerName(event.target.value)} /></label><label>Teléfono opcional<Input inputMode="tel" value={quickCustomerPhone} onChange={(event) => setQuickCustomerPhone(event.target.value)} /></label><label>RFC opcional<Input value={quickCustomerTaxId} onChange={(event) => setQuickCustomerTaxId(event.target.value.toUpperCase())} /></label><Button type="submit" variant="primary" loading={busy}>Crear y seleccionar</Button></form></Drawer>
     <Modal open={discountOpen} onOpenChange={setDiscountOpen} title="Solicitar descuento" description="El límite de tu rol se aplica automáticamente; si lo superas, el carrito queda pendiente de aprobación." footer={<Button type="submit" form="sale-discount-form" variant="primary" loading={busy}>Solicitar</Button>}><form id="sale-discount-form" className="sales-form" onSubmit={requestDiscount}><label>Porcentaje<Input required inputMode="decimal" min="0.01" max="100" value={discountPercent} onChange={(event) => setDiscountPercent(event.target.value)} /></label><label>Motivo<Input required value={discountReason} onChange={(event) => setDiscountReason(event.target.value)} placeholder="Motivo comercial" /></label></form></Modal>
@@ -530,19 +617,19 @@ export function SalesHistoryView({ companyId, permissions }: { companyId: string
     setCancellationReason(null); setTicket(null); await load();
   }
   async function decideDiscount(id: string, approve: boolean) { const { error: decisionError } = await getSupabaseClient().rpc("decide_cart_discount", { p_discount_approval_id: id, p_approve: approve, p_decision_reason: null }); if (decisionError) toast({ title: "No se pudo registrar la decisión", description: rpcError(decisionError, "Intenta nuevamente."), tone: "error" }); else { toast({ title: approve ? "Descuento aprobado" : "Descuento rechazado", tone: "success" }); await loadApprovals(); } }
-  async function downloadHistoricalTicket() {
+  async function printHistoricalTicket() {
     if (!ticket) return;
     setTicketDownloading(true);
     try {
-      await downloadTicketPdf(ticket.payload);
-      toast({ title: "Ticket listo", description: "Se descargó el PDF para abrirlo o imprimirlo.", tone: "success" });
+      await printCompanyTicket(companyId, ticket.payload);
+      toast({ title: "Ticket listo", description: "Se abrió el diálogo de impresión.", tone: "success" });
     } catch {
       toast({ title: "No se pudo generar el ticket", description: "Intenta nuevamente; la venta permanece guardada.", tone: "error" });
     } finally {
       setTicketDownloading(false);
     }
   }
-  return <div className="content-frame"><PageTitle eyebrow="Documentos inmutables" title="Ventas" description="Consulta tickets canónicos; los resultados siempre se resuelven y paginan en el servidor." />{permissions.includes("approve_discount") && approvals.length > 0 && <section className="discount-approvals"><header><strong>Descuentos pendientes</strong><Badge tone="warning">{approvals.length}</Badge></header>{approvals.map((approval) => <article key={approval.id}><span><strong>{approval.requested_percent}% · {approval.scope === "sale" ? "Venta" : "Línea"}</strong><small>{approval.requested_reason} · {dateTime(approval.created_at)}</small></span><div><Button size="sm" variant="ghost" onClick={() => void decideDiscount(approval.id, false)}>Rechazar</Button><Button size="sm" variant="primary" onClick={() => void decideDiscount(approval.id, true)}>Aprobar</Button></div></article>)}</section>}<DataToolbar search={query} onSearchChange={(value) => { setQuery(value); setPage(1); }} placeholder="Buscar folio o cliente" results={total} /><DataRefreshStatus loading={loading} hasData={rows.length}/><DataState loading={loading&&rows.length===0} error={error} errorAction={<Button size="sm" onClick={()=>void load()}>Reintentar</Button>} hasData={rows.length} emptyTitle={query?"No encontramos ventas.":"Aún no hay ventas."} empty={query?"Cambia o limpia la búsqueda para ampliar los resultados.":"Las ventas confirmadas aparecerán aquí."}><div className="sales-history">{rows.map((row) => <button key={row.sale_id} onClick={() => void openTicket(row.sale_id)}><span><strong>{row.folio}</strong><small>{row.customer_name ?? "Venta de mostrador"} · {dateTime(row.completed_at)}</small></span><span><Badge tone={row.sale_type === "credit" ? "warning" : "success"}>{row.sale_type === "credit" ? "Crédito" : "Contado"}</Badge><b>{money(row.total_amount, row.currency_code)}</b></span></button>)}</div><SettingsPagination page={page} totalPages={Math.max(1, Math.ceil(total / 50))} onChange={setPage} /></DataState><Modal open={Boolean(ticket)} onOpenChange={(open) => { if (!open) setTicket(null); }} title="Ticket canónico" footer={<>{ticket?.cancellation ? <Badge tone="neutral">Venta cancelada</Badge> : permissions.includes("cancel_sales") ? <Button variant="danger" onClick={() => setCancellationReason("")}>Cancelar venta</Button> : null}<Button variant="secondary" loading={ticketDownloading} onClick={() => void downloadHistoricalTicket()}><Download size={15} /> Imprimir ticket</Button><Button onClick={() => setTicket(null)}>Cerrar</Button></>}><TicketPreview ticket={ticket?.payload ?? null} />{ticket?.cancellation && <p className="settings-note">Cancelada: {ticket.cancellation.reason} · {dateTime(ticket.cancellation.cancelled_at)}</p>}</Modal><Modal open={cancellationReason !== null} onOpenChange={(open) => { if (!open && !cancelling) setCancellationReason(null); }} eyebrow="Reversa auditada" title="Cancelar venta" description="Se devolverá el inventario y se generará la póliza inversa. El ticket original permanecerá inmutable." footer={<><Button disabled={cancelling} onClick={() => setCancellationReason(null)}>Volver</Button><Button variant="danger" loading={cancelling} disabled={!cancellationReason?.trim()} onClick={() => void cancelSale()}>Confirmar cancelación</Button></>}><label className="operation-reason">Motivo obligatorio<textarea rows={4} value={cancellationReason ?? ""} onChange={(event) => setCancellationReason(event.target.value)} placeholder="Ej. Venta de prueba controlada" /></label></Modal></div>;
+  return <div className="content-frame"><PageTitle eyebrow="Documentos inmutables" title="Ventas" description="Consulta tickets canónicos; los resultados siempre se resuelven y paginan en el servidor." />{permissions.includes("approve_discount") && approvals.length > 0 && <section className="discount-approvals"><header><strong>Descuentos pendientes</strong><Badge tone="warning">{approvals.length}</Badge></header>{approvals.map((approval) => <article key={approval.id}><span><strong>{approval.requested_percent}% · {approval.scope === "sale" ? "Venta" : "Línea"}</strong><small>{approval.requested_reason} · {dateTime(approval.created_at)}</small></span><div><Button size="sm" variant="ghost" onClick={() => void decideDiscount(approval.id, false)}>Rechazar</Button><Button size="sm" variant="primary" onClick={() => void decideDiscount(approval.id, true)}>Aprobar</Button></div></article>)}</section>}<DataToolbar search={query} onSearchChange={(value) => { setQuery(value); setPage(1); }} placeholder="Buscar folio o cliente" results={total} /><DataRefreshStatus loading={loading} hasData={rows.length}/><DataState loading={loading&&rows.length===0} error={error} errorAction={<Button size="sm" onClick={()=>void load()}>Reintentar</Button>} hasData={rows.length} emptyTitle={query?"No encontramos ventas.":"Aún no hay ventas."} empty={query?"Cambia o limpia la búsqueda para ampliar los resultados.":"Las ventas confirmadas aparecerán aquí."}><div className="sales-history">{rows.map((row) => <button key={row.sale_id} onClick={() => void openTicket(row.sale_id)}><span><strong>{row.folio}</strong><small>{row.customer_name ?? "Venta de mostrador"} · {dateTime(row.completed_at)}</small></span><span><Badge tone={row.sale_type === "credit" ? "warning" : "success"}>{row.sale_type === "credit" ? "Crédito" : "Contado"}</Badge><b>{money(row.total_amount, row.currency_code)}</b></span></button>)}</div><SettingsPagination page={page} totalPages={Math.max(1, Math.ceil(total / 50))} onChange={setPage} /></DataState><Modal open={Boolean(ticket)} onOpenChange={(open) => { if (!open) setTicket(null); }} title="Ticket canónico" footer={<>{ticket?.cancellation ? <Badge tone="neutral">Venta cancelada</Badge> : permissions.includes("cancel_sales") ? <Button variant="danger" onClick={() => setCancellationReason("")}>Cancelar venta</Button> : null}<Button variant="secondary" loading={ticketDownloading} onClick={() => void printHistoricalTicket()}><Printer size={15} /> Imprimir ticket</Button><Button onClick={() => setTicket(null)}>Cerrar</Button></>}><TicketPreview ticket={ticket?.payload ?? null} />{ticket?.cancellation && <p className="settings-note">Cancelada: {ticket.cancellation.reason} · {dateTime(ticket.cancellation.cancelled_at)}</p>}</Modal><Modal open={cancellationReason !== null} onOpenChange={(open) => { if (!open && !cancelling) setCancellationReason(null); }} eyebrow="Reversa auditada" title="Cancelar venta" description="Se devolverá el inventario y se generará la póliza inversa. El ticket original permanecerá inmutable." footer={<><Button disabled={cancelling} onClick={() => setCancellationReason(null)}>Volver</Button><Button variant="danger" loading={cancelling} disabled={!cancellationReason?.trim()} onClick={() => void cancelSale()}>Confirmar cancelación</Button></>}><label className="operation-reason">Motivo obligatorio<textarea rows={4} value={cancellationReason ?? ""} onChange={(event) => setCancellationReason(event.target.value)} placeholder="Ej. Venta de prueba controlada" /></label></Modal></div>;
 }
 
 export function CustomersView({ companyId, permissions }: { companyId: string; permissions: string[] }) {
@@ -642,8 +729,36 @@ export function CustomerMasterView({ companyId, customerId, permissions }: { com
 }
 
 export function ReceivablesView({ companyId }: { companyId: string }) {
-  const { toast } = useToast(); const { context, loading: contextLoading, error: contextError } = usePosContext(companyId);
-  const [query, setQuery] = useState(""); const [priority, setPriority] = useState<"largest_balance" | "most_overdue" | "due_first">("largest_balance"); const [summary, setSummary] = useState<{ total_outstanding:number; overdue:number; due_next_7_days:number; customers:number } | null>(null); const [integrity, setIntegrity] = useState<{ duplicate_document_keys:number; duplicate_sales:number; duplicate_imported_customer_keys:number } | null>(null); const [customers, setCustomers] = useState<Customer[]>([]); const [customerTotal, setCustomerTotal] = useState(0); const [customerPage, setCustomerPage] = useState(1); const [customerLoading, setCustomerLoading] = useState(true); const [customerLoadingMore, setCustomerLoadingMore] = useState(false); const [selected, setSelected] = useState<Customer | null>(null); const [methodId, setMethodId] = useState(""); const [amount, setAmount] = useState(""); const [paymentReference, setPaymentReference] = useState(""); const [documents, setDocuments] = useState<ReceivableDocument[]>([]); const [documentTotal, setDocumentTotal] = useState(0); const [documentPage, setDocumentPage] = useState(1); const [documentQuery, setDocumentQuery] = useState(""); const [documentDue, setDocumentDue] = useState("all"); const [preview, setPreview] = useState<FifoPreview[]>([]); const [documentsLoading, setDocumentsLoading] = useState(false); const [busy, setBusy] = useState(false); const [receipt, setReceipt] = useState<ReceivableReceipt | null>(null); const customerRequestRef = useRef(0); const idempotency = useRef(new OperationIdempotencyKeys()).current;
+  const { toast } = useToast();
+  const { context, loading: contextLoading, error: contextError } = usePosContext(companyId);
+  const [query, setQuery] = useState("");
+  const [priority, setPriority] = useState<"largest_balance" | "smallest_balance" | "most_overdue" | "least_overdue" | "due_first">("largest_balance");
+  const [summary, setSummary] = useState<{ total_outstanding: number; overdue: number; due_next_7_days: number; customers: number } | null>(null);
+  const [integrity, setIntegrity] = useState<{ duplicate_document_keys: number; duplicate_sales: number; duplicate_imported_customer_keys: number } | null>(null);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customerTotal, setCustomerTotal] = useState(0);
+  const [customerPage, setCustomerPage] = useState(1);
+  const [customerLoading, setCustomerLoading] = useState(true);
+  const [customerLoadingMore, setCustomerLoadingMore] = useState(false);
+  const [selected, setSelected] = useState<Customer | null>(null);
+  const [customerContext, setCustomerContext] = useState<ReceivableCustomerContext | null>(null);
+  const [customerContextLoading, setCustomerContextLoading] = useState(false);
+  const [customerContextError, setCustomerContextError] = useState<string | null>(null);
+  const [methodId, setMethodId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [paymentReference, setPaymentReference] = useState("");
+  const [documents, setDocuments] = useState<ReceivableDocument[]>([]);
+  const [documentTotal, setDocumentTotal] = useState(0);
+  const [documentPage, setDocumentPage] = useState(1);
+  const [documentQuery, setDocumentQuery] = useState("");
+  const [documentDue, setDocumentDue] = useState("all");
+  const [preview, setPreview] = useState<FifoPreview[]>([]);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [receipt, setReceipt] = useState<ReceivableReceipt | null>(null);
+  const customerRequestRef = useRef(0);
+  const idempotency = useRef(new OperationIdempotencyKeys()).current;
+
   const loadReceivableCustomers = useCallback(async (requestedPage: number, append: boolean, requestedQuery = query) => {
     const request = ++customerRequestRef.current;
     if (append) setCustomerLoadingMore(true); else { setCustomerLoading(true); setCustomerLoadingMore(false); }
@@ -653,7 +768,7 @@ export function ReceivablesView({ companyId }: { companyId: string }) {
       if (!append) { setCustomers([]); setCustomerTotal(0); setCustomerPage(1); }
       toast({ title: append ? "No se pudieron cargar más clientes" : "No se pudieron cargar las cuentas por cobrar", description: rpcError(loadError, "Los resultados ya visibles permanecen sin cambios."), tone: "error" });
     } else {
-      const result = data as { items?: Customer[]; total?: number; page?: number } | null;
+      const result = data as { items?: Customer[]; total?: number; page?: number; summary?: typeof summary } | null;
       const nextItems = result?.items ?? [];
       setCustomers((current) => {
         if (!append) return nextItems;
@@ -661,25 +776,40 @@ export function ReceivablesView({ companyId }: { companyId: string }) {
         for (const customer of nextItems) merged.set(customer.id, customer);
         return [...merged.values()];
       });
-      setCustomerTotal(result?.total ?? 0); setSummary((result as { summary?: typeof summary })?.summary ?? null);
+      setCustomerTotal(result?.total ?? 0);
+      setSummary(result?.summary ?? null);
       setCustomerPage(result?.page ?? requestedPage);
     }
     setCustomerLoading(false); setCustomerLoadingMore(false);
   }, [companyId, priority, query, toast]);
+
   useEffect(() => { customerRequestRef.current += 1; const timer = window.setTimeout(() => { void loadReceivableCustomers(1, false); }, 120); return () => window.clearTimeout(timer); }, [loadReceivableCustomers]);
   useEffect(() => { let active = true; void getSupabaseClient().rpc("get_receivable_integrity_audit", { p_company_id: companyId }).then(({ data, error }) => { if (!active || error) return; setIntegrity(data as typeof integrity); }); return () => { active = false; }; }, [companyId]);
-  useEffect(() => {
-    const target = document.querySelector(".receivables-layout"); if (!target) return;
-    let strip = document.querySelector("#receivables-priority-strip") as HTMLElement | null;
-    if (!strip) { strip = document.createElement("section"); strip.id = "receivables-priority-strip"; strip.className = "customer-financial-summary"; target.parentElement?.insertBefore(strip, target); }
-    const hasDuplicates = Boolean((integrity?.duplicate_document_keys ?? 0) + (integrity?.duplicate_sales ?? 0) + (integrity?.duplicate_imported_customer_keys ?? 0));
-    const integrityText = hasDuplicates ? "Se detectaron duplicados: revisión requerida." : integrity ? "Saldos verificados: sin duplicados." : "Verificando saldos…";
-    strip.innerHTML = `<span>Saldo total<strong>${money(summary?.total_outstanding)}</strong></span><span>Vencido<strong>${money(summary?.overdue)}</strong></span><span>Próximos 7 días<strong>${money(summary?.due_next_7_days)}</strong></span><span>${integrityText}</span><label>Priorizar<select aria-label="Priorizar cobranza"><option value="largest_balance">Mayor saldo</option><option value="most_overdue">Más vencido</option><option value="due_first">Vence primero</option></select></label>`;
-    const select = strip.querySelector("select"); if (select) { select.value = priority; select.onchange = () => { setPriority(select.value as typeof priority); setCustomerPage(1); }; }
-    return () => { strip?.remove(); };
-  }, [integrity, priority, summary]);
   useEffect(() => { if (context) void Promise.resolve().then(() => setMethodId((current) => context.payment_methods.some((method) => method.id === current) ? current : context.payment_methods[0]?.id ?? "")); }, [context]);
-  const method = context?.payment_methods.find((item) => item.id === methodId) ?? null; const cashSession = context?.own_open_session?.status === "open" ? context.own_open_session : null;
+
+  const method = context?.payment_methods.find((item) => item.id === methodId) ?? null;
+  const cashSession = context?.own_open_session?.status === "open" ? context.own_open_session : null;
+  const hasIntegrityIssues = Boolean((integrity?.duplicate_document_keys ?? 0) + (integrity?.duplicate_sales ?? 0) + (integrity?.duplicate_imported_customer_keys ?? 0));
+  const debtorItemStyle = { display: "grid", gap: 4, minWidth: 0, border: "1px solid var(--line)", borderRadius: "var(--radius-md)", background: "var(--surface-subtle)", padding: "12px 13px" } as const;
+  const debtorLabelStyle = { color: "var(--muted)", fontSize: 10, fontWeight: 650, letterSpacing: ".04em", textTransform: "uppercase" as const };
+  const debtorValueStyle = { color: "var(--ink)", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const };
+  const debtorHelpStyle = { color: "var(--muted)", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const };
+
+  useEffect(() => {
+    if (!selected) return;
+    let active = true;
+    void Promise.resolve().then(async () => {
+      if (!active) return;
+      setCustomerContextLoading(true); setCustomerContextError(null);
+      const { data, error } = await getSupabaseClient().rpc("get_receivable_customer_context", { p_company_id: companyId, p_customer_id: selected.id });
+      if (!active) return;
+      setCustomerContextLoading(false);
+      if (error) { setCustomerContext(null); setCustomerContextError(rpcError(error, "No se pudo cargar la ficha del cliente.")); }
+      else setCustomerContext(data as ReceivableCustomerContext);
+    });
+    return () => { active = false; };
+  }, [companyId, selected]);
+
   useEffect(() => {
     if (!selected) return;
     let active = true;
@@ -690,6 +820,7 @@ export function ReceivablesView({ companyId }: { companyId: string }) {
     }); }, 150);
     return () => { active = false; window.clearTimeout(timer); };
   }, [companyId, documentDue, documentPage, documentQuery, selected, toast]);
+
   useEffect(() => {
     const numericAmount = Number(amount);
     if (!selected || !Number.isFinite(numericAmount) || numericAmount <= 0) return;
@@ -697,6 +828,7 @@ export function ReceivablesView({ companyId }: { companyId: string }) {
     const timer = window.setTimeout(() => { void getSupabaseClient().rpc("preview_receivable_payment_fifo", { p_company_id: companyId, p_customer_id: selected.id, p_amount: numericAmount }).then(({ data, error }) => { if (!active) return; setPreview(error ? [] : (data ?? []) as FifoPreview[]); }); }, 220);
     return () => { active = false; window.clearTimeout(timer); };
   }, [amount, companyId, selected]);
+
   async function recordPayment(event: React.FormEvent) {
     event.preventDefault(); if (!selected || !method) return;
     if (method.settlement_kind === "cash_drawer" && !cashSession) { toast({ title: "Abre una caja", description: "Un abono en efectivo requiere una sesión propia abierta.", tone: "error" }); return; }
@@ -705,15 +837,55 @@ export function ReceivablesView({ companyId }: { companyId: string }) {
     const operationFingerprint = JSON.stringify({ companyId, customerId: selected.id, methodId: method.id, amount: Number(amount), cashSessionId: method.settlement_kind === "cash_drawer" ? cashSession?.id : null, paymentReference: paymentReference.trim() || null });
     const { data, error } = await getSupabaseClient().rpc("record_receivable_payment", { p_company_id: companyId, p_customer_id: selected.id, p_payment_method_id: method.id, p_amount: Number(amount), p_cash_session_id: method.settlement_kind === "cash_drawer" ? cashSession?.id : null, p_client_request_id: idempotency.get("receivable-payment", operationFingerprint), p_payment_reference: paymentReference.trim() || null });
     if (error) toast({ title: "No se pudo registrar el abono", description: rpcError(error, "Verifica el saldo y la forma de pago."), tone: "error" });
-    else { idempotency.clear("receivable-payment"); const result = data as { receipt?: ReceivableReceipt }; setReceipt(result.receipt ?? null); toast({ title: "Abono aplicado", description: "La aplicación FIFO y el recibo quedaron guardados.", tone: "success" }); setAmount(""); setPaymentReference(""); setPreview([]); setSelected(null); setQuery(""); await loadReceivableCustomers(1, false, ""); }
+    else {
+      idempotency.clear("receivable-payment"); const result = data as { receipt?: ReceivableReceipt };
+      setReceipt(result.receipt ?? null); toast({ title: "Abono aplicado", description: "La aplicación FIFO y el recibo quedaron guardados.", tone: "success" });
+      setAmount(""); setPaymentReference(""); setPreview([]); setSelected(null); setCustomerContext(null); setCustomerContextError(null); setQuery(""); await loadReceivableCustomers(1, false, "");
+    }
     setBusy(false);
   }
-  if (contextLoading) return <div className="content-frame"><DataState loading error={null} hasData={0} empty="">{null}</DataState></div>; if (contextError || !context) return <div className="content-frame"><DataState loading={false} error={contextError ?? "No se pudo cargar cuentas por cobrar."} hasData={0} empty="">{null}</DataState></div>;
-  return <div className="content-frame">
-    <PageTitle eyebrow="Cobranza" title="Cuentas por cobrar" description="Consulta documentos abiertos y confirma cómo se aplicará cada pago antes de registrarlo." />
+
+  function selectCustomer(customer: Customer) {
+    setSelected(customer); setCustomerContext(null); setCustomerContextError(null); setDocuments([]); setDocumentTotal(0); setDocumentPage(1); setDocumentQuery(""); setDocumentDue("all"); setPreview([]); setDocumentsLoading(true);
+  }
+
+  if (contextLoading) return <div className="content-frame"><DataState loading error={null} hasData={0} empty="">{null}</DataState></div>;
+  if (contextError || !context) return <div className="content-frame"><DataState loading={false} error={contextError ?? "No se pudo cargar cuentas por cobrar."} hasData={0} empty="">{null}</DataState></div>;
+
+  return <div className="content-frame receivables-page">
+    <PageTitle eyebrow="Cobranza" title="Cuentas por cobrar" description="Localiza al cliente con saldo pendiente, confirma sus datos de cobranza y registra el abono con aplicación FIFO." />
+    <section className="receivables-overview" aria-label="Resumen de cobranza" style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12, marginBottom: 20 }}>
+      <article style={{ display: "grid", gap: 5, border: "1px solid var(--line)", borderRadius: "var(--radius-lg)", background: "var(--surface)", padding: "14px 16px" }}><span>Saldo total</span><strong>{money(summary?.total_outstanding)}</strong><small>{summary?.customers ?? 0} clientes con saldo pendiente</small></article>
+      <article style={{ display: "grid", gap: 5, border: "1px solid var(--line)", borderRadius: "var(--radius-lg)", background: "var(--surface)", padding: "14px 16px" }}><span>Vencido</span><strong>{money(summary?.overdue)}</strong><small>requiere seguimiento prioritario</small></article>
+      <article style={{ display: "grid", gap: 5, border: "1px solid var(--line)", borderRadius: "var(--radius-lg)", background: "var(--surface)", padding: "14px 16px" }}><span>Vence en 7 días</span><strong>{money(summary?.due_next_7_days)}</strong><small>preparar recordatorio</small></article>
+      <article className={hasIntegrityIssues ? "is-warning" : ""} style={{ display: "grid", gap: 5, border: `1px solid ${hasIntegrityIssues ? "#ecd79f" : "var(--line)"}`, borderRadius: "var(--radius-lg)", background: hasIntegrityIssues ? "var(--warning-soft)" : "var(--surface)", padding: "14px 16px" }}><span>Integridad</span><strong>{hasIntegrityIssues ? "Revisar" : integrity ? "Verificado" : "Validando"}</strong><small>{hasIntegrityIssues ? "Hay duplicados que requieren revisión." : integrity ? "Sin duplicados detectados." : "Comprobando saldos."}</small></article>
+    </section>
     <div className="receivables-layout">
-      <section className="receivables-search"><label>Buscar cliente con saldo<Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nombre, código, teléfono o correo" /></label><small className="settings-note">{customerLoading ? "Buscando…" : `${customers.length} de ${customerTotal} clientes con saldo`}</small><div>{customers.length ? customers.map((customer) => <button className={selected?.id === customer.id ? "is-selected" : ""} key={customer.id} onClick={() => { setSelected(customer); setDocuments([]); setDocumentTotal(0); setDocumentPage(1); setDocumentQuery(""); setDocumentDue("all"); setPreview([]); setDocumentsLoading(true); }}><span><strong>{customer.display_name}</strong><small>{customer.code}</small></span><b>{money(customer.outstanding_amount)}</b></button>) : !customerLoading && <p>Sin clientes con saldo para esta búsqueda.</p>}{!customerLoading && customers.length < customerTotal && <Button className="receivables-load-more" variant="secondary" loading={customerLoadingMore} onClick={() => void loadReceivableCustomers(customerPage + 1, true)}>Cargar más clientes</Button>}</div></section>
-      <section className="receivables-payment"><h2>{selected ? selected.display_name : "Selecciona un cliente"}</h2>{selected && <><p>Saldo abierto: <strong>{money(selected.outstanding_amount)}</strong></p><DataToolbar search={documentQuery} onSearchChange={(value) => { setDocumentQuery(value); setDocumentPage(1); }} placeholder="Buscar referencia" filters={<Select ariaLabel="Filtrar documentos por vencimiento" value={documentDue} onValueChange={(value) => { setDocumentDue(value); setDocumentPage(1); }} options={[{ value: "all", label: "Todos" }, { value: "overdue", label: "Vencidos" }, { value: "due_7_days", label: "Vencen en 7 días" }, { value: "future", label: "Posteriores" }]} />} activeFilters={(documentQuery ? 1 : 0) + (documentDue !== "all" ? 1 : 0)} onClear={() => { setDocumentQuery(""); setDocumentDue("all"); setDocumentPage(1); }} results={documentTotal} /><div className="table-wrap surface-table receivables-documents"><table><thead><tr><th>Documento</th><th>Emisión</th><th>Vencimiento</th><th className="number-cell">Importe</th><th className="number-cell">Saldo</th></tr></thead><tbody>{documents.map((document) => <tr key={document.id}><td className="mono">{document.reference ?? "Sin referencia"}</td><td>{new Date(document.issued_at).toLocaleDateString("es-MX")}</td><td>{new Date(`${document.due_date}T12:00:00`).toLocaleDateString("es-MX")}</td><td className="number-cell">{money(document.original_amount, document.currency_code)}</td><td className="number-cell"><strong>{money(document.outstanding_amount, document.currency_code)}</strong></td></tr>)}</tbody></table>{documentsLoading && <p className="customer-master-empty">Cargando documentos…</p>}{!documentsLoading && !documents.length && <p className="customer-master-empty">Sin documentos abiertos para estos filtros.</p>}</div><Pagination page={documentPage} total={documentTotal} pageSize={25} onChange={setDocumentPage} /><form className="sales-form" onSubmit={recordPayment}><Select ariaLabel="Forma de pago del abono" value={methodId} onValueChange={setMethodId} options={context.payment_methods.map((payment) => ({ value: payment.id, label: payment.name }))} /><label>Importe<Input required min="0.01" step="0.01" inputMode="decimal" value={amount} onChange={(event) => { setAmount(event.target.value); setPreview([]); }} placeholder={String(selected.outstanding_amount)} /></label><label>Referencia {method?.settlement_kind === "external" ? "obligatoria" : "opcional"}<Input required={method?.settlement_kind === "external"} value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} placeholder={method?.settlement_kind === "external" ? "Transferencia, depósito o terminal" : "Nota del cobro"} /></label>{method?.settlement_kind === "cash_drawer" && <small className="settings-note">Este abono afectará la caja abierta.</small>}{preview.length > 0 && <div className="fifo-preview"><strong>Aplicación FIFO prevista</strong>{preview.map((item) => <span key={item.receivable_id}><b>{item.reference ?? "Sin referencia"}</b><small>{money(item.amount_applied)} · saldo posterior {money(item.remaining_after)}</small></span>)}</div>}<Button type="submit" variant="primary" loading={busy} disabled={!preview.length}>Registrar abono y generar recibo</Button></form></>}</section>
+      <section className="receivables-search" aria-label="Selector de clientes con saldo pendiente" style={{ gap: 10 }}>
+        <div className="receivables-search__heading" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", alignItems: "center", gap: 12 }}>
+          <div style={{ minWidth: 0 }}><h2 style={{ margin: 0, fontSize: 18 }}>Clientes con saldo pendiente</h2></div>
+          <Select ariaLabel="Priorizar cobranza" value={priority} onValueChange={(value) => { setPriority(value as typeof priority); setCustomerPage(1); }} options={[{ value: "largest_balance", label: "Mayor saldo pendiente" }, { value: "smallest_balance", label: "Menor saldo pendiente" }, { value: "most_overdue", label: "Mayor saldo vencido" }, { value: "least_overdue", label: "Menor saldo vencido" }, { value: "due_first", label: "Vencimiento más próximo" }]} style={{ width: 190, minHeight: 36 }} />
+        </div>
+        <label>Buscar cliente con saldo pendiente<Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nombre, código, teléfono o correo" /></label>
+        <small className="settings-note">{customerLoading ? "Buscando…" : `${customers.length} de ${customerTotal} clientes con saldo pendiente`}</small>
+        <div className="receivables-customer-list">
+          {customers.length ? customers.map((customer) => <button className={selected?.id === customer.id ? "is-selected" : ""} key={customer.id} onClick={() => selectCustomer(customer)}><span><strong>{customer.display_name}</strong><small>{customer.code}{customer.next_due_date ? ` · vence ${new Date(`${customer.next_due_date}T12:00:00`).toLocaleDateString("es-MX")}` : ""}</small></span><em>{customer.overdue_amount ? `Vencido ${money(customer.overdue_amount)}` : "Al corriente"}</em><b>{money(customer.outstanding_amount)}</b></button>) : !customerLoading && <p>Sin clientes con saldo pendiente para esta búsqueda.</p>}
+          {!customerLoading && customers.length < customerTotal && <Button className="receivables-load-more" variant="secondary" loading={customerLoadingMore} onClick={() => void loadReceivableCustomers(customerPage + 1, true)}>Cargar más clientes</Button>}
+        </div>
+      </section>
+      <section className="receivables-payment">
+        {!selected && <div className="receivables-empty"><strong>Selecciona un cliente con saldo pendiente</strong><p>Aquí verás sus datos de contacto, documentos abiertos y el registro de abonos.</p></div>}
+        {selected && <>
+          <header className="receivables-payment__heading" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, borderBottom: "1px solid var(--line)", paddingBottom: 14 }}><div style={{ minWidth: 0 }}><span className="eyebrow">Expediente de cobranza</span><h2 style={{ margin: "4px 0", fontSize: 21, letterSpacing: "-.03em" }}>{customerContext?.customer.display_name ?? selected.display_name}</h2><p style={{ margin: 0, color: "var(--muted)", fontSize: 12 }}>{customerContext?.customer.code ?? selected.code} · Saldo abierto <strong style={{ color: "var(--ink)" }}>{money(selected.outstanding_amount)}</strong></p></div><Link href={`/satrapy/ventas/clientes/${selected.id}`} className="receivables-customer-link" style={{ flex: "0 0 auto", border: "1px solid var(--line-strong)", borderRadius: "var(--radius-sm)", padding: "8px 10px", color: "var(--accent-strong)", fontSize: 11, fontWeight: 650, textDecoration: "none" }}>Ver cliente</Link></header>
+          {customerContextLoading && <p className="customer-master-empty">Cargando datos de contacto…</p>}
+          {customerContextError && <p className="receivables-context-error">{customerContextError}</p>}
+          {customerContext && <section className="receivables-debtor-card" aria-label="Datos para cobranza" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}><div style={debtorItemStyle}><span style={debtorLabelStyle}>Contacto principal</span><strong style={debtorValueStyle}>{customerContext.contact?.display_name ?? "Sin contacto"}</strong><small style={debtorHelpStyle}>{[customerContext.contact?.role_name, customerContext.contact?.phone, customerContext.contact?.email].filter(Boolean).join(" · ") || "Registra teléfono o correo en el cliente."}</small></div><div style={debtorItemStyle}><span style={debtorLabelStyle}>Dirección</span><strong style={debtorValueStyle}>{customerContext.address?.label ?? "Sin dirección"}</strong><small style={debtorHelpStyle}>{customerContext.address ? [customerContext.address.address_line, customerContext.address.neighborhood, customerContext.address.municipality, customerContext.address.state_name, customerContext.address.postal_code].filter(Boolean).join(", ") : "Registra una dirección en el cliente."}</small></div><div style={debtorItemStyle}><span style={debtorLabelStyle}>Condición</span><strong style={debtorValueStyle}>{customerContext.customer.credit_term_days ? `${customerContext.customer.credit_term_days} días de crédito` : "Sin plazo registrado"}</strong><small style={debtorHelpStyle}>{customerContext.customer.payment_manager ? `Encargado: ${customerContext.customer.payment_manager}` : "Sin encargado de pagos"}</small></div><div style={debtorItemStyle}><span style={debtorLabelStyle}>Saldo vencido</span><strong style={debtorValueStyle}>{money(customerContext.summary.overdue_amount)}</strong><small style={debtorHelpStyle}>{customerContext.summary.overdue_count} documento(s) vencido(s)</small></div></section>}
+          <DataToolbar search={documentQuery} onSearchChange={(value) => { setDocumentQuery(value); setDocumentPage(1); }} placeholder="Buscar referencia" filters={<Select ariaLabel="Filtrar documentos por vencimiento" value={documentDue} onValueChange={(value) => { setDocumentDue(value); setDocumentPage(1); }} options={[{ value: "all", label: "Todos" }, { value: "overdue", label: "Vencidos" }, { value: "due_7_days", label: "Vencen en 7 días" }, { value: "future", label: "Posteriores" }]} />} activeFilters={(documentQuery ? 1 : 0) + (documentDue !== "all" ? 1 : 0)} onClear={() => { setDocumentQuery(""); setDocumentDue("all"); setDocumentPage(1); }} results={documentTotal} />
+          <div className="table-wrap surface-table receivables-documents"><table><thead><tr><th>Documento</th><th>Emisión</th><th>Vencimiento</th><th className="number-cell">Importe</th><th className="number-cell">Saldo</th></tr></thead><tbody>{documents.map((document) => <tr key={document.id}><td className="mono">{document.reference ?? "Sin referencia"}</td><td>{new Date(document.issued_at).toLocaleDateString("es-MX")}</td><td>{new Date(`${document.due_date}T12:00:00`).toLocaleDateString("es-MX")}</td><td className="number-cell">{money(document.original_amount, document.currency_code)}</td><td className="number-cell"><strong>{money(document.outstanding_amount, document.currency_code)}</strong></td></tr>)}</tbody></table>{documentsLoading && <p className="customer-master-empty">Cargando documentos…</p>}{!documentsLoading && !documents.length && <p className="customer-master-empty">Sin documentos abiertos para estos filtros.</p>}</div>
+          <Pagination page={documentPage} total={documentTotal} pageSize={25} onChange={setDocumentPage} />
+          <form className="sales-form receivables-payment-form" onSubmit={recordPayment}><h3>Registrar abono</h3><Select ariaLabel="Forma de pago del abono" value={methodId} onValueChange={setMethodId} options={context.payment_methods.map((payment) => ({ value: payment.id, label: payment.name }))} /><div className="sales-form__row"><label>Importe<Input required min="0.01" step="0.01" inputMode="decimal" value={amount} onChange={(event) => { setAmount(event.target.value); setPreview([]); }} placeholder={String(selected.outstanding_amount)} /></label><label>Referencia {method?.settlement_kind === "external" ? "obligatoria" : "opcional"}<Input required={method?.settlement_kind === "external"} value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} placeholder={method?.settlement_kind === "external" ? "Transferencia, depósito o terminal" : "Nota del cobro"} /></label></div>{method?.settlement_kind === "cash_drawer" && <small className="settings-note">Este abono afectará la caja abierta.</small>}{preview.length > 0 && <div className="fifo-preview"><strong>Aplicación FIFO prevista</strong>{preview.map((item) => <span key={item.receivable_id}><b>{item.reference ?? "Sin referencia"}</b><small>{money(item.amount_applied)} · saldo posterior {money(item.remaining_after)}</small></span>)}</div>}<Button type="submit" variant="primary" loading={busy} disabled={!preview.length}>Registrar abono y generar recibo</Button></form>
+        </>}
+      </section>
     </div>
     <Modal open={Boolean(receipt)} onOpenChange={(open) => { if (!open) setReceipt(null); }} eyebrow="Recibo de cobranza" title={receipt?.folio ?? "Recibo"} description="Documento canónico guardado; sus aplicaciones no se pueden modificar." footer={<Button variant="primary" onClick={() => setReceipt(null)}>Cerrar</Button>}>{receipt && <div className="receivable-receipt"><p><span>Cliente</span><strong>{receipt.customer_name}</strong></p><p><span>Fecha</span><strong>{dateTime(receipt.issued_at)}</strong></p><p><span>Forma de pago</span><strong>{receipt.payment_method}</strong></p>{receipt.payment_reference && <p><span>Referencia</span><strong>{receipt.payment_reference}</strong></p>}<p><span>Total</span><strong>{money(receipt.amount, receipt.currency_code)}</strong></p><div>{receipt.applications.map((application, index) => <p key={`${application.reference}-${index}`}><span>{application.reference ?? "Sin referencia"}</span><strong>{money(application.amount_applied, receipt.currency_code)}</strong></p>)}</div></div>}</Modal>
   </div>;
@@ -755,7 +927,7 @@ export function SalesSettingsView({ companyId, permissions }: { companyId: strin
   const [denominationId, setDenominationId] = useState<string | null>(null); const [denominationValue, setDenominationValue] = useState(""); const [denominationName, setDenominationName] = useState(""); const [denominationActive, setDenominationActive] = useState(true);
   const [locationPriceLocationId, setLocationPriceLocationId] = useState(""); const [locationPriceListId, setLocationPriceListId] = useState("");
   const [roleId, setRoleId] = useState(""); const [discountScope, setDiscountScope] = useState("sale"); const [discountLimit, setDiscountLimit] = useState(""); const [discountValidFrom, setDiscountValidFrom] = useState(""); const [discountValidTo, setDiscountValidTo] = useState("");
-  const canPayments = permissions.includes("manage_payment_methods"); const canRegisters = permissions.includes("manage_locations"); const canPrices = permissions.includes("manage_prices"); const canDiscounts = permissions.includes("manage_discount_policies");
+  const canPayments = permissions.includes("manage_payment_methods"); const canRegisters = permissions.includes("manage_locations"); const canPrices = permissions.includes("manage_prices"); const canDiscounts = permissions.includes("manage_discount_policies"); const canTicketBranding = permissions.includes("manage_ticket_branding"); const canQuoteBranding = permissions.includes("manage_quote_branding");
   const load = useCallback(async () => {
     setLoading(true);
     const client = getSupabaseClient();
@@ -795,7 +967,7 @@ export function SalesSettingsView({ companyId, permissions }: { companyId: strin
   const search = query.trim().toLocaleLowerCase("es-MX");
   const matches = (value: string) => !search || value.toLocaleLowerCase("es-MX").includes(search);
   const discountStatus = (item: typeof discountLimits[number]) => discountLimitStatus(item.valid_from, item.valid_to);
-  const resourceRows = resource === "payments" ? payments.filter((item) => matches(`${item.display_name} ${item.code} ${item.settlement_kind}`) && matchesStatus(statusFilter, item.is_active)) : resource === "registers" ? registers.filter((item) => matches(`${item.display_name} ${item.code}`) && matchesStatus(statusFilter, item.is_active)) : resource === "denominations" ? denominations.filter((item) => matches(`${item.display_name} ${item.value}`) && matchesStatus(statusFilter, item.is_active)) : resource === "prices" ? locations.filter((item) => matches(`${item.name} ${item.external_code} ${priceListById.get(item.default_price_list_id ?? "")?.name ?? ""}`) && (statusFilter === "all" || statusFilter === "assigned" ? Boolean(item.default_price_list_id) : !item.default_price_list_id)) : discountLimits.filter((item) => matches(`${roles.find((role) => role.id === item.role_id)?.display_name ?? ""} ${item.scope} ${item.max_percent}`) && (statusFilter === "all" || discountStatus(item) === statusFilter));
+  const resourceRows = resource === "ticket" || resource === "quote" ? [] : resource === "payments" ? payments.filter((item) => matches(`${item.display_name} ${item.code} ${item.settlement_kind}`) && matchesStatus(statusFilter, item.is_active)) : resource === "registers" ? registers.filter((item) => matches(`${item.display_name} ${item.code}`) && matchesStatus(statusFilter, item.is_active)) : resource === "denominations" ? denominations.filter((item) => matches(`${item.display_name} ${item.value}`) && matchesStatus(statusFilter, item.is_active)) : resource === "prices" ? locations.filter((item) => matches(`${item.name} ${item.external_code} ${priceListById.get(item.default_price_list_id ?? "")?.name ?? ""}`) && (statusFilter === "all" || statusFilter === "assigned" ? Boolean(item.default_price_list_id) : !item.default_price_list_id)) : discountLimits.filter((item) => matches(`${roles.find((role) => role.id === item.role_id)?.display_name ?? ""} ${item.scope} ${item.max_percent}`) && (statusFilter === "all" || discountStatus(item) === statusFilter));
   const totalPages = Math.max(1, Math.ceil(resourceRows.length / SETTINGS_PAGE_SIZE)); const visibleRows = resourceRows.slice((page - 1) * SETTINGS_PAGE_SIZE, page * SETTINGS_PAGE_SIZE);
   const statusOptions = resource === "discounts" ? [{ value: "all", label: "Todos los estados" }, { value: "vigente", label: "Vigentes" }, { value: "futuro", label: "Futuros" }, { value: "vencido", label: "Vencidos" }] : resource === "prices" ? [{ value: "all", label: "Todas las ubicaciones" }, { value: "assigned", label: "Con lista asignada" }, { value: "unassigned", label: "Sin lista" }] : [{ value: "all", label: "Todos los estados" }, { value: "active", label: "Activos" }, { value: "inactive", label: "Desactivados" }];
   const resourceMeta: Record<SettingsResourceKey, { title: string; description: string; count: number; action: () => void; actionLabel: string }> = {
@@ -804,11 +976,13 @@ export function SalesSettingsView({ companyId, permissions }: { companyId: strin
     denominations: { title: "Denominaciones", description: "Catálogo de valores disponibles para aperturas, cierres y arqueos.", count: denominations.length, action: () => openDenomination(), actionLabel: "Agregar denominación" },
     prices: { title: "Listas y precios", description: "Administra listas canónicas, vigencias de precio y su asignación operativa.", count: priceLists.length, action: () => openAssignment(), actionLabel: "Asignar lista" },
     discounts: { title: "Límites de descuento", description: "Políticas append-only por rol. La venta resuelve la vigente en el servidor.", count: discountLimits.length, action: openDiscount, actionLabel: "Nuevo límite" },
+    ticket: { title: "Ticket", description: "Configura los datos visibles al imprimir.", count: 1, action: () => undefined, actionLabel: "" },
+    quote: { title: "Cotización", description: "Configura la presentación imprimible de propuestas comerciales.", count: 1, action: () => undefined, actionLabel: "" },
   };
   const meta = resourceMeta[resource];
   return <div className="content-frame"><PageTitle eyebrow="Configuración productiva" title="Ventas y caja" description="Administra la configuración comercial sin alterar reglas, permisos ni comportamiento operativo." /><div className="settings-workspace">
-    <nav className="settings-resource-nav" aria-label="Módulos de configuración">{canPayments && <button className={resource === "payments" ? "is-active" : ""} onClick={() => changeResource("payments")}>Formas de pago <span>{payments.length}</span></button>}{canRegisters && <button className={resource === "registers" ? "is-active" : ""} onClick={() => changeResource("registers")}>Cajas <span>{registers.length}</span></button>}{canPayments && <button className={resource === "denominations" ? "is-active" : ""} onClick={() => changeResource("denominations")}>Denominaciones <span>{denominations.length}</span></button>}{canPrices && <button className={resource === "prices" ? "is-active" : ""} onClick={() => changeResource("prices")}>Listas y precios <span>{priceLists.length}</span></button>}{canDiscounts && <button className={resource === "discounts" ? "is-active" : ""} onClick={() => changeResource("discounts")}>Límites de descuento <span>{discountLimits.length}</span></button>}</nav>
-    {resource === "prices" ? <PriceCatalogManagement companyId={companyId} locations={locations} onAssignLocation={openAssignment} onChanged={load} /> : <SettingsResource title={meta.title} description={meta.description} count={meta.count} action={meta.action} actionLabel={meta.actionLabel}><DataToolbar search={query} onSearchChange={setQuery} placeholder={`Buscar en ${meta.title.toLocaleLowerCase("es-MX")}`} filters={<Select ariaLabel="Filtrar registros" value={statusFilter} onValueChange={setStatusFilter} options={statusOptions} />} activeFilters={statusFilter === "all" ? 0 : 1} onClear={() => setStatusFilter("all")} results={resourceRows.length} /><DataState loading={false} error={loadError} hasData={resourceRows.length} empty={emptySettingsMessage(resource)} emptyAction={<Button size="sm" variant="primary" onClick={meta.action}>{meta.actionLabel}</Button>} errorAction={<Button size="sm" variant="secondary" onClick={() => void load()}>Reintentar</Button>}>
+    <nav className="settings-resource-nav" aria-label="Módulos de configuración">{canPayments && <button className={resource === "payments" ? "is-active" : ""} onClick={() => changeResource("payments")}>Formas de pago <span>{payments.length}</span></button>}{canRegisters && <button className={resource === "registers" ? "is-active" : ""} onClick={() => changeResource("registers")}>Cajas <span>{registers.length}</span></button>}{canPayments && <button className={resource === "denominations" ? "is-active" : ""} onClick={() => changeResource("denominations")}>Denominaciones <span>{denominations.length}</span></button>}{canPrices && <button className={resource === "prices" ? "is-active" : ""} onClick={() => changeResource("prices")}>Listas y precios <span>{priceLists.length}</span></button>}{canDiscounts && <button className={resource === "discounts" ? "is-active" : ""} onClick={() => changeResource("discounts")}>Límites de descuento <span>{discountLimits.length}</span></button>}{canTicketBranding && <button className={resource === "ticket" ? "is-active" : ""} onClick={() => changeResource("ticket")}>Ticket</button>}{canQuoteBranding && <button className={resource === "quote" ? "is-active" : ""} onClick={() => changeResource("quote")}>Cotización</button>}</nav>
+    {resource === "ticket" ? <TicketBrandingSettings companyId={companyId} /> : resource === "quote" ? <QuoteBrandingSettings companyId={companyId} /> : resource === "prices" ? <PriceCatalogManagement companyId={companyId} locations={locations} onAssignLocation={openAssignment} onChanged={load} /> : <SettingsResource title={meta.title} description={meta.description} count={meta.count} action={meta.action} actionLabel={meta.actionLabel}><DataToolbar search={query} onSearchChange={setQuery} placeholder={`Buscar en ${meta.title.toLocaleLowerCase("es-MX")}`} filters={<Select ariaLabel="Filtrar registros" value={statusFilter} onValueChange={setStatusFilter} options={statusOptions} />} activeFilters={statusFilter === "all" ? 0 : 1} onClear={() => setStatusFilter("all")} results={resourceRows.length} /><DataState loading={false} error={loadError} hasData={resourceRows.length} empty={emptySettingsMessage(resource)} emptyAction={<Button size="sm" variant="primary" onClick={meta.action}>{meta.actionLabel}</Button>} errorAction={<Button size="sm" variant="secondary" onClick={() => void load()}>Reintentar</Button>}>
       {resource === "payments" && <SettingsTable><thead><tr><th>Forma de pago</th><th>Liquidación</th><th>Estado</th><th aria-label="Acciones" /></tr></thead><tbody>{(visibleRows as typeof payments).map((item) => <tr key={item.id}><td><strong>{item.display_name}</strong><small className="mono">{item.code}</small></td><td><Badge tone={item.settlement_kind === "cash_drawer" ? "success" : "neutral"}>{item.settlement_kind === "cash_drawer" ? "Afecta caja" : "Externo"}</Badge></td><td><StatusBadge active={item.is_active} /></td><td><RowActions onEdit={() => openPayment(item)} onToggle={() => requestPaymentToggle(item)} active={item.is_active} /></td></tr>)}</tbody></SettingsTable>}
       {resource === "registers" && <SettingsTable><thead><tr><th>Caja</th><th>Ubicación</th><th>Estado</th><th aria-label="Acciones" /></tr></thead><tbody>{(visibleRows as typeof registers).map((item) => <tr key={item.id}><td><strong>{item.display_name}</strong><small className="mono">{item.code} · {item.currency_code}</small></td><td>{locations.find((location) => location.id === item.location_id)?.name ?? "Ubicación no disponible"}</td><td><StatusBadge active={item.is_active} /></td><td><RowActions onEdit={() => openRegister(item)} onToggle={() => requestRegisterToggle(item)} active={item.is_active} /></td></tr>)}</tbody></SettingsTable>}
       {resource === "denominations" && <SettingsTable><thead><tr><th>Denominación</th><th className="number-cell">Valor</th><th>Estado</th><th aria-label="Acciones" /></tr></thead><tbody>{(visibleRows as typeof denominations).map((item) => <tr key={item.id}><td><strong>{item.display_name}</strong><small>{item.currency_code}</small></td><td className="number-cell">{money(item.value, item.currency_code)}</td><td><StatusBadge active={item.is_active} /></td><td><RowActions onEdit={() => openDenomination(item)} onToggle={() => requestDenominationToggle(item)} active={item.is_active} /></td></tr>)}</tbody></SettingsTable>}
@@ -816,7 +990,7 @@ export function SalesSettingsView({ companyId, permissions }: { companyId: strin
       <SettingsPagination page={page} totalPages={totalPages} onChange={setPage} />
     </DataState></SettingsResource>}
   </div>
-  <Drawer open={drawer === "payment"} onOpenChange={(open) => !open && closeDrawer()} title={paymentId ? "Editar forma de pago" : "Nueva forma de pago"}><SettingsDrawerIntro text="Alta manual pensada para pocos medios de pago. Cada cambio queda auditado." /><form className="sales-form" onSubmit={submitPayment}><label>Código<Input required value={paymentCode} onChange={(event) => setPaymentCode(event.target.value)} placeholder="EFECTIVO" /></label><label>Nombre<Input required value={paymentName} onChange={(event) => setPaymentName(event.target.value)} placeholder="Efectivo" /></label><Select ariaLabel="Liquidación" value={paymentKind} onValueChange={setPaymentKind} options={[{ value: "cash_drawer", label: "Afecta caja" }, { value: "external", label: "Externo" }]} /><label className="sales-checkbox"><input type="checkbox" checked={paymentActive} onChange={(event) => setPaymentActive(event.target.checked)} /> Activa para nuevas ventas</label><Button type="submit" variant="primary" loading={saving}>Guardar forma de pago</Button></form></Drawer>
+  <Drawer open={drawer === "payment"} onOpenChange={(open) => !open && closeDrawer()} title={paymentId ? "Editar forma de pago" : "Nueva forma de pago"}><SettingsDrawerIntro text="Alta manual pensada para pocos medios de pago. Cada cambio queda auditado." /><form className="sales-form" onSubmit={submitPayment}><label>Código<Input required value={paymentCode} onChange={(event) => setPaymentCode(event.target.value)} placeholder="EFECTIVO" /></label><label>Nombre<Input required value={paymentName} onChange={(event) => setPaymentName(event.target.value)} placeholder="Efectivo" /></label><Select ariaLabel="Liquidación" value={paymentKind} onValueChange={setPaymentKind} options={[{ value: "cash_drawer", label: "Afecta caja" }, { value: "external", label: "Externo (tarjeta, transferencia o terminal)" }]} /><label className="sales-checkbox"><input type="checkbox" checked={paymentActive} onChange={(event) => setPaymentActive(event.target.checked)} /> Activa para nuevas ventas</label><Button type="submit" variant="primary" loading={saving}>Guardar forma de pago</Button></form></Drawer>
   <Drawer open={drawer === "register"} onOpenChange={(open) => !open && closeDrawer()} title={registerEditId ? "Editar caja" : "Nueva caja"}><SettingsDrawerIntro text="Una caja representa un cajón físico por ubicación. Para volúmenes altos, configura desde una carga controlada." /><form className="sales-form" onSubmit={submitRegister}><Select ariaLabel="Ubicación de caja" value={registerLocationId} onValueChange={setRegisterLocationId} options={locationOptions} /><label>Código<Input required value={registerCode} onChange={(event) => setRegisterCode(event.target.value)} placeholder="CAJA-01" /></label><label>Nombre<Input required value={registerName} onChange={(event) => setRegisterName(event.target.value)} placeholder="Caja principal" /></label><label className="sales-checkbox"><input type="checkbox" checked={registerActive} onChange={(event) => setRegisterActive(event.target.checked)} /> Disponible para nuevas sesiones</label><Button type="submit" variant="primary" loading={saving}>Guardar caja</Button></form></Drawer>
   <Drawer open={drawer === "denomination"} onOpenChange={(open) => !open && closeDrawer()} title={denominationId ? "Editar denominación" : "Agregar denominación"}><SettingsDrawerIntro text="El catálogo se usa en conteos de caja. Las operaciones anteriores no se modifican." /><form className="sales-form" onSubmit={submitDenomination}><label>Valor<Input required inputMode="decimal" value={denominationValue} onChange={(event) => setDenominationValue(event.target.value)} placeholder="100" /></label><label>Nombre<Input required value={denominationName} onChange={(event) => setDenominationName(event.target.value)} placeholder="$100" /></label><label className="sales-checkbox"><input type="checkbox" checked={denominationActive} onChange={(event) => setDenominationActive(event.target.checked)} /> Disponible en nuevos conteos</label><Button type="submit" variant="primary" loading={saving}>Guardar denominación</Button></form></Drawer>
   <Drawer open={drawer === "assignment"} onOpenChange={(open) => !open && closeDrawer()} title="Asignar lista por ubicación"><SettingsDrawerIntro text="La asignación afecta precios disponibles para nuevas ventas en esa ubicación; no modifica ventas confirmadas." /><form className="sales-form" onSubmit={assignPriceList}><Select ariaLabel="Ubicación" value={locationPriceLocationId} onValueChange={setLocationPriceLocationId} options={locationOptions} /><Select ariaLabel="Lista de precios" value={locationPriceListId} onValueChange={setLocationPriceListId} options={priceLists.map((list) => ({ value: list.id, label: `${list.name} · ${list.currency_code}` }))} /><Button type="submit" variant="primary" loading={saving}>Guardar asignación</Button></form></Drawer>
@@ -825,7 +999,7 @@ export function SalesSettingsView({ companyId, permissions }: { companyId: strin
   </div>;
 }
 
-type SettingsResourceKey = "payments" | "registers" | "denominations" | "prices" | "discounts";
+type SettingsResourceKey = "payments" | "registers" | "denominations" | "prices" | "discounts" | "ticket" | "quote";
 type SettingsDrawer = "payment" | "register" | "denomination" | "assignment" | "discount";
 type SettingsConfirmation = { title: string; description: string; confirmLabel: string; tone: "primary" | "danger"; onConfirm: () => Promise<void> };
 const SETTINGS_PAGE_SIZE = 12;
@@ -857,6 +1031,6 @@ function salesAuditDetail(metadata: Record<string, unknown>) { const pairs = Obj
 
 function DenominationCount({ denominations, counts, onChange, currency }: { denominations: Array<{ id: string; value: number; display_name: string }>; counts: Record<string, string>; onChange: (counts: Record<string, string>) => void; currency: string }) { return <div className="denomination-list">{denominations.length ? denominations.map((denomination) => <label key={denomination.id}><span>{denomination.display_name || money(denomination.value, currency)}<small>{money(denomination.value, currency)}</small></span><Input inputMode="numeric" value={counts[denomination.id] ?? ""} onChange={(event) => onChange({ ...counts, [denomination.id]: event.target.value.replace(/[^0-9]/g, "") })} placeholder="0" /></label>) : <p>Configura denominaciones activas antes de abrir o cerrar esta caja.</p>}</div>; }
 
-function TicketPreview({ ticket }: { ticket: Record<string, unknown> | null | undefined }) { if (!ticket) return null; const sale = ticket.sale as { total_amount?: number; currency_code?: string; customer?: { display_name?: string } | null } | undefined; const payment = ticket.payment as { method_code?: string; received_amount?: number; change_amount?: number; type?: string } | undefined; const items = (ticket.items ?? []) as Array<{ product_name?: string; quantity?: number; total_amount?: number }>; const renderItem=(item:{product_name?:string;quantity?:number;total_amount?:number},key:number)=><p key={key}><span>{item.quantity} × {item.product_name}</span><b>{money(item.total_amount,sale?.currency_code)}</b></p>; return <div className="ticket-preview"><div><strong>{String(ticket.folio ?? "")}</strong><span>{sale?.customer?.display_name ?? "Venta de mostrador"}</span><span>{ticket.issued_at ? dateTime(String(ticket.issued_at)) : ""}</span></div><div className="ticket-screen-items"><PagedCollection items={items} resetKey={String(ticket.folio ?? "")} label="partidas">{(visibleItems,startIndex)=><>{visibleItems.map((item,index)=>renderItem(item,startIndex+index))}</>}</PagedCollection></div><footer>Total <strong>{money(sale?.total_amount, sale?.currency_code)}</strong></footer>{payment?.method_code && <p className="ticket-preview__payment"><span>Pago: {payment.method_code}</span><b>{payment.received_amount != null ? money(payment.received_amount, sale?.currency_code) : ""}</b></p>}{Number(payment?.change_amount ?? 0) > 0 && <p className="ticket-preview__change"><span>Cambio</span><b>{money(payment?.change_amount, sale?.currency_code)}</b></p>}</div>; }
+function TicketPreview({ ticket }: { ticket: Record<string, unknown> | null | undefined }) { if (!ticket) return null; const sale = ticket.sale as { total_amount?: number; currency_code?: string; customer?: { display_name?: string } | null } | undefined; const payment = ticket.payment as { method_code?: string; received_amount?: number; change_amount?: number; reference?: string; type?: string } | undefined; const items = (ticket.items ?? []) as Array<{ product_name?: string; quantity?: number; total_amount?: number }>; const renderItem=(item:{product_name?:string;quantity?:number;total_amount?:number},key:number)=><p key={key}><span>{item.quantity} × {item.product_name}</span><b>{money(item.total_amount,sale?.currency_code)}</b></p>; return <div className="ticket-preview"><div><strong>{String(ticket.folio ?? "")}</strong><span>{sale?.customer?.display_name ?? "Venta de mostrador"}</span><span>{ticket.issued_at ? dateTime(String(ticket.issued_at)) : ""}</span></div><div className="ticket-screen-items"><PagedCollection items={items} resetKey={String(ticket.folio ?? "")} label="partidas">{(visibleItems,startIndex)=><>{visibleItems.map((item,index)=>renderItem(item,startIndex+index))}</>}</PagedCollection></div><footer>Total <strong>{money(sale?.total_amount, sale?.currency_code)}</strong></footer>{payment?.method_code && <p className="ticket-preview__payment"><span>Pago: {payment.method_code}</span><b>{payment.received_amount != null ? money(payment.received_amount, sale?.currency_code) : ""}</b></p>}{payment?.reference && <p className="ticket-preview__payment"><span>Autorización</span><b>{payment.reference}</b></p>}{Number(payment?.change_amount ?? 0) > 0 && <p className="ticket-preview__change"><span>Cambio</span><b>{money(payment?.change_amount, sale?.currency_code)}</b></p>}</div>; }
 
 function PosEmpty({ title, description }: { title: string; description: string }) { return <section className="pos-empty"><AlertCircle size={24} /><h1>{title}</h1><p>{description}</p><div className="pos-empty__actions"><Link className="ui-button ui-button--primary ui-button--md" href="/satrapy/configuracion/ventas">Configurar ventas y caja</Link><Link className="pos-exit-link" href="/satrapy/configuracion">Volver a configuración</Link></div></section>; }

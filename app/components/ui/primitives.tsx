@@ -13,6 +13,7 @@ import {
   useMemo,
   useState,
   type ButtonHTMLAttributes,
+  type CSSProperties,
   type InputHTMLAttributes,
   type ReactNode,
 } from "react";
@@ -88,6 +89,8 @@ export function Select({
   placeholder = "Seleccionar",
   ariaLabel,
   disabled,
+  className,
+  style,
 }: {
   value: string;
   onValueChange: (value: string) => void;
@@ -95,11 +98,13 @@ export function Select({
   placeholder?: string;
   ariaLabel: string;
   disabled?: boolean;
+  className?: string;
+  style?: CSSProperties;
 }) {
   const selected = options.find((option) => option.value === value);
   return (
     <RadixSelect.Root value={value} onValueChange={onValueChange} disabled={disabled}>
-      <RadixSelect.Trigger className="ui-select" aria-label={ariaLabel}>
+      <RadixSelect.Trigger className={cx("ui-select", className)} style={style} aria-label={ariaLabel}>
         <RadixSelect.Value>{selected?.label ?? placeholder}</RadixSelect.Value>
         <RadixSelect.Icon><ChevronDown size={15} /></RadixSelect.Icon>
       </RadixSelect.Trigger>

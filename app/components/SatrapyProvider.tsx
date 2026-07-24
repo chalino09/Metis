@@ -24,6 +24,7 @@ type SatrapyContextValue = {
   loading: boolean;
   notice: string | null;
   appState: SatrapyAppState | null;
+  isSuperAdmin: boolean;
   companies: Array<{ id: string; display_name: string }>;
   accessibleLocations: LocationRow[];
   previewRole: AppRoleCode | null;
@@ -38,6 +39,7 @@ const SatrapyContext = createContext<SatrapyContextValue | null>(null);
 export function SatrapyProvider({ children }: { children: ReactNode }) {
   const configured = isSupabaseConfigured();
   const [appState, setAppState] = useState<SatrapyAppState | null>(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [companies, setCompanies] = useState<Array<{ id: string; display_name: string }>>([]);
   const [accessibleLocations, setAccessibleLocations] = useState<LocationRow[]>([]);
   const [previewRole, setPreviewRole] = useState<AppRoleCode | null>(null);
@@ -58,6 +60,7 @@ export function SatrapyProvider({ children }: { children: ReactNode }) {
   const clearIdentity = useCallback(() => {
     queryCache.clear();
     setAppState(null);
+    setIsSuperAdmin(false);
     setCompanies([]);
     setAccessibleLocations([]);
     setPreviewRole(null);
@@ -142,6 +145,7 @@ export function SatrapyProvider({ children }: { children: ReactNode }) {
       if (locationsError) throw locationsError;
 
       setCompanies(availableCompanies);
+      setIsSuperAdmin(isSuperAdmin);
       setAccessibleLocations((locationRows ?? []) as LocationRow[]);
       setAppState({
         userId: authData.user.id,
@@ -192,6 +196,7 @@ export function SatrapyProvider({ children }: { children: ReactNode }) {
     loading,
     notice,
     appState,
+    isSuperAdmin,
     companies,
     accessibleLocations,
     previewRole,
@@ -199,7 +204,7 @@ export function SatrapyProvider({ children }: { children: ReactNode }) {
     selectCompany,
     refreshAccess: async () => { queryCache.clear(); await loadSession(true); },
     queryCache,
-  }), [accessibleLocations, appState, companies, configured, loading, notice, previewRole, queryCache, selectCompany, loadSession]);
+  }), [accessibleLocations, appState, companies, configured, isSuperAdmin, loading, notice, previewRole, queryCache, selectCompany, loadSession]);
 
   return <SatrapyContext.Provider value={value}>{children}</SatrapyContext.Provider>;
 }

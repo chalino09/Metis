@@ -22,10 +22,11 @@ test("el cobro evita faltantes, muestra cambio y distingue tarjeta", () => {
   assert.match(sales, /isCashPayment && !validReceivedAmount/);
 });
 
-test("el ticket se descarga como PDF sin depender del diálogo nativo", () => {
+test("el ticket se envía al diálogo de impresión sin descargarlo", () => {
   assert.match(sales, /Imprimir ticket/);
-  assert.match(sales, /downloadTicketPdf/);
-  assert.doesNotMatch(sales, /window\.print\(\)/);
+  assert.match(sales, /printTicketPdf/);
+  assert.match(sales, /window\.open/);
+  assert.match(readFileSync("app/lib/ticket-pdf.ts", "utf8"), /target\.print\(\)/);
   assert.doesNotMatch(css, /body\.is-printing-ticket/);
   const ticketPreview = sales.slice(sales.indexOf("function TicketPreview"), sales.indexOf("function PosEmpty"));
   assert.doesNotMatch(ticketPreview, /tax_amount|Impuestos|IVA/);

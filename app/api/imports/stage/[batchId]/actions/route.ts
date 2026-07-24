@@ -15,6 +15,7 @@ type ActionBody = {
   externalCode?: string;
   semanticCode?: string;
   isDefault?: boolean;
+  assortmentIds?: string[];
 };
 
 export async function POST(request: NextRequest, context: { params: Promise<{ batchId: string }> }) {
@@ -44,6 +45,15 @@ export async function POST(request: NextRequest, context: { params: Promise<{ ba
 
 function rpcForAction(batchId: string, body: ActionBody, importType?: string) {
   if (body.action === "confirm") {
+    if (importType === "products") {
+      return {
+        name: "confirm_product_import_with_assortments",
+        parameters: {
+          p_import_batch_id: batchId,
+          p_assortment_ids: Array.isArray(body.assortmentIds) ? body.assortmentIds : [],
+        },
+      };
+    }
     return { name: ["prices", "costs"].includes(importType ?? "") ? "confirm_commercial_import" : "confirm_staged_import", parameters: { p_import_batch_id: batchId } };
   }
   if (body.action === "map_currency" && body.sourceLabel && body.currencyCode) return { name: "review_staged_currency", parameters: { p_import_batch_id: batchId, p_source_label: body.sourceLabel, p_currency_code: body.currencyCode } };

@@ -42,6 +42,8 @@ import { COMMERCIAL_ASSORTMENTS_PATH, LEGACY_POS_PREPARATION_PATH, MANAGE_ASSORT
 import { useSatrapy } from "@/app/components/SatrapyProvider";
 import { CashDeskView, CustomerMasterView, CustomersView, NewCustomerMasterView, PosSalesView, ReceivablesView, SalesAuditView, SalesHistoryView, SalesSettingsView } from "@/app/components/SalesModule";
 import { CommercialAssortmentsView } from "@/app/components/CommercialAssortmentsView";
+import { SalesQuotesView } from "@/app/components/SalesQuotesModule";
+import { SalesOrdersView } from "@/app/components/SalesOrdersModule";
 import { SuppliersView } from "@/app/components/SuppliersModule";
 import { PurchaseOrderPromotionAudit, PurchaseOrdersView } from "@/app/components/PurchaseOrdersModule";
 import { PurchaseReceiptsView } from "@/app/components/PurchaseReceiptsModule";
@@ -61,7 +63,7 @@ import type {
   RoleOption,
 } from "@/app/lib/types";
 
-type ViewName = "settings_home" | "initial_migration" | "migration" | "users_access" | "suppliers" | "purchase_orders" | "purchase_receipts" | "supplier_invoices" | "supplier_paying_accounts" | "products" | "inventory" | "inventory_counts" | "inventory_transfers" | "inventory_replenishment" | "locations" | "audit" | "sales_audit" | "assortments" | "pos" | "sales_history" | "customers" | "receivables" | "cash" | "sales_settings" | "accounting_summary" | "accounting_accounts" | "accounting_periods" | "accounting_reports" | "accounting_journals" | "accounting_events" | "accounting_banking" | "accounting_opening" | "accounting_settings";
+type ViewName = "settings_home" | "initial_migration" | "migration" | "users_access" | "suppliers" | "purchase_orders" | "purchase_receipts" | "supplier_invoices" | "supplier_paying_accounts" | "products" | "inventory" | "inventory_counts" | "inventory_transfers" | "inventory_replenishment" | "locations" | "audit" | "sales_audit" | "assortments" | "pos" | "sales_history" | "sales_quotes" | "sales_orders" | "customers" | "receivables" | "cash" | "sales_settings" | "accounting_summary" | "accounting_accounts" | "accounting_periods" | "accounting_reports" | "accounting_journals" | "accounting_events" | "accounting_banking" | "accounting_opening" | "accounting_settings";
 type AreaName = "sales" | "purchasing" | "inventory" | "accounting" | "settings";
 
 const ALL_ROLES: RoleOption[] = [
@@ -84,7 +86,7 @@ const VIEW_META: Record<ViewName, {
     icon: LayoutGrid,
     href: "/satrapy/configuracion",
     area: "settings",
-    requirement: { any: ["manage_locations","manage_company_users","import_data","import_prices","import_costs","import_accounting_opening","view_import_audit","manage_assortments","manage_supplier_paying_accounts","manage_payment_methods","manage_discount_policies","manage_prices","view_sales_audit","view_accounting","configure_accounting","view_banking"] },
+    requirement: { any: ["manage_locations","manage_company_users","import_data","import_prices","import_costs","import_accounting_opening","view_import_audit","manage_assortments","manage_supplier_paying_accounts","manage_payment_methods","manage_discount_policies","manage_prices","manage_ticket_branding","view_sales_audit","view_accounting","configure_accounting","view_banking"] },
   },
   initial_migration: {
     label: "Migración inicial",
@@ -219,6 +221,20 @@ const VIEW_META: Record<ViewName, {
     area: "sales",
     requirement: { all: ["view_sales"] },
   },
+  sales_quotes: {
+    label: "Cotizaciones",
+    icon: ClipboardCheck,
+    href: "/satrapy/ventas/cotizaciones",
+    area: "sales",
+    requirement: { all: ["view_sales_quotes"] },
+  },
+  sales_orders: {
+    label: "Órdenes de venta",
+    icon: PackageSearch,
+    href: "/satrapy/ventas/pedidos",
+    area: "sales",
+    requirement: { all: ["view_sales_orders"] },
+  },
   customers: {
     label: "Clientes",
     icon: Users,
@@ -275,7 +291,7 @@ function viewForPath(pathname: string): ViewName | undefined {
 }
 
 const NAVIGATION_SECTIONS: Array<{ id: AreaName; label: string; views: ViewName[] }> = [
-  { id: "sales", label: "Ventas", views: ["pos", "sales_history", "customers", "receivables", "cash"] },
+  { id: "sales", label: "Ventas", views: ["pos", "sales_history", "sales_quotes", "sales_orders", "customers", "receivables", "cash"] },
   { id: "purchasing", label: "Compras", views: ["suppliers", "purchase_orders", "purchase_receipts", "supplier_invoices"] },
   { id: "inventory", label: "Inventario", views: ["products", "inventory", "inventory_counts", "inventory_transfers", "inventory_replenishment"] },
   { id: "accounting", label: "Contabilidad", views: ["accounting_summary", "accounting_accounts", "accounting_reports", "accounting_periods", "accounting_journals", "accounting_events", "accounting_banking", "accounting_opening"] },
@@ -297,18 +313,17 @@ function getAllowedNavigation(permissions: string[], previewRole: AppRoleCode | 
 export function SatrapyShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { appState, companies, configured, loading, notice, previewRole, setPreviewRole, selectCompany, refreshAccess } = useSatrapy();
+  const { appState, companies, configured, isSuperAdmin, loading, notice, previewRole, setPreviewRole, selectCompany, refreshAccess } = useSatrapy();
 
   if (loading) return <LoadingScreen />;
   if (!configured) return <AccessUnavailableScreen />;
   if (!appState) return <LoginScreen notice={notice} onRetry={() => void refreshAccess()} />;
 
-  const actualRoleCodes = appState.membership.roles.map((role) => role.code);
   const { navigation: allowedNavigation, views: allowedViews } = getAllowedNavigation(appState.membership.permissions, previewRole);
   const requestedView = customerMasterId(pathname) ? "customers" : viewForPath(pathname);
   const activeView = requestedView && allowedViews.includes(requestedView) ? requestedView : allowedViews[0] ?? "inventory";
   const activeArea = VIEW_META[activeView].area;
-  const isSuperAdmin = actualRoleCodes.includes("super_admin");
+  const activeRole = appState.membership.roles.find((role) => role.code !== "super_admin") ?? appState.membership.roles[0];
   const activeSection = allowedNavigation.find((section) => section.id === activeArea) ?? allowedNavigation[0];
   const contextViews = activeSection?.id === "settings"
     ? activeSection.views.filter((name) => SETTINGS_PRIMARY_VIEWS.includes(name) || name === activeView)
@@ -337,13 +352,8 @@ export function SatrapyShell({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="global-header__controls">
-          <Select
-            ariaLabel="Cambiar empresa"
-            value={appState.membership.companyId}
-            onValueChange={(companyId) => void selectCompany(companyId)}
-            options={companies.map((company) => ({ value: company.id, label: company.display_name }))}
-          />
-          {isSuperAdmin && <RolePreview selectedRole={previewRole} onChange={(role) => setPreviewRole(role)} compact />}
+          {isSuperAdmin || companies.length > 1 ? <div className="global-session-switchers"><div className="global-company-selector"><Select ariaLabel="Cambiar empresa" value={appState.membership.companyId} onValueChange={(companyId) => void selectCompany(companyId)} options={companies.map((company) => ({ value: company.id, label: company.display_name }))} /></div>{isSuperAdmin && <RolePreview selectedRole={previewRole} onChange={(role) => setPreviewRole(role)} compact />}</div> : <div className="global-company-context" title={appState.membership.companyName}><Building2 size={14} /><span>{appState.membership.companyName}</span></div>}
+          {activeRole && <Badge className="global-role-badge" tone={activeRole.code === "super_admin" ? "primary" : "neutral"}>{activeRole.display_name}</Badge>}
           <div className="user-avatar">{appState.email.slice(0, 1).toUpperCase()}</div>
           <button className="icon-button" aria-label="Cerrar sesión" onClick={() => void getSupabaseClient().auth.signOut()}><LogOut size={16} /></button>
         </div>
@@ -428,6 +438,8 @@ export function SatrapyRouteContent() {
   if (activeView === "sales_audit") return <SalesAuditView companyId={appState.membership.companyId} />;
   if (activeView === "pos") return <PosSalesView key={appState.membership.companyId} companyId={appState.membership.companyId} companyName={appState.membership.companyName} cashierName={appState.email} permissions={appState.membership.permissions} />;
   if (activeView === "sales_history") return <SalesHistoryView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
+  if (activeView === "sales_quotes") return <SalesQuotesView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
+  if (activeView === "sales_orders") return <SalesOrdersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "customers" && creatingCustomer) return <NewCustomerMasterView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "customers" && selectedCustomerId) return <CustomerMasterView companyId={appState.membership.companyId} customerId={selectedCustomerId} permissions={appState.membership.permissions} />;
   if (activeView === "customers") return <CustomersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
@@ -543,7 +555,8 @@ function RolePreview({ selectedRole, onChange, compact = false }: { selectedRole
           ariaLabel="Ver como rol"
           value={selectedRole ?? "default"}
           onValueChange={(value) => onChange(value === "default" ? null : value as AppRoleCode)}
-          options={[{ value: "default", label: "Vista predeterminada" }, ...ALL_ROLES.filter((role) => role.code !== "super_admin").map((role) => ({ value: role.code, label: role.display_name }))]}
+          options={[{ value: "default", label: compact ? "Vista" : "Vista predeterminada" }, ...ALL_ROLES.filter((role) => role.code !== "super_admin").map((role) => ({ value: role.code, label: role.display_name }))]}
+          style={compact ? { width: 62, minWidth: 62, minHeight: 30, border: 0, borderRadius: 7, background: "transparent", boxShadow: "none", padding: "5px 7px", color: "#68756f", fontSize: 10, fontWeight: 650 } : undefined}
         />
       </label>
     </div>
@@ -1021,8 +1034,8 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
     }
   }
 
-  async function confirmImport() {
-    const result = await runAction({ action: "confirm" });
+  async function confirmImport(assortmentIds: string[] = []) {
+    const result = await runAction({ action: "confirm", assortmentIds });
     setConfirming(false);
     if (!result) return;
     if (result.status === "completed") {
@@ -1130,7 +1143,7 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
           {!canImport && <p className="permission-note">Tu rol no tiene permiso para preparar ni confirmar importaciones.</p>}
         </section>
       )}
-      {confirming && active && <ConfirmDialog batch={active} busy={busy} onCancel={() => !busy && setConfirming(false)} onConfirm={() => void confirmImport()} />}
+      {confirming && active && <ConfirmDialog companyId={companyId} batch={active} busy={busy} onCancel={() => !busy && setConfirming(false)} onConfirm={(assortmentIds) => void confirmImport(assortmentIds)} />}
       {operationDialog && <StagingOperationDialog operation={operationDialog} companyId={companyId} busy={busy} onCancel={() => !busy && setOperationDialog(null)} onConfirm={(payload) => void completeOperation(payload)} />}
       {receivableBackfill && <Modal open onOpenChange={(open) => { if (!open && !busy) setReceivableBackfill(null); }} eyebrow="CxC pendiente" title="Revisar incorporación de documentos" description="Solo se agregarán documentos cuya clave y hash coincidan con lis_sal y cuyo cliente de staging ya tenga un cliente canónico promovido." footer={<><Button variant="secondary" disabled={busy} onClick={() => setReceivableBackfill(null)}>Cancelar</Button><Button variant="primary" loading={busy} disabled={!receivableBackfill.can_apply || !receivableBackfillAcknowledged} onClick={() => void applyReceivableBackfill()}>Incorporar documentos auditados</Button></>}><div className="pos-prep-confirm-summary"><span><strong>{receivableBackfill.documents_to_insert}</strong> documentos por <strong>{numberFormat(Number(receivableBackfill.amount_to_insert))} MXN</strong> se agregarán</span><span><strong>{receivableBackfill.already_recorded_documents}</strong> documentos ya existen y no se duplicarán</span><span><strong>{receivableBackfill.excluded_unresolved_customer_documents}</strong> documentos por <strong>{numberFormat(Number(receivableBackfill.excluded_unresolved_customer_amount))} MXN</strong> quedan fuera por clientes sin resolver</span><span><strong>{receivableBackfill.existing_document_conflicts + receivableBackfill.duplicate_payload_hashes + receivableBackfill.staged_documents_missing_from_source + receivableBackfill.source_documents_not_in_staging}</strong> inconsistencias bloqueantes</span></div>{!receivableBackfill.can_apply && <p className="permission-note">No se puede aplicar: el preview detectó una incompatibilidad de hash, staging o documento existente.</p>}<label className="checkbox-label"><input type="checkbox" checked={receivableBackfillAcknowledged} disabled={busy || !receivableBackfill.can_apply} onChange={(event) => setReceivableBackfillAcknowledged(event.target.checked)} /> Confirmo el preview; esta operación no modifica clientes, pagos ni documentos existentes.</label></Modal>}
     </div>
@@ -1210,10 +1223,28 @@ function LocationTypeSelect({ location, onReview }: { location: { externalCode: 
   return <div className="location-review-row"><span><strong>{location.externalCode}</strong><small>{location.name}</small></span><Select ariaLabel={`Clasificar ${location.externalCode}`} value={value} onValueChange={(next) => { setValue(next); if (next !== "unselected") void onReview(location.externalCode, next as LocationType); }} options={[{ value: "unselected", label: "Seleccionar tipo", disabled: true }, { value: "sucursal", label: "Sucursal" }, { value: "almacen_central", label: "Almacén central" }, { value: "almacen_operativo", label: "Almacén operativo" }, { value: "campo", label: "Campo / asignado a ingeniero" }]} /></div>;
 }
 
-function ConfirmDialog({ batch, busy, onCancel, onConfirm }: { batch: StagedBatch; busy: boolean; onCancel: () => void; onConfirm: () => void }) {
+function ConfirmDialog({ companyId, batch, busy, onCancel, onConfirm }: { companyId: string; batch: StagedBatch; busy: boolean; onCancel: () => void; onConfirm: (assortmentIds: string[]) => void }) {
   const [acknowledged, setAcknowledged] = useState(false);
+  const [assortments, setAssortments] = useState<Array<{id:string;code:string;name:string;status:string;location_ids:string[]}>>([]);
+  const [selectedAssortmentIds, setSelectedAssortmentIds] = useState<string[]>([]);
+  const [assortmentsLoading, setAssortmentsLoading] = useState(batch.import_type === "products");
+  useEffect(() => {
+    if (batch.import_type !== "products") return;
+    let active = true;
+    void getSupabaseClient().rpc("get_sales_assortment_admin_context", { p_company_id: companyId }).then(({ data, error }) => {
+      if (!active) return;
+      const context = data as {assortments?:Array<{id:string;code:string;name:string;status:string;location_ids:string[]}>}|null;
+      setAssortments(error ? [] : (context?.assortments ?? []).filter((assortment) => assortment.status !== "inactive"));
+      setAssortmentsLoading(false);
+    });
+    return () => { active = false; };
+  }, [batch.import_type, companyId]);
   const label = batch.import_type === "products" ? "catálogo de productos" : batch.import_type === "inventory" ? "inventario por ubicación" : batch.import_type === "prices" ? "listas de precios" : "costos de reposición";
-  return <Modal open onOpenChange={(open) => { if (!open && !busy) onCancel(); }} eyebrow="Confirmación requerida" title={`Aplicar ${label}`} description="La base de datos aplicará este staging en una única transacción. Si algo falla, no quedarán datos parciales." footer={<><Button variant="secondary" disabled={busy} onClick={onCancel}>Cancelar</Button><Button variant="primary" loading={busy} disabled={!acknowledged} onClick={onConfirm}>Confirmar y registrar</Button></>}><label className="checkbox-label"><input type="checkbox" checked={acknowledged} disabled={busy} onChange={(event) => setAcknowledged(event.target.checked)} /> Confirmo que revisé el preview persistente y deseo continuar.</label></Modal>;
+  const toggleAssortment = (id:string) => setSelectedAssortmentIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current,id]);
+  return <Modal open onOpenChange={(open) => { if (!open && !busy) onCancel(); }} eyebrow="Confirmación requerida" title={`Aplicar ${label}`} description="La base de datos aplicará este staging en una única transacción. Si algo falla, no quedarán datos parciales." footer={<><Button variant="secondary" disabled={busy} onClick={onCancel}>Cancelar</Button><Button variant="primary" loading={busy} disabled={!acknowledged||assortmentsLoading} onClick={()=>onConfirm(selectedAssortmentIds)}>Confirmar y registrar</Button></>}>
+    {batch.import_type==="products"&&<section className="import-assortment-selector"><div><strong>Surtido de destino</strong><p>Selecciona uno o varios destinos para todo el lote. Sin selección, los productos se importarán fuera de surtido para revisión.</p></div>{assortmentsLoading?<small>Cargando surtidos…</small>:assortments.length?<div>{assortments.map((assortment)=><label key={assortment.id}><input type="checkbox" checked={selectedAssortmentIds.includes(assortment.id)} onChange={()=>toggleAssortment(assortment.id)}/><span><strong>{assortment.name}</strong><small>{assortment.code} · {assortment.location_ids.length} sucursal{assortment.location_ids.length===1?"":"es"}</small></span></label>)}</div>:<small>No hay surtidos disponibles; el catálogo quedará fuera de surtido.</small>}</section>}
+    <label className="checkbox-label"><input type="checkbox" checked={acknowledged} disabled={busy} onChange={(event) => setAcknowledged(event.target.checked)} /> Confirmo que revisé el preview persistente y deseo continuar.</label>
+  </Modal>;
 }
 
 function StagingOperationDialog({ operation, companyId, busy, onCancel, onConfirm }: { operation: OperationDialog; companyId: string; busy: boolean; onCancel: () => void; onConfirm: (payload: { productId?: string; reason: string }) => void }) {
@@ -2000,7 +2031,7 @@ function InventoryCountsView({ companyId, permissions }: { companyId: string; pe
       const result = data as { inventory_count_id: string };
       setSelectedCountId(result.inventory_count_id); setLinePage(1); setReason(""); setLineSearch(""); setDebouncedLineSearch(""); setLineFilter("all");
       await loadCounts();
-      toast({ title: "Conteo abierto", description: "Las partidas se generaron desde la existencia operativa.", tone: "success" });
+      toast({ title: "Conteo abierto", description: "Las partidas incluyen la existencia operativa y los productos del surtido activo de la sucursal.", tone: "success" });
     }
     setBusy(false);
   }

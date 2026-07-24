@@ -8,19 +8,19 @@ import { getSupabaseClient } from "@/app/lib/supabase";
 
 const PAGE_SIZE = 50;
 
-type Assortment = { id: string; code: string; name: string; status: "draft" | "active" | "inactive" };
+type Assortment = { id: string; code: string; name: string; status: "draft" | "active" | "inactive"; location_ids: string[] };
 type Location = { id: string; external_code: string; name: string };
-type Assignment = { id: string; location_id: string };
 type MembershipItem = { product_id: string; code: string | null; name: string; included: boolean };
 type MembershipResult = { items: MembershipItem[]; total: number; member_count: number; page: number; page_size: number };
+type AssortmentContext = { assortments: Assortment[]; locations: Location[]; catalog_total: number; outside_assortment_total: number };
 
 export function CommercialAssortmentsView({ companyId }: { companyId: string }) {
   const { toast } = useToast();
   const [assortments, setAssortments] = useState<Assortment[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [catalogTotal, setCatalogTotal] = useState(0);
+  const [outsideTotal, setOutsideTotal] = useState(0);
   const [selectedId, setSelectedId] = useState("");
-  const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [membership, setMembership] = useState<MembershipResult | null>(null);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [query, setQuery] = useState("");
@@ -43,21 +43,19 @@ export function CommercialAssortmentsView({ companyId }: { companyId: string }) 
     setLoading(true);
     setError(null);
     const supabase = getSupabaseClient();
-    const [assortmentResult, locationResult, productResult] = await Promise.all([
-      supabase.from("sales_assortments").select("id, code, name, status").eq("company_id", companyId).order("name"),
-      supabase.from("locations").select("id, external_code, name").eq("company_id", companyId).eq("is_active", true).eq("location_type", "sucursal").order("name"),
-      supabase.from("products").select("id", { count: "exact", head: true }).eq("company_id", companyId).eq("is_sellable", true),
-    ]);
-    if (assortmentResult.error || locationResult.error || productResult.error) {
+    const { data, error: contextError } = await supabase.rpc("get_sales_assortment_admin_context", { p_company_id: companyId });
+    if (contextError || !data) {
       setError("No se pudo cargar la configuración de surtidos.");
       setLoading(false);
       return;
     }
-    const nextAssortments = (assortmentResult.data ?? []) as Assortment[];
-    const nextLocations = (locationResult.data ?? []) as Location[];
+    const context = data as AssortmentContext;
+    const nextAssortments = context.assortments ?? [];
+    const nextLocations = context.locations ?? [];
     setAssortments(nextAssortments);
     setLocations(nextLocations);
-    setCatalogTotal(productResult.count ?? 0);
+    setCatalogTotal(context.catalog_total ?? 0);
+    setOutsideTotal(context.outside_assortment_total ?? 0);
     setNewLocationIds((current) => {
       const valid = current.filter((id) => nextLocations.some((location) => location.id === id));
       return valid.length ? valid : nextLocations.map((location) => location.id);
@@ -68,7 +66,6 @@ export function CommercialAssortmentsView({ companyId }: { companyId: string }) 
 
   const loadSelected = useCallback(async () => {
     if (!selectedId) {
-      setAssignments([]);
       setMembership(null);
       return;
     }
@@ -76,25 +73,21 @@ export function CommercialAssortmentsView({ companyId }: { companyId: string }) 
     setLoading(true);
     setError(null);
     const supabase = getSupabaseClient();
-    const [membershipResult, assignmentResult] = await Promise.all([
-      supabase.rpc("list_sales_assortment_membership", {
-        p_company_id: companyId,
-        p_assortment_id: selectedId,
-        p_query: debouncedQuery || null,
-        p_membership: membershipFilter === "all" ? null : membershipFilter,
-        p_page: page,
-        p_page_size: PAGE_SIZE,
-      }),
-      supabase.from("location_sales_assortments").select("id, location_id").eq("assortment_id", selectedId).is("valid_to", null),
-    ]);
+    const membershipResult = await supabase.rpc("list_sales_assortment_membership", {
+      p_company_id: companyId,
+      p_assortment_id: selectedId,
+      p_query: debouncedQuery || null,
+      p_membership: membershipFilter === "all" ? null : membershipFilter,
+      p_page: page,
+      p_page_size: PAGE_SIZE,
+    });
     if (current !== requestId.current) return;
-    if (membershipResult.error || assignmentResult.error) {
+    if (membershipResult.error) {
       setError("No se pudo cargar el surtido.");
       setLoading(false);
       return;
     }
     setMembership(membershipResult.data as MembershipResult);
-    setAssignments((assignmentResult.data ?? []) as Assignment[]);
     setSelectedProductIds([]);
     setLoading(false);
   }, [companyId, debouncedQuery, membershipFilter, page, selectedId]);
@@ -134,7 +127,7 @@ export function CommercialAssortmentsView({ companyId }: { companyId: string }) 
   async function changeStatus(status: string) {
     if (!selected) return;
     setBusy(true);
-    const { error: updateError } = await getSupabaseClient().from("sales_assortments").update({ status }).eq("id", selected.id);
+    const { error: updateError } = await getSupabaseClient().rpc("set_sales_assortment_status", { p_company_id: companyId, p_assortment_id: selected.id, p_status: status });
     setBusy(false);
     if (updateError) {
       toast({ title: "No se pudo cambiar el estado", description: updateError.message, tone: "error" });
@@ -181,35 +174,44 @@ export function CommercialAssortmentsView({ companyId }: { companyId: string }) 
   async function assignLocation() {
     if (!selected || !locationId) return;
     setBusy(true);
-    const { error: assignmentError } = await getSupabaseClient().from("location_sales_assortments").insert({ assortment_id: selected.id, location_id: locationId });
+    const { error: assignmentError } = await getSupabaseClient().rpc("set_sales_assortment_locations", {
+      p_company_id: companyId,
+      p_assortment_id: selected.id,
+      p_location_ids: [...selected.location_ids, locationId],
+    });
     setBusy(false);
     if (assignmentError) {
       toast({ title: "No se pudo asignar la sucursal", description: assignmentError.message, tone: "error" });
       return;
     }
     setLocationId("");
-    await loadSelected();
+    await loadBase();
   }
 
-  async function removeLocation(assignmentId: string) {
+  async function removeLocation(locationIdToRemove: string) {
+    if (!selected) return;
     setBusy(true);
-    const { error: assignmentError } = await getSupabaseClient().from("location_sales_assortments").update({ valid_to: new Date().toISOString() }).eq("id", assignmentId);
+    const { error: assignmentError } = await getSupabaseClient().rpc("set_sales_assortment_locations", {
+      p_company_id: companyId,
+      p_assortment_id: selected.id,
+      p_location_ids: selected.location_ids.filter((id) => id !== locationIdToRemove),
+    });
     setBusy(false);
     if (assignmentError) {
       toast({ title: "No se pudo retirar la sucursal", description: assignmentError.message, tone: "error" });
       return;
     }
-    await loadSelected();
+    await loadBase();
   }
 
-  const activeLocations = assignments.flatMap((assignment) => {
-    const location = locations.find((item) => item.id === assignment.location_id);
-    return location ? [{ assignment, location }] : [];
-  });
-  const availableLocations = locations.filter((location) => !assignments.some((assignment) => assignment.location_id === location.id));
+  const activeLocations = selected?.location_ids.flatMap((locationIdValue) => {
+    const location = locations.find((item) => item.id === locationIdValue);
+    return location ? [location] : [];
+  }) ?? [];
+  const availableLocations = locations.filter((location) => !selected?.location_ids.includes(location.id));
   const currentPageIds = membership?.items.map((item) => item.product_id) ?? [];
   const allPageSelected = currentPageIds.length > 0 && currentPageIds.every((id) => selectedProductIds.includes(id));
-  const activationBlocked = (membership?.member_count ?? 0) === 0 || assignments.length === 0;
+  const activationBlocked = (membership?.member_count ?? 0) === 0 || activeLocations.length === 0;
   const toggleLocation = (id: string) => setNewLocationIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   const toggleProduct = (id: string) => setSelectedProductIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
 
@@ -246,12 +248,12 @@ export function CommercialAssortmentsView({ companyId }: { companyId: string }) 
                   <Select value={selected.status} onValueChange={(value) => void changeStatus(value)} ariaLabel="Estado del surtido" disabled={busy} options={[{ value: "draft", label: "Borrador" }, { value: "active", label: "Activo", disabled: activationBlocked && selected.status !== "active" }, { value: "inactive", label: "Inactivo" }]} />
                 </div>
               </div>
-              <div className="pos-prep-kpis"><article><span>Miembros</span><strong>{membership?.member_count ?? 0}</strong></article><article><span>Sucursales</span><strong>{assignments.length}</strong></article><article><span>Catálogo</span><strong>{catalogTotal}</strong></article></div>
+              <div className="pos-prep-kpis"><article><span>Miembros</span><strong>{membership?.member_count ?? 0}</strong></article><article><span>Sucursales</span><strong>{activeLocations.length}</strong></article><article><span>Fuera de surtido</span><strong>{outsideTotal}</strong></article></div>
               <div className="pos-prep-controls">
                 <section>
                   <h3>Sucursales asignadas</h3>
                   <div className="pos-prep-inline"><Select value={locationId} onValueChange={setLocationId} ariaLabel="Asignar sucursal" options={[{ value: "", label: "Seleccionar sucursal", disabled: true }, ...availableLocations.map((location) => ({ value: location.id, label: `${location.external_code} · ${location.name}` }))]} disabled={busy || !availableLocations.length} /><Button onClick={() => void assignLocation()} disabled={!locationId || busy}>Asignar</Button></div>
-                  <div className="pos-prep-chips">{activeLocations.length ? activeLocations.map(({ assignment, location }) => <span key={assignment.id}>{location.external_code} · {location.name}<button aria-label={`Retirar ${location.name}`} onClick={() => void removeLocation(assignment.id)} disabled={busy}><Trash2 size={13} /></button></span>) : <small>Sin sucursales asignadas.</small>}</div>
+                  <div className="pos-prep-chips">{activeLocations.length ? activeLocations.map((location) => <span key={location.id}>{location.external_code} · {location.name}<button aria-label={`Retirar ${location.name}`} onClick={() => void removeLocation(location.id)} disabled={busy}><Trash2 size={13} /></button></span>) : <small>Sin sucursales asignadas.</small>}</div>
                 </section>
                 <section><h3>Regla operativa</h3><p className="pos-prep-help">Un bloqueo de readiness impide vender, pero nunca retira el producto del surtido.</p></section>
               </div>
