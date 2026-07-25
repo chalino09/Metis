@@ -56,6 +56,7 @@ import { CompanyUsersView } from "@/app/components/CompanyUsersView";
 import { ConfigurationHome } from "@/app/components/ConfigurationHome";
 import { InitialMigrationView } from "@/app/components/InitialMigrationView";
 import { ProductCatalogView } from "@/app/components/ProductCatalogView";
+import { CollaboratorsDirectoryView, PayrollView } from "@/app/components/CollaboratorsModule";
 import type {
   AppRoleCode,
   ImportBatchRow,
@@ -65,8 +66,8 @@ import type {
   RoleOption,
 } from "@/app/lib/types";
 
-type ViewName = "settings_home" | "initial_migration" | "migration" | "users_access" | "suppliers" | "procurement" | "purchase_orders" | "purchase_receipts" | "supplier_invoices" | "supplier_paying_accounts" | "products" | "inventory" | "inventory_counts" | "inventory_transfers" | "inventory_replenishment" | "locations" | "audit" | "sales_audit" | "assortments" | "pos" | "sales_history" | "sales_quotes" | "sales_orders" | "customers" | "receivables" | "cash" | "sales_settings" | "accounting_summary" | "accounting_accounts" | "accounting_periods" | "accounting_reports" | "accounting_journals" | "accounting_events" | "accounting_banking" | "accounting_opening" | "accounting_settings";
-type AreaName = "sales" | "purchasing" | "inventory" | "accounting" | "settings";
+type ViewName = "settings_home" | "initial_migration" | "migration" | "users_access" | "suppliers" | "procurement" | "purchase_orders" | "purchase_receipts" | "supplier_invoices" | "supplier_paying_accounts" | "products" | "inventory" | "inventory_counts" | "inventory_transfers" | "inventory_replenishment" | "locations" | "audit" | "sales_audit" | "assortments" | "pos" | "sales_history" | "sales_quotes" | "sales_orders" | "customers" | "receivables" | "cash" | "sales_settings" | "collaborators_directory" | "payroll" | "accounting_summary" | "accounting_accounts" | "accounting_periods" | "accounting_reports" | "accounting_journals" | "accounting_events" | "accounting_banking" | "accounting_opening" | "accounting_settings";
+type AreaName = "sales" | "purchasing" | "inventory" | "collaborators" | "accounting" | "settings";
 
 const ALL_ROLES: RoleOption[] = [
   { code: "super_admin", display_name: "Super Admin" },
@@ -272,6 +273,8 @@ const VIEW_META: Record<ViewName, {
     area: "settings",
     requirement: { any: ["manage_payment_methods", "manage_discount_policies", "manage_locations", "manage_prices"] },
   },
+  collaborators_directory: { label: "Directorio", icon: Users, href: "/satrapy/colaboradores/directorio", area: "collaborators", requirement: { all: ["view_collaborators"] } },
+  payroll: { label: "Nómina", icon: WalletCards, href: "/satrapy/colaboradores/nomina", area: "collaborators", requirement: { all: ["view_collaborators"] } },
   accounting_summary: { label: "Resumen", icon: FileSpreadsheet, href: "/satrapy/contabilidad", area: "accounting", requirement: { all: ["view_accounting"] } },
   accounting_accounts: { label: "Catálogo de cuentas", icon: BookOpen, href: "/satrapy/contabilidad/catalogo", area: "accounting", requirement: { all: ["view_accounting"] } },
   accounting_periods: { label: "Periodos", icon: ClipboardCheck, href: "/satrapy/contabilidad/periodos", area: "accounting", requirement: { all: ["view_accounting"] } },
@@ -303,6 +306,7 @@ const NAVIGATION_SECTIONS: Array<{ id: AreaName; label: string; views: ViewName[
   { id: "sales", label: "Ventas", views: ["pos", "sales_history", "sales_quotes", "sales_orders", "customers", "receivables", "cash"] },
   { id: "purchasing", label: "Compras", views: ["suppliers", "procurement", "purchase_orders", "purchase_receipts", "supplier_invoices"] },
   { id: "inventory", label: "Inventario", views: ["products", "inventory", "inventory_counts", "inventory_transfers", "inventory_replenishment"] },
+  { id: "collaborators", label: "Colaboradores", views: ["collaborators_directory", "payroll"] },
   { id: "accounting", label: "Contabilidad", views: ["accounting_summary", "accounting_accounts", "accounting_reports", "accounting_periods", "accounting_journals", "accounting_events", "accounting_banking", "accounting_opening"] },
   { id: "settings", label: "Configuración", views: ["settings_home", "locations", "users_access", "initial_migration", "migration", "audit", "assortments", "supplier_paying_accounts", "sales_settings", "sales_audit", "accounting_settings"] },
 ];
@@ -456,6 +460,8 @@ export function SatrapyRouteContent() {
   if (activeView === "receivables") return <ReceivablesView companyId={appState.membership.companyId} />;
   if (activeView === "cash") return <CashDeskView companyId={appState.membership.companyId} />;
   if (activeView === "sales_settings") return <SalesSettingsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
+  if (activeView === "collaborators_directory") return <CollaboratorsDirectoryView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
+  if (activeView === "payroll") return <PayrollView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "accounting_summary") return <AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="summary" />;
   if (activeView === "accounting_accounts") return <AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="accounts" />;
   if (activeView === "accounting_periods") return <AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="periods" />;

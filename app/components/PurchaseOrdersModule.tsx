@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DataPagination, DataRefreshStatus, DataState, DataToolbar, InteractiveTableRow, PagedCollection, Table } from "@/app/components/ui/data";
 import { Badge, Button, Drawer, Field, Input, Modal, Select, useToast } from "@/app/components/ui/primitives";
@@ -20,8 +20,6 @@ type ReceiptRelation={receipts:Array<{id:string;folio:string;status:string;recei
 
 const PAGE_SIZE=25;
 const today=()=>new Date().toISOString().slice(0,10);
-const parseDate=(value:string)=>{const [year,month,day]=value.split("-").map(Number);return new Date(year,month-1,day);};
-const isoDate=(value:Date)=>`${value.getFullYear()}-${String(value.getMonth()+1).padStart(2,"0")}-${String(value.getDate()).padStart(2,"0")}`;
 const emptyLine=():Line=>({description:"",unit:"",quantity:1,unit_cost:0,discount_percent_1:0,discount_percent_2:0,expected_date:"",requisition_reference:""});
 const newDraft=():Draft=>({supplier_id:"",supplier_label:"",currency_code:"MXN",ordered_date:today(),expected_date:"",supplier_reference:"",requisition_reference:"",notes:"",order_discount_percent:0,lines:[emptyLine()]});
 
@@ -68,10 +66,10 @@ export function PurchaseOrdersView({companyId,permissions}:{companyId:string;per
             <Select ariaLabel="Moneda" value={draft.currency_code} onValueChange={value=>setDraft({...draft,currency_code:value})} options={[{value:"MXN",label:"Peso mexicano (MXN)"},{value:"USD",label:"Dólar estadounidense (USD)"}]}/>
           </Field>
           <Field label="Fecha de orden">
-            <DatePicker value={draft.ordered_date} ariaLabel="Fecha de orden" onChange={value=>setDraft({...draft,ordered_date:value,expected_date:draft.expected_date&&draft.expected_date<value?"":draft.expected_date})}/>
+            <Input type="date" value={draft.ordered_date} aria-label="Fecha de orden" onChange={event=>setDraft({...draft,ordered_date:event.target.value,expected_date:draft.expected_date&&draft.expected_date<event.target.value?"":draft.expected_date})}/>
           </Field>
           <Field label={<span className="purchase-order-optional-label">Fecha esperada <em>Opcional</em></span>}>
-            <DatePicker value={draft.expected_date} min={draft.ordered_date} optional ariaLabel="Fecha esperada" onChange={value=>setDraft({...draft,expected_date:value})}/>
+            <Input type="date" value={draft.expected_date} min={draft.ordered_date} aria-label="Fecha esperada" onChange={event=>setDraft({...draft,expected_date:event.target.value})}/>
           </Field>
           <Field label={<span className="purchase-order-optional-label">Referencia del proveedor <em>Opcional</em></span>}>
             <Input value={draft.supplier_reference} onChange={event=>setDraft({...draft,supplier_reference:event.target.value})}/>
@@ -123,28 +121,6 @@ export function PurchaseOrderPromotionAudit({companyId,canPromote=false}:{compan
   async function promote(batchId:string){setBusy(batchId);const {data,error}=await getSupabaseClient().rpc("promote_alpha_purchase_orders",{p_batch_id:batchId,p_page_size:25});if(error){toast({title:"No se promovieron las OC",description:error.message,tone:"error"});setBusy(null);return;}const result=data as {status:string;page?:{promoted?:number;exceptions?:number};summary:Record<string,number>};const remaining=result.summary.remaining??0;toast({title:remaining>0?"Bloque promovido":result.status==="completed"?"Promoción completada":"Promoción con excepciones",description:remaining>0?`${result.page?.promoted??0} OC promovidas en este bloque; quedan ${remaining}.`:`${result.summary.promoted_orders??0} OC y ${result.summary.promoted_lines??0} partidas promovidas; ${result.summary.exceptions??0} excepciones.`,tone:"success"});setBusy(null);applyData(await fetchData());}
   const visibleBatches=batches.filter(batch=>batch.source_orders>0);
   if(loading||visibleBatches.length===0)return null;return <section className="purchase-order-audit"><header><div><h2>Promoción de órdenes de compra</h2><p>Procesamiento transaccional por páginas, idempotente y sin crear recepciones, inventario, costos ni CxP.</p></div></header>{visibleBatches.map(batch=><article key={batch.id}><span><strong>Corte {formatDate(batch.cutoff_date)}</strong><small>{batch.source_orders} OC / {batch.source_lines} partidas · {batch.promoted_orders} promovidas · {batch.exceptions} excepciones</small></span><div>{batch.order_promotion_completed_at?<Badge tone={batch.exceptions?"warning":"success"}>{batch.exceptions?"Con excepciones":"Completada"}</Badge>:canPromote&&batch.status==="staged"?<Button size="sm" variant="primary" loading={busy===batch.id} onClick={()=>void promote(batch.id)}>{(batch.order_promotion_summary.remaining??batch.source_orders)>0&&batch.promoted_orders>0?"Continuar promoción":"Promover siguiente bloque"}</Button>:<Badge>Solo staging</Badge>}</div></article>)}{exceptionTotal>0&&<div className="purchase-order-exceptions"><h3><AlertTriangle size={16}/> Bandeja de excepciones ({exceptionTotal})</h3>{exceptions.map(item=><p key={item.id}><strong>OC {item.order_number} · {item.supplier_name}</strong><span>{item.exception_kinds.map(exceptionLabel).join(" · ")} · fila {item.source_row_number}</span></p>)}{exceptionTotal>50&&<div className="data-pagination"><span>Página {exceptionPage} de {Math.ceil(exceptionTotal/50)}</span><div><Button size="sm" disabled={exceptionPage<=1} onClick={()=>setExceptionPage(value=>value-1)}>Anterior</Button><Button size="sm" disabled={exceptionPage*50>=exceptionTotal} onClick={()=>setExceptionPage(value=>value+1)}>Siguiente</Button></div></div>}</div>}</section>;
-}
-
-function DatePicker({value,onChange,ariaLabel,min,optional=false}:{value:string;onChange:(value:string)=>void;ariaLabel:string;min?:string;optional?:boolean}){
-  const [open,setOpen]=useState(false);
-  const [viewMonth,setViewMonth]=useState(()=>{const base=value?parseDate(value):new Date();return new Date(base.getFullYear(),base.getMonth(),1);});
-  const firstDay=(viewMonth.getDay()+6)%7;
-  const daysInMonth=new Date(viewMonth.getFullYear(),viewMonth.getMonth()+1,0).getDate();
-  const calendarDays:Array<number|null>=[...Array.from({length:firstDay},()=>null),...Array.from({length:daysInMonth},(_,index)=>index+1)];
-  while(calendarDays.length%7)calendarDays.push(null);
-  const todayValue=isoDate(new Date());
-  const monthLabel=viewMonth.toLocaleDateString("es-MX",{month:"long",year:"numeric"});
-  const displayValue=value?parseDate(value).toLocaleDateString("es-MX",{day:"2-digit",month:"short",year:"numeric"}):"Selecciona una fecha";
-  function choose(next:string){if(min&&next<min)return;onChange(next);setOpen(false);}
-  return <div className="satrapy-date-picker" onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget))setOpen(false);}}>
-    <button type="button" className="satrapy-date-trigger" aria-label={ariaLabel} aria-haspopup="dialog" aria-expanded={open} onClick={()=>{if(!open){const base=value?parseDate(value):new Date();setViewMonth(new Date(base.getFullYear(),base.getMonth(),1));}setOpen(current=>!current);}}><span className={value?"":"is-placeholder"}>{displayValue}</span><CalendarDays size={17}/></button>
-    {open&&<div className="satrapy-calendar" role="dialog" aria-label={`Calendario de ${ariaLabel}`}>
-      <header><strong>{monthLabel}</strong><div><button type="button" aria-label="Mes anterior" onClick={()=>setViewMonth(current=>new Date(current.getFullYear(),current.getMonth()-1,1))}><ChevronLeft size={17}/></button><button type="button" aria-label="Mes siguiente" onClick={()=>setViewMonth(current=>new Date(current.getFullYear(),current.getMonth()+1,1))}><ChevronRight size={17}/></button></div></header>
-      <div className="satrapy-calendar-weekdays" aria-hidden="true">{["L","M","M","J","V","S","D"].map((day,index)=><span key={`${day}-${index}`}>{day}</span>)}</div>
-      <div className="satrapy-calendar-days">{calendarDays.map((day,index)=>{if(day===null)return <span key={`empty-${index}`}/>;const candidate=isoDate(new Date(viewMonth.getFullYear(),viewMonth.getMonth(),day));return <button type="button" key={candidate} disabled={Boolean(min&&candidate<min)} className={`${candidate===value?"is-selected ":""}${candidate===todayValue?"is-today":""}`} aria-label={new Date(`${candidate}T00:00:00`).toLocaleDateString("es-MX",{dateStyle:"full"})} aria-pressed={candidate===value} onClick={()=>choose(candidate)}>{day}</button>;})}</div>
-      <footer>{optional?<button type="button" disabled={!value} onClick={()=>{onChange("");setOpen(false);}}>Borrar</button>:<span/>}<button type="button" disabled={Boolean(min&&todayValue<min)} onClick={()=>choose(todayValue)}>Hoy</button></footer>
-    </div>}
-  </div>;
 }
 
 function updateLine(draft:Draft,setDraft:(value:Draft)=>void,index:number,change:Partial<Line>){setDraft({...draft,lines:draft.lines.map((line,candidate)=>candidate===index?{...line,...change}:line)});}

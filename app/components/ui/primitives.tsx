@@ -4,7 +4,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as RadixSelect from "@radix-ui/react-select";
 import * as RadixTabs from "@radix-ui/react-tabs";
 import * as RadixToast from "@radix-ui/react-toast";
-import { Check, ChevronDown, X } from "lucide-react";
+import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, X } from "lucide-react";
 import {
   createContext,
   forwardRef,
@@ -12,6 +12,7 @@ import {
   useContext,
   useMemo,
   useState,
+  type ChangeEvent,
   type ButtonHTMLAttributes,
   type CSSProperties,
   type InputHTMLAttributes,
@@ -51,7 +52,81 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   { className, ...props },
   ref,
 ) {
+  if (props.type === "date") return <DateInput ref={ref} className={className} {...props} />;
   return <input ref={ref} className={cx("ui-input", className)} {...props} />;
+});
+
+function isoToDisplay(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return "";
+  const [year, month, day] = value.split("-");
+  return `${day}/${month}/${year}`;
+}
+
+function displayToIso(value: string) {
+  const match = value.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return null;
+  const [, day, month, year] = match;
+  const date = new Date(Number(year), Number(month) - 1, Number(day));
+  if (date.getFullYear() !== Number(year) || date.getMonth() !== Number(month) - 1 || date.getDate() !== Number(day)) return null;
+  return `${year}-${month}-${day}`;
+}
+
+function isoDate(value: Date) {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+}
+
+function parseIsoDate(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+const DateInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function DateInput(
+  { className, type: _type, value, defaultValue: _defaultValue, min, max, required, disabled, onChange, onBlur, onKeyDown, "aria-label": ariaLabel, name, style, ...props },
+  ref,
+) {
+  void _type; void _defaultValue;
+  const isoValue = typeof value === "string" ? value : "";
+  const [draftText, setDraftText] = useState<string | null>(null);
+  const text = draftText ?? isoToDisplay(isoValue);
+  const [open, setOpen] = useState(false);
+  const [viewMonth, setViewMonth] = useState(() => {
+    const base = isoValue ? parseIsoDate(isoValue) : new Date();
+    return new Date(base.getFullYear(), base.getMonth(), 1);
+  });
+  const firstDay = (viewMonth.getDay() + 6) % 7;
+  const daysInMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 0).getDate();
+  const calendarDays: Array<number | null> = [...Array.from({ length: firstDay }, () => null), ...Array.from({ length: daysInMonth }, (_, index) => index + 1)];
+  while (calendarDays.length % 7) calendarDays.push(null);
+  const todayValue = isoDate(new Date());
+  const monthLabel = viewMonth.toLocaleDateString("es-MX", { month: "long", year: "numeric" });
+  const minValue = min == null ? undefined : String(min);
+  const maxValue = max == null ? undefined : String(max);
+  const isUnavailable = (candidate: string) => Boolean(minValue && candidate < minValue) || Boolean(maxValue && candidate > maxValue);
+  function notify(next: string) {
+    onChange?.({ target: { value: next }, currentTarget: { value: next } } as ChangeEvent<HTMLInputElement>);
+  }
+  function commit(nextText: string) {
+    if (!nextText.trim()) { notify(""); return; }
+    const next = displayToIso(nextText);
+    if (next && !isUnavailable(next)) { notify(next); setDraftText(null); }
+    else setDraftText(null);
+  }
+  function choose(next: string) {
+    if (isUnavailable(next)) return;
+    notify(next); setDraftText(null); setOpen(false);
+  }
+  return <div className="satrapy-date-picker" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}>
+    <div className="satrapy-date-control" style={{ position: "relative", display: "block" }}>
+      <input ref={ref} className={cx("ui-input", "satrapy-date-input", className)} value={text} onChange={event => setDraftText(event.target.value.replace(/[^\d/]/g, "").slice(0, 10))} onBlur={event => { commit(event.currentTarget.value); onBlur?.(event); }} onKeyDown={event => { if (event.key === "Enter") commit(event.currentTarget.value); onKeyDown?.(event); }} inputMode="numeric" autoComplete="off" placeholder="dd/mm/aaaa" aria-label={ariaLabel} name={name} required={required} disabled={disabled} {...props} style={{ ...style, paddingRight: 43 }} />
+      <button type="button" className="satrapy-date-control__button" style={{ position: "absolute", top: 1, right: 1, bottom: 1, display: "grid", width: 39, placeItems: "center", border: 0, background: "transparent" }} aria-label={ariaLabel ? `Abrir calendario: ${ariaLabel}` : "Abrir calendario"} aria-haspopup="dialog" aria-expanded={open} disabled={disabled} onClick={() => { if (!open) { const base = isoValue ? parseIsoDate(isoValue) : new Date(); setViewMonth(new Date(base.getFullYear(), base.getMonth(), 1)); } setOpen(current => !current); }}><CalendarDays size={17} /></button>
+    </div>
+    {open && <div className="satrapy-calendar" role="dialog" aria-label={`Calendario${ariaLabel ? ` de ${ariaLabel}` : ""}`}>
+      <header><strong>{monthLabel}</strong><div><button type="button" aria-label="Mes anterior" onClick={() => setViewMonth(current => new Date(current.getFullYear(), current.getMonth() - 1, 1))}><ChevronLeft size={17} /></button><button type="button" aria-label="Mes siguiente" onClick={() => setViewMonth(current => new Date(current.getFullYear(), current.getMonth() + 1, 1))}><ChevronRight size={17} /></button></div></header>
+      <div className="satrapy-calendar-weekdays" aria-hidden="true">{["L", "M", "M", "J", "V", "S", "D"].map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}</div>
+      <div className="satrapy-calendar-days">{calendarDays.map((day, index) => { if (day === null) return <span key={`empty-${index}`} />; const candidate = isoDate(new Date(viewMonth.getFullYear(), viewMonth.getMonth(), day)); return <button type="button" key={candidate} disabled={isUnavailable(candidate)} className={`${candidate === isoValue ? "is-selected " : ""}${candidate === todayValue ? "is-today" : ""}`} aria-label={new Date(`${candidate}T00:00:00`).toLocaleDateString("es-MX", { dateStyle: "full" })} aria-pressed={candidate === isoValue} onClick={() => choose(candidate)}>{day}</button>; })}</div>
+      <footer>{!required ? <button type="button" disabled={!isoValue} onClick={() => { notify(""); setDraftText(null); setOpen(false); }}>Borrar</button> : <span />}{!isUnavailable(todayValue) && <button type="button" onClick={() => choose(todayValue)}>Hoy</button>}</footer>
+    </div>}
+  </div>;
 });
 
 export function Field({
