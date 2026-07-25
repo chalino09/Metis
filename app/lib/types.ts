@@ -178,6 +178,18 @@ export type InventoryRow = {
   difference_from_snapshot: number | null;
 };
 
+export type InventoryProductRow = {
+  product_id: string;
+  product_code: string;
+  product_name: string;
+  unit: string | null;
+  total_quantity_on_hand: number;
+  location_count: number;
+  positive_location_count: number;
+  balance_updated_at: string | null;
+  locations: InventoryRow[];
+};
+
 export type ImportBatchRow = {
   id: string;
   import_type: string;

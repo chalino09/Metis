@@ -28,7 +28,7 @@ import {
   Users,
   WalletCards,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { DataPagination, DataRefreshStatus, DataState, DataToolbar, InteractiveTableRow, PageHeading } from "@/app/components/ui/data";
 import { Badge, Button, Input, Modal, Select, ToastProvider, useToast } from "@/app/components/ui/primitives";
@@ -58,6 +58,7 @@ import { ProductCatalogView } from "@/app/components/ProductCatalogView";
 import type {
   AppRoleCode,
   ImportBatchRow,
+  InventoryProductRow,
   InventoryRow,
   LocationType,
   RoleOption,
@@ -1273,7 +1274,8 @@ function StagingOperationDialog({ operation, companyId, busy, onCancel, onConfir
 
 function InventoryView({ companyId }: { companyId: string }) {
   const { accessibleLocations, queryCache } = useSatrapy();
-  const [rows, setRows] = useState<InventoryRow[]>([]);
+  const [rows, setRows] = useState<InventoryProductRow[]>([]);
+  const [expandedProducts, setExpandedProducts] = useState<Set<string>>(() => new Set());
   const [referenceRow, setReferenceRow] = useState<InventoryRow | null>(null);
   const [referenceLoading, setReferenceLoading] = useState(false);
   const [referenceError, setReferenceError] = useState<string | null>(null);
@@ -1288,44 +1290,40 @@ function InventoryView({ companyId }: { companyId: string }) {
   useEffect(() => { const timer = window.setTimeout(() => { setDebouncedSearch(search.trim()); setPage(1); }, 280); return () => window.clearTimeout(timer); }, [search]);
   const load = useCallback(async () => {
     const cacheKey = `inventory:${companyId}:${debouncedSearch}:${selectedLocation}:${page}`;
-    const cached = queryCache.get<{ rows: InventoryRow[]; total: number }>(cacheKey);
+    const cached = queryCache.get<{ rows: InventoryProductRow[]; total: number }>(cacheKey);
     if (cached) {
       setRows(cached.rows); setTotal(cached.total); setLoading(false); setError(null);
       return;
     }
     const current = ++requestId.current;
     setLoading(true); setError(null);
-    let { data, error: queryError } = await getSupabaseClient().rpc("search_inventory_balances_operational", {
+    const { data, error: queryError } = await getSupabaseClient().rpc("search_inventory_products_by_location", {
       p_company_id: companyId,
       p_location_id: selectedLocation === "all" ? null : selectedLocation,
       p_query: debouncedSearch || null,
       p_page: page,
       p_page_size: DATA_PAGE_SIZE,
     });
-    if (queryError) {
-      const fallback = await getSupabaseClient().rpc("search_inventory_balances", {
-        p_company_id: companyId,
-        p_location_id: selectedLocation === "all" ? null : selectedLocation,
-        p_query: debouncedSearch || null,
-        p_page: page,
-        p_page_size: DATA_PAGE_SIZE,
-      });
-      data = fallback.data;
-      queryError = fallback.error;
-    }
     if (current !== requestId.current) return;
-    const result = data as { items?: InventoryRow[]; total?: number } | null;
+    const result = data as { items?: InventoryProductRow[]; total?: number } | null;
     const next = { rows: result?.items ?? [], total: result?.total ?? 0 };
     setRows(next.rows); setTotal(next.total); setError(queryError ? "No se pudo cargar el inventario." : null); setLoading(false);
     if (!queryError) queryCache.set(cacheKey, next);
   }, [companyId, debouncedSearch, page, queryCache, selectedLocation]);
   useEffect(() => { void Promise.resolve().then(load); }, [load]);
   function changeSearch(value: string) { setSearch(value); }
-  function changeLocation(value: string) { setPage(1); setSelectedLocation(value); }
-  function clearFilters() { setSearch(""); setDebouncedSearch(""); setSelectedLocation("all"); setPage(1); }
+  function changeLocation(value: string) { setPage(1); setExpandedProducts(new Set()); setSelectedLocation(value); }
+  function clearFilters() { setSearch(""); setDebouncedSearch(""); setSelectedLocation("all"); setExpandedProducts(new Set()); setPage(1); }
   const empty = search ? "No hay existencias para esa búsqueda." : selectedLocation !== "all" ? "No hay existencias operativas para la ubicación seleccionada." : "Aún no hay existencias operativas inicializadas.";
   const locationOptions = [{ value: "all", label: "Todas las ubicaciones" }, ...accessibleLocations.map((location) => ({ value: location.id, label: `${location.external_code} · ${location.name}` }))];
   function refresh() { queryCache.invalidate(`inventory:${companyId}:`); void load(); }
+  function toggleProduct(productId: string) {
+    setExpandedProducts((current) => {
+      const next = new Set(current);
+      if (next.has(productId)) next.delete(productId); else next.add(productId);
+      return next;
+    });
+  }
   async function openSnapshotReference(row: InventoryRow) {
     setReferenceRow(row); setReferenceError(null);
     if (row.snapshot_quantity != null) return;
@@ -1340,7 +1338,10 @@ function InventoryView({ companyId }: { companyId: string }) {
     else setReferenceRow((current) => current ? { ...current, snapshot_quantity: Number(reference.snapshot_quantity), snapshot_date: reference.snapshot_date ?? null, snapshot_source_file: reference.snapshot_source_file ?? null, difference_from_snapshot: reference.difference_from_snapshot ?? null } : current);
     setReferenceLoading(false);
   }
-  return <div className="content-frame"><PageHeading eyebrow="Existencia operativa" title="Inventario por ubicación" description="Consulta el saldo actual y la última operación de cada producto. La importación original permanece disponible como referencia histórica." action={<Button variant="secondary" onClick={refresh}><RefreshCw size={16} /> Actualizar</Button>} /><DataToolbar search={search} onSearchChange={changeSearch} placeholder="Buscar producto o SKU" filters={<Select value={selectedLocation} onValueChange={changeLocation} ariaLabel="Filtrar por ubicación" options={locationOptions} />} activeFilters={(search.trim() ? 1 : 0) + (selectedLocation !== "all" ? 1 : 0)} onClear={clearFilters} results={total} /><DataState loading={loading && rows.length === 0} error={error} errorAction={<Button variant="secondary" size="sm" onClick={refresh}>Reintentar</Button>} hasData={rows.length} empty={empty}><div className="table-wrap surface-table"><table><thead><tr><th>SKU</th><th>Producto</th><th>Ubicación</th><th className="number-cell">Existencia actual</th><th>Última operación</th><th>Referencia importada</th></tr></thead><tbody>{rows.map((row) => <tr key={`${row.location_id}:${row.product_id}`}><td className="mono">{row.product_code}</td><td><strong>{row.product_name}</strong><small>{row.unit ?? "Sin unidad"}</small></td><td><span className="location-chip">{row.location_code}</span> {row.location_name}</td><td className="number-cell"><strong>{numberFormat(Number(row.quantity_on_hand))}</strong><small>Saldo actualizado {dateTimeFormat(row.balance_updated_at)}</small></td><td>{row.last_movement_type ? <><strong>{inventoryMovementLabel(row.last_movement_type)}</strong><small>{row.last_movement_at ? dateTimeFormat(row.last_movement_at) : "Sin fecha"}</small></> : "—"}</td><td>{row.has_snapshot_reference ?? row.snapshot_quantity != null ? <Button variant="secondary" size="sm" onClick={() => void openSnapshotReference(row)}>Ver corte importado</Button> : <span>Sin referencia</span>}</td></tr>)}</tbody></table></div></DataState><DataPagination page={page} total={total} pageSize={DATA_PAGE_SIZE} onChange={setPage} />
+  return <div className="content-frame inventory-product-inquiry"><PageHeading eyebrow="Existencia operativa" title="Inventario por ubicación" description="Consulta cada producto con su existencia total y despliega el saldo de cada sucursal." action={<Button variant="secondary" onClick={refresh}><RefreshCw size={16} /> Actualizar</Button>} /><DataToolbar search={search} onSearchChange={changeSearch} placeholder="Buscar producto o SKU" filters={<Select value={selectedLocation} onValueChange={changeLocation} ariaLabel="Filtrar por ubicación" options={locationOptions} />} activeFilters={(search.trim() ? 1 : 0) + (selectedLocation !== "all" ? 1 : 0)} onClear={clearFilters} results={total} /><DataState loading={loading && rows.length === 0} error={error} errorAction={<Button variant="secondary" size="sm" onClick={refresh}>Reintentar</Button>} hasData={rows.length} empty={empty}><div className="table-wrap surface-table inventory-product-table"><table><thead><tr><th>SKU</th><th>Producto</th><th className="number-cell">Existencia total</th><th>Sucursales</th><th>Actualización</th><th aria-label="Acciones" /></tr></thead><tbody>{rows.map((product) => {
+    const expanded = expandedProducts.has(product.product_id);
+    return <Fragment key={product.product_id}><tr className="inventory-product-row"><td className="mono">{product.product_code}</td><td><strong>{product.product_name}</strong><small>{product.unit ?? "Sin unidad"}</small></td><td className="number-cell"><strong>{numberFormat(Number(product.total_quantity_on_hand))} {product.unit ?? ""}</strong></td><td><strong>{product.location_count} {product.location_count === 1 ? "sucursal" : "sucursales"}</strong><small>{product.positive_location_count} con existencia</small></td><td>{product.balance_updated_at ? dateTimeFormat(product.balance_updated_at) : "Sin movimientos"}</td><td><Button variant="secondary" size="sm" aria-expanded={expanded} onClick={() => toggleProduct(product.product_id)}>{expanded ? "Ocultar" : "Ver sucursales"}</Button></td></tr>{expanded && <tr className="inventory-location-detail-row"><td colSpan={6}><div className="inventory-location-breakdown" aria-label={`Existencias por sucursal de ${product.product_name}`}>{product.locations.map((location) => <article key={location.location_id}><div><span className="location-chip">{location.location_code}</span><strong>{location.location_name}</strong></div><div className="inventory-location-balance"><strong>{numberFormat(Number(location.quantity_on_hand))} {product.unit ?? ""}</strong><small>{location.balance_updated_at ? `Actualizado ${dateTimeFormat(location.balance_updated_at)}` : "Sin saldo inicializado"}</small></div><div><strong>{location.last_movement_type ? inventoryMovementLabel(location.last_movement_type) : "Sin movimientos"}</strong><small>{location.last_movement_at ? dateTimeFormat(location.last_movement_at) : "—"}</small></div><div>{location.has_snapshot_reference ? <Button variant="secondary" size="sm" onClick={() => void openSnapshotReference(location)}>Ver corte importado</Button> : <span className="inventory-no-reference">Sin referencia</span>}</div></article>)}</div></td></tr>}</Fragment>;
+  })}</tbody></table></div></DataState><DataPagination page={page} total={total} pageSize={DATA_PAGE_SIZE} onChange={setPage} />
     <Modal open={Boolean(referenceRow)} onOpenChange={(open) => { if (!open) { setReferenceRow(null); setReferenceLoading(false); setReferenceError(null); } }} eyebrow="Referencia histórica" title={referenceRow ? referenceRow.product_name : "Corte importado"} description="Este corte fue el punto de referencia importado. No reemplaza la existencia actual ni registra un conteo físico.">{referenceLoading ? <div className="loading-copy" role="status"><LoaderCircle className="spin" size={18} /> Consultando corte importado…</div> : referenceError ? <p className="form-error">{referenceError}</p> : referenceRow && <dl className="inventory-reference-summary"><div><dt>Ubicación</dt><dd>{referenceRow.location_code} · {referenceRow.location_name}</dd></div><div><dt>Cantidad importada</dt><dd>{numberFormat(Number(referenceRow.snapshot_quantity ?? 0))} {referenceRow.unit ?? ""}</dd></div><div><dt>Fecha del corte</dt><dd>{referenceRow.snapshot_date ? dateOnlyFormat(referenceRow.snapshot_date) : "Sin fecha"}</dd></div><div><dt>Archivo de origen</dt><dd>{referenceRow.snapshot_source_file ?? "No disponible"}</dd></div><div><dt>Cambio desde ese corte</dt><dd>{referenceRow.difference_from_snapshot == null ? "No calculable" : `${Number(referenceRow.difference_from_snapshot) > 0 ? "+" : ""}${numberFormat(Number(referenceRow.difference_from_snapshot))} ${referenceRow.unit ?? ""}`}</dd></div><div><dt>Existencia actual</dt><dd>{numberFormat(Number(referenceRow.quantity_on_hand))} {referenceRow.unit ?? ""}</dd></div></dl>}</Modal>
   </div>;
 }

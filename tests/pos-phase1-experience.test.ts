@@ -7,6 +7,7 @@ const prices = readFileSync("app/components/PriceCatalogManagement.tsx", "utf8")
 const css = readFileSync("app/globals.css", "utf8");
 const migration = readFileSync("supabase/migrations/202607230006_pos_phase1_experience.sql", "utf8");
 const otherLocationStockMigration = readFileSync("supabase/migrations/202607230008_pos_other_location_stock.sql", "utf8");
+const inlineOtherLocationStockMigration = readFileSync("supabase/migrations/202607240004_pos_inline_other_location_stock.sql", "utf8");
 
 test("el POS muestra precios totales y permite cantidades directas", () => {
   assert.match(sales, /Precio total/);
@@ -43,9 +44,13 @@ test("la búsqueda separa términos y el catálogo interno desglosa IVA", () => 
 
 test("el POS consulta existencias de otras sucursales sin alterar la venta local", () => {
   assert.match(sales, /Otras sucursales/);
+  assert.match(sales, /Number\(product\.other_location_stock_quantity\)\.toLocaleString/);
+  assert.match(sales, /product\.blockers\.includes\("out_of_stock"\)/);
   assert.match(sales, /list_pos_product_other_location_stock/);
   assert.match(sales, /Solo lectura\. La venta sigue usando la existencia/);
   assert.match(otherLocationStockMigration, /public\.can_access_location\(location_data\.id\)/);
   assert.match(otherLocationStockMigration, /location_data\.id <> p_current_location_id/);
   assert.match(otherLocationStockMigration, /limit v_size offset/);
+  assert.match(inlineOtherLocationStockMigration, /other_location_stock_quantity/);
+  assert.match(inlineOtherLocationStockMigration, /public\.can_access_location\(remote_location\.id\)/);
 });

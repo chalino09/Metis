@@ -40,7 +40,7 @@ type PosContext = { locations: PosLocation[]; registers: PosRegister[]; payment_
 type ProductSearchItem = { product_id: string; code: string | null; name: string; unit: string | null; inventory_tracked: boolean; quantity_on_hand: number; base_price_amount?: number; tax_amount?: number; price_amount: number; currency_code: string };
 type PosLocationStockItem = { location_id: string; location_code: string; location_name: string; quantity_on_hand: number; updated_at: string | null };
 type PosLocationStock = { product_name: string; unit: string | null; items: PosLocationStockItem[]; total: number; page: number; page_size: number };
-type BlockedProductSearchItem = ProductSearchItem & { blockers: string[] };
+type BlockedProductSearchItem = ProductSearchItem & { blockers: string[]; other_location_stock_count?: number; other_location_stock_quantity?: number };
 type Customer = { id: string; code: string; display_name: string; credit_enabled: boolean; price_list_id?: string | null; credit_limit?: number; credit_term_days?: number; outstanding_amount?: number; overdue_amount?: number; next_due_date?: string | null; available_credit?: number; migration_status?: "manual" | "promoted" | "adjustment_pending"; alpha_external_code?: string | null };
 type CustomerAddress = { id: string; label: string; address_line: string; neighborhood: string | null; municipality: string | null; state_name: string | null; postal_code: string | null; is_primary: boolean };
 type CustomerContact = { id: string; display_name: string; role_name: string | null; phone: string | null; email: string | null; is_primary: boolean };
@@ -160,6 +160,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
   const cartRecoveryInFlight = useRef(false);
   const completeRef = useRef<() => void>(() => undefined);
   const productRequestRef = useRef(0);
+  const blockedRequestRef = useRef(0);
 
   const ownSession = context?.own_open_session?.status === "open" ? context.own_open_session : null;
   const selectedRegister = context?.registers.find((item) => item.id === ownSession?.cash_register_id) ?? null;
@@ -268,15 +269,28 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
     setProductLoadingMore(false);
   }
 
-  useEffect(() => { void Promise.resolve().then(() => { setBlockedOpen(false); setBlockedProducts([]); setBlockedTotal(0); }); }, [search]);
-  async function loadBlockedProducts() {
-    if (!selectedRegister || !search.trim()) return;
-    setBlockedLoading(true);
-    const { data, error } = await getSupabaseClient().rpc("search_pos_blocked_products", { p_company_id: companyId, p_location_id: selectedRegister.location_id, p_customer_id: customer?.id ?? null, p_query: search.trim(), p_page: 1, p_page_size: 30 });
-    if (error) { toast({ title: "No se pudieron revisar los bloqueados", description: rpcError(error, "Intenta nuevamente."), tone: "error" }); setBlockedProducts([]); setBlockedTotal(0); }
-    else { const result = data as { items?: BlockedProductSearchItem[]; total?: number } | null; setBlockedProducts(result?.items ?? []); setBlockedTotal(result?.total ?? 0); setBlockedOpen(true); }
-    setBlockedLoading(false);
-  }
+  useEffect(() => {
+    if (!selectedRegister || !search.trim()) {
+      blockedRequestRef.current += 1;
+      void Promise.resolve().then(() => { setBlockedOpen(false); setBlockedProducts([]); setBlockedTotal(0); setBlockedLoading(false); });
+      return;
+    }
+    const request = ++blockedRequestRef.current;
+    const timer = window.setTimeout(async () => {
+      setBlockedLoading(true);
+      const { data, error } = await getSupabaseClient().rpc("search_pos_blocked_products", { p_company_id: companyId, p_location_id: selectedRegister.location_id, p_customer_id: customer?.id ?? null, p_query: search.trim(), p_page: 1, p_page_size: 30 });
+      if (request !== blockedRequestRef.current) return;
+      if (error) {
+        setBlockedProducts([]); setBlockedTotal(0); setBlockedOpen(false);
+        toast({ title: "No se pudieron consultar los productos agotados", description: rpcError(error, "Intenta nuevamente."), tone: "error" });
+      } else {
+        const result = data as { items?: BlockedProductSearchItem[]; total?: number } | null;
+        setBlockedProducts(result?.items ?? []); setBlockedTotal(result?.total ?? 0); setBlockedOpen(Boolean(result?.items?.length));
+      }
+      setBlockedLoading(false);
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [companyId, customer?.id, search, selectedRegister, toast]);
 
   useEffect(() => {
     if (!customerQuery.trim()) { void Promise.resolve().then(() => { setCustomerResults([]); setCustomerPickerOpen(false); }); return; }
@@ -522,8 +536,8 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
             {products.map((product) => <div className="pos-product-row" key={product.product_id}><button className="pos-product" disabled={busy} onClick={() => void changeItem(product.product_id, 1, true)}><span><strong>{product.name}</strong><small>{product.code ?? "Sin código"} · {product.unit ?? "Unidad"}</small></span><span className="pos-product__right"><b>{money(product.price_amount, product.currency_code)}</b><small>Precio total</small>{product.inventory_tracked && <em className={product.quantity_on_hand <= 3 ? "is-low" : ""}>{product.quantity_on_hand} disp.</em>}</span></button>{product.inventory_tracked && permissions.includes("view_inventory") && <Button className="pos-product-stock" size="sm" variant="ghost" disabled={busy} onClick={() => openLocationStock(product)}><ClipboardList size={14} /> Otras sucursales</Button>}</div>)}
             {!productLoading && !products.length && <p className="pos-list-empty">No hay productos listos y disponibles para esta búsqueda.</p>}
             {!productLoading && products.length < productTotal && <Button className="pos-load-more" variant="secondary" loading={productLoadingMore} disabled={busy} onClick={() => void loadMoreProducts()}>Cargar más productos</Button>}
-            {!productLoading && search.trim() && <Button className="pos-blocked-trigger" variant="ghost" loading={blockedLoading} onClick={() => void loadBlockedProducts()}>Revisar productos no disponibles</Button>}
-            {blockedOpen && <section className="pos-blocked-results"><header><strong>Productos no disponibles</strong><span>{blockedTotal} coincidencias</span></header>{blockedProducts.length ? blockedProducts.map((product) => <article key={product.product_id}><span><strong>{product.name}</strong><small>{product.code ?? "Sin código"} · {product.unit ?? "Sin unidad"}</small></span><div>{product.blockers.map((blocker) => <Badge tone={blocker === "outside_assortment" ? "warning" : "danger"} key={blocker}>{posBlockerLabel(blocker)}</Badge>)}</div></article>) : <p>No hay productos no disponibles para esta búsqueda.</p>}</section>}
+            {blockedLoading && <p className="pos-blocked-loading">Consultando existencias en otras sucursales…</p>}
+            {blockedOpen && <section className="pos-blocked-results"><header><strong>Productos no disponibles</strong><span>Sin existencia en esta sucursal · {blockedTotal} coincidencias</span></header>{blockedProducts.map((product) => <article key={product.product_id}><span><strong>{product.name}</strong><small>{product.code ?? "Sin código"} · {product.unit ?? "Sin unidad"}</small></span><div className="pos-blocked-actions"><div className="pos-blocked-status">{product.blockers.filter((blocker) => blocker !== "out_of_stock").map((blocker) => <Badge tone={blocker === "outside_assortment" ? "warning" : "danger"} key={blocker}>{posBlockerLabel(blocker)}</Badge>)}{product.inventory_tracked && product.blockers.includes("out_of_stock") && <span className="pos-blocked-local">Agotado aquí</span>}{product.inventory_tracked && product.blockers.includes("out_of_stock") && permissions.includes("view_inventory") && product.other_location_stock_count !== undefined && <span className={product.other_location_stock_count > 0 ? "pos-blocked-remote" : "pos-blocked-remote is-empty"}>{product.other_location_stock_count > 0 ? `${Number(product.other_location_stock_quantity).toLocaleString("es-MX", { maximumFractionDigits: 3 })} ${product.unit ?? ""} · ${product.other_location_stock_count} sucursal${product.other_location_stock_count === 1 ? "" : "es"}` : "Sin stock en otras sucursales"}</span>}</div>{product.inventory_tracked && product.blockers.includes("out_of_stock") && permissions.includes("view_inventory") && product.other_location_stock_count !== 0 && <Button size="sm" variant="ghost" disabled={busy} onClick={() => openLocationStock(product)}><ClipboardList size={14} /> Ver</Button>}</div></article>)}</section>}
           </div>
         </section>
         <aside className="pos-cart" id="pos-checkout">
