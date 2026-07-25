@@ -46,6 +46,7 @@ import { SalesQuotesView } from "@/app/components/SalesQuotesModule";
 import { SalesOrdersView } from "@/app/components/SalesOrdersModule";
 import { SuppliersView } from "@/app/components/SuppliersModule";
 import { PurchaseOrderPromotionAudit, PurchaseOrdersView } from "@/app/components/PurchaseOrdersModule";
+import { ProcurementView } from "@/app/components/ProcurementModule";
 import { PurchaseReceiptsView } from "@/app/components/PurchaseReceiptsModule";
 import { SupplierInvoicesView, SupplierPayingAccountsView } from "@/app/components/SupplierInvoicesModule";
 import { AccountingModule } from "@/app/components/AccountingModule";
@@ -64,7 +65,7 @@ import type {
   RoleOption,
 } from "@/app/lib/types";
 
-type ViewName = "settings_home" | "initial_migration" | "migration" | "users_access" | "suppliers" | "purchase_orders" | "purchase_receipts" | "supplier_invoices" | "supplier_paying_accounts" | "products" | "inventory" | "inventory_counts" | "inventory_transfers" | "inventory_replenishment" | "locations" | "audit" | "sales_audit" | "assortments" | "pos" | "sales_history" | "sales_quotes" | "sales_orders" | "customers" | "receivables" | "cash" | "sales_settings" | "accounting_summary" | "accounting_accounts" | "accounting_periods" | "accounting_reports" | "accounting_journals" | "accounting_events" | "accounting_banking" | "accounting_opening" | "accounting_settings";
+type ViewName = "settings_home" | "initial_migration" | "migration" | "users_access" | "suppliers" | "procurement" | "purchase_orders" | "purchase_receipts" | "supplier_invoices" | "supplier_paying_accounts" | "products" | "inventory" | "inventory_counts" | "inventory_transfers" | "inventory_replenishment" | "locations" | "audit" | "sales_audit" | "assortments" | "pos" | "sales_history" | "sales_quotes" | "sales_orders" | "customers" | "receivables" | "cash" | "sales_settings" | "accounting_summary" | "accounting_accounts" | "accounting_periods" | "accounting_reports" | "accounting_journals" | "accounting_events" | "accounting_banking" | "accounting_opening" | "accounting_settings";
 type AreaName = "sales" | "purchasing" | "inventory" | "accounting" | "settings";
 
 const ALL_ROLES: RoleOption[] = [
@@ -116,6 +117,13 @@ const VIEW_META: Record<ViewName, {
     href: "/satrapy/compras/proveedores",
     area: "purchasing",
     requirement: { all: ["view_suppliers"] },
+  },
+  procurement: {
+    label: "Abastecimiento",
+    icon: ShoppingCart,
+    href: "/satrapy/compras/abastecimiento",
+    area: "purchasing",
+    requirement: { all: ["view_procurement"] },
   },
   purchase_orders: {
     label: "Órdenes de compra",
@@ -293,7 +301,7 @@ function viewForPath(pathname: string): ViewName | undefined {
 
 const NAVIGATION_SECTIONS: Array<{ id: AreaName; label: string; views: ViewName[] }> = [
   { id: "sales", label: "Ventas", views: ["pos", "sales_history", "sales_quotes", "sales_orders", "customers", "receivables", "cash"] },
-  { id: "purchasing", label: "Compras", views: ["suppliers", "purchase_orders", "purchase_receipts", "supplier_invoices"] },
+  { id: "purchasing", label: "Compras", views: ["suppliers", "procurement", "purchase_orders", "purchase_receipts", "supplier_invoices"] },
   { id: "inventory", label: "Inventario", views: ["products", "inventory", "inventory_counts", "inventory_transfers", "inventory_replenishment"] },
   { id: "accounting", label: "Contabilidad", views: ["accounting_summary", "accounting_accounts", "accounting_reports", "accounting_periods", "accounting_journals", "accounting_events", "accounting_banking", "accounting_opening"] },
   { id: "settings", label: "Configuración", views: ["settings_home", "locations", "users_access", "initial_migration", "migration", "audit", "assortments", "supplier_paying_accounts", "sales_settings", "sales_audit", "accounting_settings"] },
@@ -422,6 +430,7 @@ export function SatrapyRouteContent() {
   if (!requestedView) return <div className="route-loading" aria-live="polite"><LoaderCircle className="spin" size={18} /> Abriendo tu espacio de trabajo…</div>;
   if (activeView === "migration") return <MigrationCenter companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "suppliers") return <SuppliersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
+  if (activeView === "procurement") return <ProcurementView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "purchase_orders") return <PurchaseOrdersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "purchase_receipts") return <PurchaseReceiptsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "supplier_invoices") return <SupplierInvoicesView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
@@ -1567,9 +1576,20 @@ function InventoryReplenishmentView({ companyId, permissions }: { companyId: str
     setBusy(false);
   }
 
+  async function prepareRequisition() {
+    if (locationFilter === "all") { toast({ title: "Selecciona una ubicación", description: "Las requisiciones se preparan para una ubicación destino.", tone: "info" }); return; }
+    setBusy(true);
+    const { data, error: rpcError } = await getSupabaseClient().rpc("generate_procurement_requisition_from_replenishment", { p_company_id: companyId, p_location_id: locationFilter, p_target_date: null, p_product_ids: null });
+    setBusy(false);
+    if (rpcError) { toast({ title: "No se preparó la requisición", description: inventoryRpcMessage(rpcError, "Revisa los faltantes disponibles."), tone: "error" }); return; }
+    const result = data as { folio?: string; lines?: unknown[] };
+    toast({ title: "Requisición preparada", description: `${result.folio ?? "La requisición"} reúne ${result.lines?.length ?? 0} faltantes y está lista para cotizar.`, tone: "success" });
+    await load();
+  }
+
   function clearFilters() { setSearch(""); setDebouncedSearch(""); setLocationFilter("all"); setBelowMinimumOnly(true); setPage(1); }
   const empty = belowMinimumOnly ? "No hay productos bajo su mínimo con los filtros actuales." : "No hay políticas de mínimos y máximos configuradas con los filtros actuales.";
-  return <div className="content-frame inventory-replenishment"><PageHeading eyebrow="Planeación de inventario" title="Reabastecimiento" description="Las sugerencias se calculan sobre la existencia vigente y solo indican cuánto recuperar hasta el máximo. No crean órdenes de compra." action={<Button variant="secondary" loading={loading} onClick={() => void load()}><RefreshCw size={16} /> Actualizar</Button>} />
+  return <div className="content-frame inventory-replenishment"><PageHeading eyebrow="Planeación de inventario" title="Reabastecimiento" description="Las sugerencias se calculan sobre la existencia vigente y solo indican cuánto recuperar hasta el máximo. No crean órdenes de compra." action={<><Button variant="secondary" disabled={locationFilter === "all" || !rows.some((row) => row.is_below_minimum)} loading={busy} onClick={() => void prepareRequisition()}>Preparar requisición</Button><Button variant="secondary" loading={loading} onClick={() => void load()}><RefreshCw size={16} /> Actualizar</Button></>} />
     {canManage && <section className="inventory-transfer-builder inventory-replenishment-builder"><header><div><span className="eyebrow">Políticas de inventario</span><h2>Configurar mínimos y máximos</h2></div><Button variant="secondary" size="sm" disabled={!policyLocationId} onClick={() => setBulkImportOpen(true)}>Importar políticas</Button></header>
       <div className="inventory-transfer-route"><label>Ubicación<Select ariaLabel="Ubicación para configurar políticas" value={policyLocationId || "unselected"} onValueChange={selectPolicyLocation} options={[{ value: "unselected", label: "Selecciona ubicación", disabled: true }, ...accessibleLocations.map((location) => ({ value: location.id, label: `${location.external_code} · ${location.name}` }))]} disabled={draftLines.length > 0} /></label></div>
       <label ref={productPickerRef} className="inventory-transfer-product-search">Agregar productos<Input role="combobox" aria-expanded={productPickerOpen} aria-controls="inventory-replenishment-product-options" aria-label="Buscar productos para reabastecimiento" value={productQuery} disabled={!policyLocationId || draftLines.length >= 500} onFocus={() => setProductPickerOpen(true)} onClick={() => setProductPickerOpen(true)} onChange={(event) => { setProductQuery(event.target.value); setProductPickerOpen(true); }} placeholder={policyLocationId ? "Buscar por producto, SKU, código o grupo" : "Selecciona primero la ubicación"} />{policyLocationId && productPickerOpen && <div id="inventory-replenishment-product-options" className="inventory-transfer-product-results inventory-replenishment-product-results" role="listbox">{productSearching ? <p>Buscando productos…</p> : productResults.length ? <><div className="inventory-replenishment-result-actions"><Button variant="ghost" size="sm" onClick={() => setProductPickerOpen(false)}>Cerrar</Button><Button variant="ghost" size="sm" onClick={selectVisibleProducts}>Seleccionar resultados</Button><Button variant="primary" size="sm" disabled={!selectedProductIds.size} onClick={addSelectedProducts}>Agregar seleccionados ({selectedProductIds.size})</Button></div>{productResults.map((product) => { const alreadyAdded = draftLines.some((line) => line.product_id === product.product_id); const selected = selectedProductIds.has(product.product_id); return <label className={alreadyAdded ? "is-disabled" : ""} key={product.product_id}><input type="checkbox" checked={selected || alreadyAdded} disabled={alreadyAdded} onChange={() => toggleProduct(product.product_id)} /><span><strong>{product.product_name}</strong><small>{product.product_code} · {product.unit ?? "Sin unidad"}{product.product_group ? ` · ${product.product_group}` : ""}</small></span><span><b>{numberFormat(Number(product.quantity_on_hand))}</b><small>{product.has_policy ? `Min ${numberFormat(Number(product.minimum_quantity))} · Max ${numberFormat(Number(product.maximum_quantity))}` : "Sin política"}</small></span></label>; })}</> : <p>No hay productos para esta búsqueda.</p>}</div>}</label>
