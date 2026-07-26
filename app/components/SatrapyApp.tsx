@@ -40,6 +40,7 @@ import { presentImportedSourceText } from "@/app/lib/presentation-text";
 import { purchasingUploadPackageState } from "@/app/lib/purchasing-upload-package";
 import { COMMERCIAL_ASSORTMENTS_PATH, LEGACY_POS_PREPARATION_PATH, MANAGE_ASSORTMENTS_REQUIREMENT, matchesNavigationRequirement, ROLE_PREVIEW_PERMISSIONS, type NavigationRequirement } from "@/app/lib/navigation-access";
 import { useSatrapy } from "@/app/components/SatrapyProvider";
+import { roleDisplayName } from "@/app/lib/role-labels";
 import { CashDeskView, CustomerMasterView, CustomersView, NewCustomerMasterView, PosSalesView, ReceivablesView, SalesAuditView, SalesHistoryView, SalesSettingsView } from "@/app/components/SalesModule";
 import { CommercialAssortmentsView } from "@/app/components/CommercialAssortmentsView";
 import { SalesQuotesView } from "@/app/components/SalesQuotesModule";
@@ -70,8 +71,8 @@ type ViewName = "settings_home" | "initial_migration" | "migration" | "users_acc
 type AreaName = "sales" | "purchasing" | "inventory" | "collaborators" | "accounting" | "settings";
 
 const ALL_ROLES: RoleOption[] = [
-  { code: "super_admin", display_name: "Super Admin" },
-  { code: "direccion_admin", display_name: "Dirección / Admin General" },
+  { code: "super_admin", display_name: "Superadmin" },
+  { code: "direccion_admin", display_name: "Administrador" },
   { code: "sucursal", display_name: "Operador de Sucursal" },
   { code: "ingeniero_campo", display_name: "Ingeniero de Campo" },
   { code: "almacen", display_name: "Almacén" },
@@ -85,7 +86,7 @@ const VIEW_META: Record<ViewName, {
   requirement?: NavigationRequirement;
 }> = {
   settings_home: {
-    label: "Configuración general",
+    label: "Configuración",
     icon: LayoutGrid,
     href: "/satrapy/configuracion",
     area: "settings",
@@ -190,7 +191,7 @@ const VIEW_META: Record<ViewName, {
     requirement: { any: ["view_inventory", "manage_inventory_replenishment"] },
   },
   locations: {
-    label: "Sucursales",
+    label: "Sucursales y ubicaciones",
     icon: MapPinned,
     href: "/satrapy/configuracion/empresa/sucursales",
     area: "settings",
@@ -267,7 +268,7 @@ const VIEW_META: Record<ViewName, {
     requirement: { any: ["open_cash_session", "view_cash_reports"] },
   },
   sales_settings: {
-    label: "Configuración comercial",
+    label: "Ventas y caja",
     icon: WalletCards,
     href: "/satrapy/configuracion/ventas",
     area: "settings",
@@ -311,7 +312,18 @@ const NAVIGATION_SECTIONS: Array<{ id: AreaName; label: string; views: ViewName[
   { id: "settings", label: "Configuración", views: ["settings_home", "locations", "users_access", "initial_migration", "migration", "audit", "assortments", "supplier_paying_accounts", "sales_settings", "sales_audit", "accounting_settings"] },
 ];
 
-const SETTINGS_PRIMARY_VIEWS: ViewName[] = ["settings_home", "locations", "users_access", "initial_migration"];
+const SETTINGS_GROUPS: Partial<Record<ViewName, string>> = {
+  initial_migration: "Puesta en marcha",
+  migration: "Puesta en marcha",
+  locations: "Empresa y acceso",
+  users_access: "Empresa y acceso",
+  sales_settings: "Operación comercial",
+  assortments: "Operación comercial",
+  supplier_paying_accounts: "Finanzas",
+  accounting_settings: "Finanzas",
+  audit: "Auditoría",
+  sales_audit: "Auditoría",
+};
 
 const DATA_PAGE_SIZE = 50;
 
@@ -337,10 +349,11 @@ export function SatrapyShell({ children }: { children: ReactNode }) {
   const activeView = requestedView && allowedViews.includes(requestedView) ? requestedView : allowedViews[0] ?? "inventory";
   const activeArea = VIEW_META[activeView].area;
   const activeRole = appState.membership.roles.find((role) => role.code !== "super_admin") ?? appState.membership.roles[0];
+  const activeRoleLabel = isSuperAdmin ? "Superadmin" : activeRole ? roleDisplayName(activeRole.code, activeRole.display_name) : undefined;
   const activeSection = allowedNavigation.find((section) => section.id === activeArea) ?? allowedNavigation[0];
-  const contextViews = activeSection?.id === "settings"
-    ? activeSection.views.filter((name) => SETTINGS_PRIMARY_VIEWS.includes(name) || name === activeView)
-    : activeSection?.views;
+  const contextViews = activeSection?.views;
+  const isSettingsArea = activeSection?.id === "settings";
+  const settingsGroup = SETTINGS_GROUPS[activeView];
   return (
     <ToastProvider>
     <main className={`app-shell ${pathname === "/satrapy/ventas/pos" ? "app-shell--pos" : ""}`}>
@@ -366,14 +379,17 @@ export function SatrapyShell({ children }: { children: ReactNode }) {
 
         <div className="global-header__controls">
           {isSuperAdmin || companies.length > 1 ? <div className="global-session-switchers"><div className="global-company-selector"><Select ariaLabel="Cambiar empresa" value={appState.membership.companyId} onValueChange={(companyId) => void selectCompany(companyId)} options={companies.map((company) => ({ value: company.id, label: company.display_name }))} /></div>{isSuperAdmin && <RolePreview selectedRole={previewRole} onChange={(role) => setPreviewRole(role)} compact />}</div> : <div className="global-company-context" title={appState.membership.companyName}><Building2 size={14} /><span>{appState.membership.companyName}</span></div>}
-          {activeRole && <Badge className="global-role-badge" tone={activeRole.code === "super_admin" ? "primary" : "neutral"}>{activeRole.display_name}</Badge>}
+          {activeRoleLabel && <Badge className="global-role-badge" tone={isSuperAdmin ? "primary" : "neutral"}>{activeRoleLabel}</Badge>}
           <div className="user-avatar">{appState.email.slice(0, 1).toUpperCase()}</div>
           <button className="icon-button" aria-label="Cerrar sesión" onClick={() => void getSupabaseClient().auth.signOut()}><LogOut size={16} /></button>
         </div>
       </header>
 
       <section className="main-panel">
-        <nav className={`context-nav ${activeSection?.id === "accounting" ? "context-nav--accounting" : ""}`} aria-label={`Secciones de ${activeSection?.label ?? "Satrapy"}`}>
+        {isSettingsArea ? <nav className="settings-context" aria-label="Ubicación en Configuración">
+          <button className="settings-context__home" aria-current={activeView === "settings_home" ? "page" : undefined} onClick={() => router.push(VIEW_META.settings_home.href)}><LayoutGrid size={15} /> Configuración</button>
+          {activeView !== "settings_home" && <><span className="settings-context__separator" aria-hidden="true">/</span>{settingsGroup && <><span>{settingsGroup}</span><span className="settings-context__separator" aria-hidden="true">/</span></>}<strong>{VIEW_META[activeView].label}</strong></>}
+        </nav> : <nav className={`context-nav ${activeSection?.id === "accounting" ? "context-nav--accounting" : ""}`} aria-label={`Secciones de ${activeSection?.label ?? "Satrapy"}`}>
           <div className="topbar__context">
             <strong>{appState.membership.companyName}</strong>
             <span>{activeSection?.label ?? "Operación"}</span>
@@ -386,7 +402,7 @@ export function SatrapyShell({ children }: { children: ReactNode }) {
             })}
           </div>
           <span className="topbar__status">Operación en orden</span>
-        </nav>
+        </nav>}
         {previewRole && (
           <div className="role-preview-banner">
             <UserRoundCheck size={17} />
@@ -444,7 +460,7 @@ export function SatrapyRouteContent() {
   if (activeView === "inventory_counts") return <InventoryCountsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "inventory_transfers") return <InventoryTransfersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "inventory_replenishment") return <InventoryReplenishmentView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
-  if (activeView === "settings_home") return <ConfigurationHome permissions={appState.membership.permissions} />;
+  if (activeView === "settings_home") return <ConfigurationHome companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "initial_migration") return <InitialMigrationView companyId={appState.membership.companyId} />;
   if (activeView === "locations") return <CompanyLocationsView companyId={appState.membership.companyId} />;
   if (activeView === "users_access") return <CompanyUsersView companyId={appState.membership.companyId} />;
@@ -2279,7 +2295,7 @@ function validationLabel(status: StagedRow["validation_status"]) {
 function fileNameForBatch(batch: StagedBatch) {
   return batch.import_files[0]?.original_name ?? "Archivo en staging";
 }
-function roleLabel(code: AppRoleCode) { return ALL_ROLES.find((role) => role.code === code)?.display_name ?? code; }
+function roleLabel(code: AppRoleCode) { return roleDisplayName(code, ALL_ROLES.find((role) => role.code === code)?.display_name); }
 function numberFormat(value: number) { return new Intl.NumberFormat("es-MX", { maximumFractionDigits: 3 }).format(value); }
 function dateOnlyFormat(value: string) { return new Intl.DateTimeFormat("es-MX", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`)); }
 function dateTimeFormat(value: string) { return new Intl.DateTimeFormat("es-MX", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)); }

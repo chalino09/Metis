@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getSupabaseClient, isSupabaseConfigured } from "@/app/lib/supabase";
 import { withAccessTimeout } from "@/app/lib/access-loading";
+import { ROLE_PREVIEW_PERMISSIONS } from "@/app/lib/navigation-access";
 import type { AppRoleCode, CompanyMembership, LocationRow, RoleOption } from "@/app/lib/types";
 
 export type SatrapyAppState = {
@@ -191,11 +192,22 @@ export function SatrapyProvider({ children }: { children: ReactNode }) {
     await loadSession(false);
   }, [appState, companies, loadSession, queryCache]);
 
+  const effectiveAppState = useMemo(() => {
+    if (!appState || !previewRole) return appState;
+    return {
+      ...appState,
+      membership: {
+        ...appState.membership,
+        permissions: ROLE_PREVIEW_PERMISSIONS[previewRole],
+      },
+    };
+  }, [appState, previewRole]);
+
   const value = useMemo<SatrapyContextValue>(() => ({
     configured,
     loading,
     notice,
-    appState,
+    appState: effectiveAppState,
     isSuperAdmin,
     companies,
     accessibleLocations,
@@ -204,7 +216,7 @@ export function SatrapyProvider({ children }: { children: ReactNode }) {
     selectCompany,
     refreshAccess: async () => { queryCache.clear(); await loadSession(true); },
     queryCache,
-  }), [accessibleLocations, appState, companies, configured, isSuperAdmin, loading, notice, previewRole, queryCache, selectCompany, loadSession]);
+  }), [accessibleLocations, companies, configured, effectiveAppState, isSuperAdmin, loading, notice, previewRole, queryCache, selectCompany, loadSession]);
 
   return <SatrapyContext.Provider value={value}>{children}</SatrapyContext.Provider>;
 }

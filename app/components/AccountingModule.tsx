@@ -44,7 +44,7 @@ const titles: Record<AccountingView, [string, string, string]> = {
   journals: ["Libro diario", "Pólizas", "Consulta pólizas contabilizadas y sus partidas de doble entrada."],
   events: ["Automatización contable", "Eventos contables", "Define una vez las reglas y revisa la trazabilidad automática de tus operaciones."],
   opening: ["Inicio contable", "Apertura y conciliación", "Revisa los archivos detectados y promueve una apertura controlada."],
-  settings: ["Base contable", "Configuración contable", "Configura una empresa desde cero o confirma los datos detectados en archivos contables."],
+  settings: ["Finanzas", "Configuración contable", "Configura una empresa desde cero o confirma los datos detectados en archivos contables."],
 };
 
 export function AccountingModule({ companyId, permissions, view }: { companyId: string; permissions: string[]; view: AccountingView }) {
