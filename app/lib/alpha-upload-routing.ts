@@ -1,13 +1,18 @@
 export type AlphaStandardImportKind = "products" | "inventory" | "prices" | "costs";
+export type AlphaCollaboratorFileKind = "collaborators";
 export type AlphaCustomerFileKind = "customers" | "credit_terms" | "ledger" | "collections";
 export type AlphaPurchasingFileKind = "suppliers" | "purchase_orders" | "payable_documents" | "supplier_payments";
-export type AlphaUploadKind = AlphaStandardImportKind | AlphaCustomerFileKind | AlphaPurchasingFileKind | "unrecognized";
+export type AlphaUploadKind = AlphaStandardImportKind | AlphaCollaboratorFileKind | AlphaCustomerFileKind | AlphaPurchasingFileKind | "unrecognized";
 
 const standardPatterns: Array<[AlphaStandardImportKind, RegExp]> = [
   ["products", /^cata_prd_.+\.xlsx?$/i],
   ["inventory", /^reexic2_.+\.xlsx?$/i],
   ["prices", /^rprecprd_.+\.xlsx?$/i],
   ["costs", /^rcostprd_.+\.xlsx?$/i],
+];
+
+const collaboratorPatterns: Array<[AlphaCollaboratorFileKind, RegExp]> = [
+  ["collaborators", /^(?:cata|cat)_(?:emp|emple|empleado|colab|colaborador)_.+\.(?:xlsx?|csv)$/i],
 ];
 
 const customerPatterns: Array<[AlphaCustomerFileKind, RegExp]> = [
@@ -26,9 +31,14 @@ const purchasingPatterns: Array<[AlphaPurchasingFileKind, RegExp]> = [
 
 export function classifyAlphaUpload(fileName: string): AlphaUploadKind {
   return standardPatterns.find(([, pattern]) => pattern.test(fileName))?.[0]
+    ?? collaboratorPatterns.find(([, pattern]) => pattern.test(fileName))?.[0]
     ?? customerPatterns.find(([, pattern]) => pattern.test(fileName))?.[0]
     ?? purchasingPatterns.find(([, pattern]) => pattern.test(fileName))?.[0]
     ?? "unrecognized";
+}
+
+export function isCollaboratorAlphaUpload(kind: AlphaUploadKind): kind is AlphaCollaboratorFileKind {
+  return kind === "collaborators";
 }
 
 export function isStandardAlphaUpload(kind: AlphaUploadKind): kind is AlphaStandardImportKind {
@@ -48,6 +58,7 @@ export function alphaUploadLabel(kind: AlphaUploadKind): string {
   if (kind === "inventory") return "Inventario";
   if (kind === "prices") return "Precios";
   if (kind === "costs") return "Costos";
+  if (kind === "collaborators") return "Colaboradores";
   if (kind === "customers") return "Catálogo de clientes";
   if (kind === "credit_terms") return "Condiciones comerciales";
   if (kind === "ledger") return "Documentos y saldos CxC";

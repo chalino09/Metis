@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { alphaUploadLabel, classifyAlphaUpload, isCustomerAlphaUpload, isPurchasingAlphaUpload } from "@/app/lib/alpha-upload-routing";
-import { stageCustomerAlphaUploads, stagePurchasingAlphaUploads, stageStandardAlphaUpload } from "@/app/lib/import-upload-staging";
+import { alphaUploadLabel, classifyAlphaUpload, isCollaboratorAlphaUpload, isCustomerAlphaUpload, isPurchasingAlphaUpload } from "@/app/lib/alpha-upload-routing";
+import { stageCollaboratorAlphaUpload, stageCustomerAlphaUploads, stagePurchasingAlphaUploads, stageStandardAlphaUpload } from "@/app/lib/import-upload-staging";
 import { purchasingUploadPackageState } from "@/app/lib/purchasing-upload-package";
 import { getRequestSupabaseClient } from "@/app/lib/supabase-server";
 import { detectAndStageAccountingUpload } from "@/app/lib/accounting-import";
@@ -60,7 +60,18 @@ export async function POST(request: NextRequest) {
 
     for (const { file, kind } of standardFiles) {
       try {
+        if (isCollaboratorAlphaUpload(kind)) {
+          const staged = await stageCollaboratorAlphaUpload(supabase, companyId, file);
+          if (!staged) throw new Error("No se reconoció la estructura de colaboradores.");
+          results.push({ files: [file.name], kind, label: alphaUploadLabel(kind), status: normalizeStatus(staged.status), batch_id: staged.batch_id, message: staged.message });
+          continue;
+        }
         if (kind === "unrecognized") {
+          const collaborators = await stageCollaboratorAlphaUpload(supabase, companyId, file);
+          if (collaborators) {
+            results.push({ files: [file.name], kind: "collaborators", label: "Colaboradores", status: normalizeStatus(collaborators.status), batch_id: collaborators.batch_id, message: collaborators.message });
+            continue;
+          }
           const banking = await detectAndStageBankStatement(supabase, companyId, file);
           if (banking) {
             results.push({ files: [file.name], kind: banking.kind, label: banking.label, status: normalizeStatus(banking.status), batch_id: banking.batch_id, message: banking.message });

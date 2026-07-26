@@ -2,6 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { parseAlphaCustomerMigration } from "@/app/lib/alpha-customer-migration";
+import { parseAlphaCollaboratorMigration } from "@/app/lib/alpha-collaborator-migration";
 import { parseAlphaPurchasingMigration } from "@/app/lib/alpha-purchasing-migration";
 import { parseAlphaWorkbook } from "@/app/lib/alpha";
 import { buildStagingPayload } from "@/app/lib/import-staging";
@@ -13,6 +14,7 @@ type Client = SupabaseClient;
 export type StandardStagingResult = { status: string; batch_id?: string; message?: string; records_received?: number; valid_rows?: number; warning_rows?: number; error_rows?: number };
 export type CustomerStagingResult = { status: string; batch_id?: string; message?: string; files_staged?: number; records_received?: number; reconciled_customers?: number; customers_with_differences?: number };
 export type PurchasingStagingResult = { status: string; batch_id?: string; message?: string; errors?: number; warnings?: number };
+export type CollaboratorStagingResult = StandardStagingResult;
 
 const CHUNK_SIZE = 400;
 
@@ -38,6 +40,29 @@ export async function stageStandardAlphaUpload(
   });
   if (error) throw new Error(error.message);
   return data as StandardStagingResult;
+}
+
+export async function stageCollaboratorAlphaUpload(
+  supabase: Client,
+  companyId: string,
+  file: FileInput,
+  source: "manual_upload" | "local_development" = "manual_upload",
+): Promise<CollaboratorStagingResult | null> {
+  const parsed = await parseAlphaCollaboratorMigration(file);
+  if (!parsed.recognized) return null;
+  const { data, error } = await supabase.rpc("stage_alpha_import", {
+    p_company_id: companyId,
+    p_import_type: "collaborators",
+    p_source: source,
+    p_file_name: parsed.fileName,
+    p_file_type: extension(parsed.fileName),
+    p_file_sha256: parsed.fileHash,
+    p_snapshot_date: parsed.snapshotDate,
+    p_rows: parsed.rows,
+    p_errors: parsed.errors,
+  });
+  if (error) throw new Error(error.message);
+  return data as CollaboratorStagingResult;
 }
 
 export async function stageCustomerAlphaUploads(

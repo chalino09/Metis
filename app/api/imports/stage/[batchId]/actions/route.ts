@@ -54,6 +54,9 @@ function rpcForAction(batchId: string, body: ActionBody, importType?: string) {
         },
       };
     }
+    if (importType === "collaborators") {
+      return { name: "confirm_collaborator_import", parameters: { p_import_batch_id: batchId } };
+    }
     return { name: ["prices", "costs"].includes(importType ?? "") ? "confirm_commercial_import" : "confirm_staged_import", parameters: { p_import_batch_id: batchId } };
   }
   if (body.action === "map_currency" && body.sourceLabel && body.currencyCode) return { name: "review_staged_currency", parameters: { p_import_batch_id: batchId, p_source_label: body.sourceLabel, p_currency_code: body.currencyCode } };
