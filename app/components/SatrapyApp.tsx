@@ -21,6 +21,7 @@ import {
   RefreshCw,
   ReceiptText,
   ShoppingCart,
+  Target,
   TrendingUp,
   Truck,
   Upload,
@@ -58,6 +59,7 @@ import { ConfigurationHome } from "@/app/components/ConfigurationHome";
 import { InitialMigrationView } from "@/app/components/InitialMigrationView";
 import { ProductCatalogView } from "@/app/components/ProductCatalogView";
 import { CollaboratorsDirectoryView, PayrollView } from "@/app/components/CollaboratorsModule";
+import { BiModule } from "@/app/components/BiModule";
 import type {
   AppRoleCode,
   ImportBatchRow,
@@ -67,8 +69,8 @@ import type {
   RoleOption,
 } from "@/app/lib/types";
 
-type ViewName = "settings_home" | "initial_migration" | "migration" | "users_access" | "suppliers" | "procurement" | "purchase_orders" | "purchase_receipts" | "supplier_invoices" | "supplier_paying_accounts" | "products" | "inventory" | "inventory_counts" | "inventory_transfers" | "inventory_replenishment" | "locations" | "audit" | "sales_audit" | "assortments" | "pos" | "sales_history" | "sales_quotes" | "sales_orders" | "customers" | "receivables" | "cash" | "sales_settings" | "collaborators_directory" | "payroll" | "accounting_summary" | "accounting_accounts" | "accounting_periods" | "accounting_reports" | "accounting_journals" | "accounting_events" | "accounting_banking" | "accounting_opening" | "accounting_settings";
-type AreaName = "sales" | "purchasing" | "inventory" | "collaborators" | "accounting" | "settings";
+type ViewName = "bi_summary" | "bi_explorer" | "bi_reports" | "bi_budgets" | "bi_network" | "settings_home" | "initial_migration" | "migration" | "users_access" | "suppliers" | "procurement" | "purchase_orders" | "purchase_receipts" | "supplier_invoices" | "supplier_paying_accounts" | "products" | "inventory" | "inventory_counts" | "inventory_transfers" | "inventory_replenishment" | "locations" | "audit" | "sales_audit" | "assortments" | "pos" | "sales_history" | "sales_quotes" | "sales_orders" | "customers" | "receivables" | "cash" | "sales_settings" | "collaborators_directory" | "payroll" | "accounting_summary" | "accounting_accounts" | "accounting_periods" | "accounting_reports" | "accounting_journals" | "accounting_events" | "accounting_banking" | "accounting_opening" | "accounting_settings";
+type AreaName = "bi" | "sales" | "purchasing" | "inventory" | "collaborators" | "accounting" | "settings";
 
 const ALL_ROLES: RoleOption[] = [
   { code: "super_admin", display_name: "Superadmin" },
@@ -85,12 +87,17 @@ const VIEW_META: Record<ViewName, {
   area: AreaName;
   requirement?: NavigationRequirement;
 }> = {
+  bi_summary: { label: "Resumen ejecutivo", icon: BarChart3, href: "/satrapy/bi", area: "bi", requirement: { all: ["view_bi"] } },
+  bi_explorer: { label: "Explorador", icon: TrendingUp, href: "/satrapy/bi/explorador", area: "bi", requirement: { all: ["view_bi"] } },
+  bi_reports: { label: "Reportes", icon: FileSpreadsheet, href: "/satrapy/bi/reportes", area: "bi", requirement: { all: ["view_bi"] } },
+  bi_budgets: { label: "Metas y presupuestos", icon: Target, href: "/satrapy/bi/metas-presupuestos", area: "bi", requirement: { all: ["view_bi_budgets"] } },
+  bi_network: { label: "Red", icon: ArrowRightLeft, href: "/satrapy/bi/red", area: "bi", requirement: { all: ["view_bi"] } },
   settings_home: {
     label: "Configuración",
     icon: LayoutGrid,
     href: "/satrapy/configuracion",
     area: "settings",
-    requirement: { any: ["manage_locations","manage_company_users","import_data","import_prices","import_costs","import_accounting_opening","view_import_audit","manage_assortments","manage_supplier_paying_accounts","manage_payment_methods","manage_discount_policies","manage_prices","manage_ticket_branding","view_sales_audit","view_accounting","configure_accounting","view_banking"] },
+    requirement: { any: ["manage_locations","manage_company_users","import_data","import_prices","import_costs","import_accounting_opening","import_bi_budgets","view_import_audit","manage_assortments","manage_supplier_paying_accounts","manage_payment_methods","manage_discount_policies","manage_prices","manage_ticket_branding","view_sales_audit","view_accounting","configure_accounting","view_banking"] },
   },
   initial_migration: {
     label: "Migración inicial",
@@ -111,7 +118,7 @@ const VIEW_META: Record<ViewName, {
     icon: FileSpreadsheet,
     href: "/satrapy/configuracion/importaciones",
     area: "settings",
-    requirement: { any: ["import_data", "import_prices", "import_costs", "import_accounting_opening"] },
+    requirement: { any: ["import_data", "import_prices", "import_costs", "import_accounting_opening", "import_bi_budgets"] },
   },
   suppliers: {
     label: "Proveedores",
@@ -309,6 +316,7 @@ const NAVIGATION_SECTIONS: Array<{ id: AreaName; label: string; views: ViewName[
   { id: "inventory", label: "Inventario", views: ["products", "inventory", "inventory_counts", "inventory_transfers", "inventory_replenishment"] },
   { id: "collaborators", label: "Colaboradores", views: ["collaborators_directory", "payroll"] },
   { id: "accounting", label: "Contabilidad", views: ["accounting_summary", "accounting_accounts", "accounting_reports", "accounting_periods", "accounting_journals", "accounting_events", "accounting_banking", "accounting_opening"] },
+  { id: "bi", label: "BI", views: ["bi_summary", "bi_explorer", "bi_reports", "bi_budgets", "bi_network"] },
   { id: "settings", label: "Configuración", views: ["settings_home", "locations", "users_access", "initial_migration", "migration", "audit", "assortments", "supplier_paying_accounts", "sales_settings", "sales_audit", "accounting_settings"] },
 ];
 
@@ -398,7 +406,7 @@ export function SatrapyShell({ children }: { children: ReactNode }) {
             {contextViews?.map((name) => {
               const item = VIEW_META[name];
               const Icon = item.icon;
-              return <button className={`context-nav__item ${activeView === name ? "is-active" : ""}`} aria-current={activeView === name ? "page" : undefined} onClick={() => router.push(item.href)} key={name}><Icon size={16} />{item.label}</button>;
+              return <button className={`context-nav__item ${activeView === name ? "is-active" : ""}`} aria-current={activeView === name ? "page" : undefined} onClick={() => router.push(activeSection?.id === "bi" ? `${item.href}${window.location.search}` : item.href)} key={name}><Icon size={16} />{item.label}</button>;
             })}
           </div>
           <span className="topbar__status">Operación en orden</span>
@@ -478,6 +486,11 @@ export function SatrapyRouteContent() {
   if (activeView === "sales_settings") return <SalesSettingsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "collaborators_directory") return <CollaboratorsDirectoryView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "payroll") return <PayrollView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
+  if (activeView === "bi_summary") return <BiModule companyId={appState.membership.companyId} view="summary" />;
+  if (activeView === "bi_explorer") return <BiModule companyId={appState.membership.companyId} view="explorer" />;
+  if (activeView === "bi_reports") return <BiModule companyId={appState.membership.companyId} view="reports" />;
+  if (activeView === "bi_budgets") return <BiModule companyId={appState.membership.companyId} view="budgets" />;
+  if (activeView === "bi_network") return <BiModule companyId={appState.membership.companyId} view="network" />;
   if (activeView === "accounting_summary") return <AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="summary" />;
   if (activeView === "accounting_accounts") return <AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="accounts" />;
   if (activeView === "accounting_periods") return <AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="periods" />;
@@ -662,7 +675,12 @@ type OperationDialog =
 type CustomerMigrationBatch = { id: string; cutoff_date: string; status: string; records_received: number; records_promoted: number; differences: number; summary: { reconciled_customers?: number; customers_with_differences?: number; failure_reason?: string; remaining_customers?: number; receivable_repair?: { status?: string; corrected_total?: number }; receivable_backfill?: { status?: string; total_after?: number }; customer_identity_repair?: { status?: string; ambiguous_customers?: number }; customer_conflict_review?: { status?: string } } };
 type PurchasingMigrationBatch = { id: string; cutoff_date: string; status: "loading" | "staged" | "validation_failed" | "failed"; records_received: number; differences: number; summary: { suppliers?: number; purchase_orders?: number; purchase_order_lines?: number; payable_documents?: number; payable_outstanding_total?: number; supplier_payments?: number; supplier_payment_total?: number; receipt_source_available?: boolean; error_count?: number; warning_count?: number; operational_import_ready?: boolean; failure_reason?: string }; files: Array<{ report_type: string; original_name: string; row_count: number }> };
 type ReceivableBackfillPreview = { batch_id: string; can_apply: boolean; eligible_documents: number; eligible_total: number; documents_to_insert: number; amount_to_insert: number; already_recorded_documents: number; excluded_unresolved_customer_documents: number; excluded_unresolved_customer_amount: number; duplicate_payload_hashes: number; staged_documents_missing_from_source: number; source_documents_not_in_staging: number; existing_document_conflicts: number };
-type MigrationUploadResult = { files: string[]; kind: string; label: string; status: "staged" | "awaiting_configuration" | "validation_failed" | "duplicate" | "failed" | "unrecognized"; batch_id?: string; message?: string };
+type MigrationUploadResult = { files: string[]; kind: string; label: string; status: "staged" | "awaiting_configuration" | "validation_failed" | "duplicate" | "promoted" | "failed" | "unrecognized"; batch_id?: string; message?: string };
+type BudgetImportPreview = {
+  batch: { batch_id: string; status: string; file_name: string; row_count: number; valid_count: number; error_count: number; idempotent: boolean };
+  items: Array<{ id: string; row_number: number; raw_data: Record<string, string>; errors: string[] }>;
+  pagination: { page: number; page_size: number; total: number };
+};
 type CustomerIdentityConflict = {
   batch_id: string; cutoff_date: string; external_code: string; display_name: string; tax_id: string | null;
   commercial_type: string | null; credit_limit: number | null; credit_term_days: number | null;
@@ -695,7 +713,7 @@ function customerMigrationSummary(batch: CustomerMigrationBatch) {
 }
 
 function uploadResultStatusLabel(status: MigrationUploadResult["status"]) {
-  return status === "staged" ? "Preparado" : status === "awaiting_configuration" ? "Guardado · requiere revisión" : status === "validation_failed" ? "Estructura o datos por revisar" : status === "duplicate" ? "Ya importado" : status === "unrecognized" ? "Archivo no reconocido" : "No se pudo preparar";
+  return status === "staged" ? "Preparado" : status === "awaiting_configuration" ? "Guardado · requiere revisión" : status === "validation_failed" ? "Estructura o datos por revisar" : status === "duplicate" ? "Ya importado" : status === "promoted" ? "Importado" : status === "unrecognized" ? "Archivo no reconocido" : "No se pudo preparar";
 }
 
 function isMisroutedCustomerMigrationBatch(batch: StagedBatch) {
@@ -727,10 +745,15 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
   const [receivableBackfill, setReceivableBackfill] = useState<ReceivableBackfillPreview | null>(null);
   const [receivableBackfillAcknowledged, setReceivableBackfillAcknowledged] = useState(false);
   const [uploadResults, setUploadResults] = useState<MigrationUploadResult[]>([]);
+  const [budgetPreview, setBudgetPreview] = useState<BudgetImportPreview | null>(null);
+  const [budgetPreviewPage, setBudgetPreviewPage] = useState(1);
+  const [budgetPromotionReason, setBudgetPromotionReason] = useState("");
   const [pendingPurchasingFileCount, setPendingPurchasingFileCount] = useState(0);
   const [linkedAlphaFolderAvailable, setLinkedAlphaFolderAvailable] = useState(false);
   const pendingPurchasingFiles = useRef(new Map<string, File>());
   const canImport = permissions.some((permission) => ["import_data", "import_prices", "import_costs", "import_accounting_opening", "import_bank_statements"].includes(permission));
+  const canImportBudgets = permissions.includes("*") || permissions.includes("import_bi_budgets");
+  const canUploadAny = canImport || canImportBudgets;
   const canImportCustomers = permissions.includes("import_data");
   const visibleBatches = batches.filter((batch) => !isMisroutedCustomerMigrationBatch(batch));
   const visibleCustomerMigrationBatches = customerMigrationBatches.filter((batch) => !(batch.status === "failed"
@@ -794,6 +817,18 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
   }, [batchPage, companyId]);
 
   useEffect(() => { void Promise.resolve().then(() => loadBatches()); }, [loadBatches]);
+  const loadBudgetPreview = useCallback(async (batchId: string, requestedPage = 1) => {
+    const { data, error } = await getSupabaseClient().rpc("bi_budget_import_preview", {
+      p_company_id: companyId,
+      p_batch_id: batchId,
+      p_page: requestedPage,
+      p_page_size: 50,
+    });
+    if (error) throw new Error(error.message);
+    const next = data as BudgetImportPreview;
+    setBudgetPreview(next);
+    setBudgetPreviewPage(next.pagination.page);
+  }, [companyId]);
   const loadCustomerMigrationBatches = useCallback(async () => {
     const session = (await getSupabaseClient().auth.getSession()).data.session;
     if (!session) return;
@@ -883,6 +918,13 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
         setPendingPurchasingFileCount(0);
       }
       const batchId = results.find((item) => item.batch_id)?.batch_id;
+      const budgetResult = results.find((item) => item.kind === "bi_budgets" && item.batch_id);
+      if (budgetResult?.batch_id) {
+        setBudgetPromotionReason("");
+        await loadBudgetPreview(budgetResult.batch_id, 1);
+      } else {
+        setBudgetPreview(null);
+      }
       await Promise.all([loadBatches(batchId, 1), loadCustomerMigrationBatches(), loadPurchasingMigrationBatches(), loadCustomerConflicts()]);
       const prepared = results.filter((item) => item.status === "staged").length;
       const rejected = results.filter((item) => item.status === "unrecognized" || item.status === "failed").length;
@@ -894,6 +936,27 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
     } finally {
       setBusy(false);
     }
+  }
+
+  async function promoteBudgetImport() {
+    if (!budgetPreview) return;
+    setBusy(true);
+    setMessage(null);
+    const { error } = await getSupabaseClient().rpc("bi_promote_budget_import", {
+      p_company_id: companyId,
+      p_batch_id: budgetPreview.batch.batch_id,
+      p_reason: budgetPromotionReason,
+    });
+    setBusy(false);
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+    setBudgetPreview(null);
+    setBudgetPromotionReason("");
+    setUploadResults((current) => current.map((item) => item.batch_id === budgetPreview.batch.batch_id ? { ...item, status: "promoted", message: "Presupuestos promovidos como borradores auditados." } : item));
+    setMessage("Importación de metas y presupuestos finalizada.");
+    toast({ title: "Presupuestos importados", description: "Las filas válidas quedaron como borradores auditados.", tone: "success" });
   }
 
   async function consolidatePurchasingFromLinkedFolder() {
@@ -1115,10 +1178,10 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
             <Upload size={22} />
             <strong>Subir archivos de origen</strong>
             <span>Selecciona todos los CSV o Excel disponibles. Satrapy detecta cada archivo automáticamente y conserva un resultado por archivo o paquete.</span>
-            <input type="file" accept=".csv,.xls,.xlsx" multiple disabled={!canImport || busy} onChange={(event) => { const selected = Array.from(event.target.files ?? []); event.target.value = ""; if (selected.length) void addFiles(selected); }} />
+            <input type="file" accept=".csv,.xls,.xlsx" multiple disabled={!canUploadAny || busy} onChange={(event) => { const selected = Array.from(event.target.files ?? []); event.target.value = ""; if (selected.length) void addFiles(selected); }} />
           </label>
           {pendingPurchasingFileCount > 0 && <p className="permission-note">Compras/CxP: {pendingPurchasingFileCount}/4 archivos detectados. No se creará staging hasta completar el paquete.</p>}
-          {uploadResults.length > 0 && <section className="upload-results" aria-label="Resultado de la carga">{uploadResults.map((result) => <article key={`${result.kind}:${result.files.join("|")}`}><div><strong>{result.label}</strong><small>{result.files.join(", ")}{result.message ? ` · ${presentImportedSourceText(result.message)}` : ""}</small></div><Badge tone={result.status === "staged" ? "success" : result.status === "duplicate" ? "neutral" : result.status === "awaiting_configuration" || result.status === "validation_failed" ? "warning" : "danger"}>{uploadResultStatusLabel(result.status)}</Badge></article>)}</section>}
+          {uploadResults.length > 0 && <section className="upload-results" aria-label="Resultado de la carga">{uploadResults.map((result) => <article key={`${result.kind}:${result.files.join("|")}`}><div><strong>{result.label}</strong><small>{result.files.join(", ")}{result.message ? ` · ${presentImportedSourceText(result.message)}` : ""}</small></div><Badge tone={result.status === "staged" || result.status === "promoted" ? "success" : result.status === "duplicate" ? "neutral" : result.status === "awaiting_configuration" || result.status === "validation_failed" ? "warning" : "danger"}>{uploadResultStatusLabel(result.status)}</Badge></article>)}</section>}
         </div>
         <div className="import-rules">
           <span className="eyebrow">Antes de confirmar</span>
@@ -1129,8 +1192,16 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
             <li><Check size={15} /> Un archivo ya completado no se vuelve a importar.</li>
           </ul>
           <div className="folder-import-actions"><span>Para estados bancarios sin formato propio:</span><div><a className="secondary-button" href="/templates/plantilla_estado_bancario_neutral.xlsx" download>Plantilla XLSX</a><a className="secondary-button" href="/templates/plantilla_estado_bancario_neutral.csv" download>Plantilla CSV</a></div></div>
+          {canImportBudgets && <div className="folder-import-actions"><span>Para metas y presupuestos:</span><div><a className="secondary-button" href="/api/bi/budgets/import?format=xlsx" download>Plantilla XLSX</a><a className="secondary-button" href="/api/bi/budgets/import?format=csv" download>Plantilla CSV</a></div></div>}
         </div>
       </section>
+
+      {budgetPreview && <section className="import-preview-shell" aria-labelledby="budget-import-preview-title">
+        <div className="preview-summary"><span id="budget-import-preview-title" className="file-kind">Metas y presupuestos</span><span>{budgetPreview.batch.valid_count} válidas de {budgetPreview.batch.row_count} filas</span>{budgetPreview.batch.error_count > 0 && <Badge tone="danger">{budgetPreview.batch.error_count} con error</Badge>}</div>
+        <div className="table-wrap"><table><thead><tr><th>Fila</th><th>Nombre</th><th>Métrica</th><th>Alcance</th><th>Valor</th><th>Validación</th></tr></thead><tbody>{budgetPreview.items.map((item) => <tr key={item.id}><td>{item.row_number}</td><td>{item.raw_data.name}</td><td>{item.raw_data.metric_code}</td><td>{item.raw_data.scope_type}</td><td>{item.raw_data.value}</td><td>{item.errors.length ? <span className="is-danger">{item.errors.join(" ")}</span> : <span className="is-success">Válida</span>}</td></tr>)}</tbody></table></div>
+        {budgetPreview.pagination.total > budgetPreview.pagination.page_size && <DataPagination page={budgetPreviewPage} total={budgetPreview.pagination.total} pageSize={budgetPreview.pagination.page_size} label="filas de presupuesto" onChange={(next) => void loadBudgetPreview(budgetPreview.batch.batch_id, next)} />}
+        {budgetPreview.batch.error_count === 0 && <div className="confirm-bar"><label>Motivo de promoción<Input value={budgetPromotionReason} onChange={(event) => setBudgetPromotionReason(event.target.value)} minLength={5} /></label><Button variant="primary" loading={busy} disabled={budgetPromotionReason.trim().length < 5} onClick={() => void promoteBudgetImport()}>Promover borradores</Button></div>}
+      </section>}
 
       <section className="location-review">
         <div><span className="eyebrow">Clientes y CxC importados</span><h2>Paquetes detectados</h2><p>Los archivos cata_cte, cat_ctee, lis_sal y cob_cte se agrupan automáticamente. Satrapy compara las fuentes y valida qué datos están listos para importar. Cobranza es evidencia: nunca genera abonos.</p></div>

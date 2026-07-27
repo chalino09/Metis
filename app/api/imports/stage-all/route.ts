@@ -5,6 +5,7 @@ import { purchasingUploadPackageState } from "@/app/lib/purchasing-upload-packag
 import { getRequestSupabaseClient } from "@/app/lib/supabase-server";
 import { detectAndStageAccountingUpload } from "@/app/lib/accounting-import";
 import { detectAndStageBankStatement } from "@/app/lib/bank-statement-import";
+import { detectAndStageBudgetImport } from "@/app/lib/bi-budget-import";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -67,6 +68,20 @@ export async function POST(request: NextRequest) {
           continue;
         }
         if (kind === "unrecognized") {
+          const budgets = await detectAndStageBudgetImport(supabase, companyId, file);
+          if (budgets) {
+            results.push({
+              files: [file.name],
+              kind: "bi_budgets",
+              label: "Metas y presupuestos",
+              status: budgets.idempotent ? "duplicate" : budgets.error_count ? "validation_failed" : "staged",
+              batch_id: budgets.batch_id,
+              message: budgets.idempotent
+                ? "Este archivo de presupuestos ya estaba preparado; no se duplicó."
+                : `${budgets.valid_count} de ${budgets.row_count} filas válidas; ${budgets.error_count} con error.`,
+            });
+            continue;
+          }
           const collaborators = await stageCollaboratorAlphaUpload(supabase, companyId, file);
           if (collaborators) {
             results.push({ files: [file.name], kind: "collaborators", label: "Colaboradores", status: normalizeStatus(collaborators.status), batch_id: collaborators.batch_id, message: collaborators.message });

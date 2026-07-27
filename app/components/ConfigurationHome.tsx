@@ -70,6 +70,7 @@ function normalize(value: string) {
 export function ConfigurationHome({ companyId, permissions }: { companyId: string; permissions: string[] }) {
   const has = useCallback((...codes: string[]) => codes.some((code) => permissions.includes(code) || permissions.includes("*")), [permissions]);
   const canReviewMigration = has("import_data", "import_prices", "import_costs", "import_accounting_opening");
+  const canUseImportCenter = canReviewMigration || has("import_bi_budgets");
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<ConfigurationMode>("all");
   const [readiness, setReadiness] = useState<Readiness | null>(null);
@@ -129,13 +130,13 @@ export function ConfigurationHome({ companyId, permissions }: { companyId: strin
     {
       id: "migration-center",
       label: "Centro de Migración",
-      description: "Carga archivos, valida excepciones y conserva cada lote.",
+      description: "Carga archivos y presupuestos, valida excepciones y conserva cada lote.",
       href: "/satrapy/configuracion/importaciones",
       icon: Database,
       group: "setup",
       mode: "setup",
-      keywords: "alpha archivos excel carga importacion lotes",
-      visible: canReviewMigration,
+      keywords: "alpha archivos excel carga importacion lotes presupuestos metas",
+      visible: canUseImportCenter,
     },
     {
       id: "locations",
@@ -227,7 +228,7 @@ export function ConfigurationHome({ companyId, permissions }: { companyId: strin
     },
     ];
     return entries.filter((destination) => destination.visible);
-  }, [canReviewMigration, has]);
+  }, [canReviewMigration, canUseImportCenter, has]);
 
   const normalizedQuery = normalize(query);
   const visibleDestinations = destinations.filter((destination) => {
