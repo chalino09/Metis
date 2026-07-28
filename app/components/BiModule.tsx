@@ -93,7 +93,7 @@ type DashboardSnapshot={dashboard:Dashboard;widgets:DashboardWidget[];updated_at
 
 const METRICS: Record<string, { label: string; kind: "Devengado" | "Efectivo" | "Operativo" | "Control"; formula: string; source: string; format?: "integer" | "percent" }> = {
   net_sales: { label: "Ventas netas", kind: "Devengado", formula: "Σ subtotal − descuentos de ventas no canceladas", source: "Ventas y partidas canónicas" },
-  gross_margin: { label: "Margen bruto", kind: "Devengado", formula: "Ventas netas − costo reconocido de las partidas vendidas", source: "Pendiente: costo reconocido por partida y fecha" },
+  gross_margin: { label: "Margen bruto", kind: "Devengado", formula: "Ventas netas − costo reconocido congelado por partida", source: "Ventas y partidas canónicas con costo reconocido" },
   tickets: { label: "Tickets", kind: "Operativo", formula: "Conteo de ventas completadas no canceladas", source: "Ventas canónicas", format: "integer" },
   average_ticket: { label: "Ticket promedio", kind: "Operativo", formula: "Ventas netas ÷ tickets", source: "Ventas canónicas" },
   collections: { label: "Cobranza", kind: "Efectivo", formula: "Σ cobros confirmados no revertidos", source: "CxC y aplicaciones de cobro" },
@@ -109,7 +109,7 @@ const METRICS: Record<string, { label: string; kind: "Devengado" | "Efectivo" | 
 
 const CHART_META: Record<BiChart["code"], { title: string; description: string }> = {
   sales: { title: "Ventas devengadas", description: "Ventas completadas sin impuestos, alineadas contra el periodo anterior." },
-  gross_margin: { title: "Margen bruto", description: "Sólo se habilitará con costo reconocido por partida y fecha." },
+  gross_margin: { title: "Margen bruto", description: "Usa únicamente el costo congelado al confirmar cada partida; no reconstruye el pasado con costos vigentes." },
   cash_flow: { title: "Flujo bancario neto", description: "Créditos menos débitos bancarios; no equivale a utilidad devengada." },
   receivables: { title: "Cuentas por cobrar", description: "Saldo reconstruido al cierre de cada periodo comparable." },
   payables: { title: "Cuentas por pagar", description: "Saldo reconstruido desde facturas, notas y pagos efectivos." },
@@ -118,6 +118,7 @@ const CHART_META: Record<BiChart["code"], { title: string; description: string }
 
 const CHART_FOR_METRIC: Record<string, BiChart["code"] | undefined> = {
   net_sales: "sales",
+  gross_margin: "gross_margin",
   bank_net_flow: "cash_flow",
   receivables: "receivables",
   payables: "payables",
@@ -208,8 +209,8 @@ function fallbackCharts(summary: BiSummary): BiChart[] {
   return [
     {code:"sales",metric_code:"net_sales",kind:"Devengado",visualization:"line",available:Boolean(metric("net_sales")?.available),reason:metric("net_sales")?.reason,
       points:summary.series.map((point,index)=>({index,date:point.date,value:point.sales}))},
-    {code:"gross_margin",metric_code:"gross_margin",kind:"Devengado",visualization:"line",available:false,
-      reason:"No existe costo reconocido por partida vendida y fecha; usar costo vigente inventaría margen histórico.",points:[]},
+    {code:"gross_margin",metric_code:"gross_margin",kind:"Devengado",visualization:"line",available:Boolean(metric("gross_margin")?.available),
+      reason:metric("gross_margin")?.reason,points:comparisonPoints("gross_margin")},
     {code:"cash_flow",metric_code:"bank_net_flow",kind:"Efectivo",visualization:"bars",available:Boolean(metric("bank_net_flow")?.available),reason:metric("bank_net_flow")?.reason,points:comparisonPoints("bank_net_flow")},
     {code:"receivables",metric_code:"receivables",kind:"Devengado",visualization:"bars",available:Boolean(metric("receivables")?.available),reason:metric("receivables")?.reason,points:comparisonPoints("receivables")},
     {code:"payables",metric_code:"payables",kind:"Devengado",visualization:"bars",available:Boolean(metric("payables")?.available),reason:metric("payables")?.reason,points:comparisonPoints("payables")},
@@ -300,7 +301,10 @@ function BiExplorer({companyId}:{companyId:string}){
     router.replace(`/satrapy/bi/explorador?${query.toString()}`);void load(1,filters);
   }
   const firstMetric=selectedMetrics[0];
-  const canAdd=(metric:ExplorerMetric)=>!firstMetric||(metric.grain===firstMetric.grain&&metric.unit===firstMetric.unit&&compatibleDimensions.some(code=>metric.dimensions.includes(code)));
+  const canAdd=(metric:ExplorerMetric)=>{
+    if(metric.code==="gross_margin"||firstMetric?.code==="gross_margin")return !firstMetric||firstMetric.code===metric.code;
+    return !firstMetric||(metric.grain===firstMetric.grain&&metric.unit===firstMetric.unit&&compatibleDimensions.some(code=>metric.dimensions.includes(code)));
+  };
 
   return <section className="content-frame module-page bi-module bi-explorer">
     <PageHeading eyebrow="Business Intelligence · Fase 3" title="Explorador transversal" description="Compara métricas únicamente cuando comparten granularidad, unidad y dimensiones comprobadas. Toda agregación y paginación ocurre en servidor." action={<div className="bi-heading-actions"><Button variant="secondary" size="sm" onClick={()=>void load(page)} disabled={loading}><RefreshCw size={14}/>Actualizar</Button>{canSaveViews&&<Button size="sm" onClick={()=>setSaveOpen(true)} disabled={!result}><Save size={14}/>Guardar vista</Button>}</div>}/>
@@ -313,7 +317,7 @@ function BiExplorer({companyId}:{companyId:string}){
             </button>
             <button type="button" className="bi-metric-picker__help" aria-label={`Definición de ${metric.name}`} onClick={()=>setDefinition(metric)}><CircleHelp size={14}/></button>
             {!metric.available&&<p>{metric.unavailable_reason}</p>}
-            {metric.available&&!active&&!compatible&&<p>No comparte granularidad, unidad o dimensión con la selección.</p>}
+            {metric.available&&!active&&!compatible&&<p>{metric.code==="gross_margin"||firstMetric?.code==="gross_margin"?"Margen se consulta individualmente para conservar la cobertura verificable.":"No comparte granularidad, unidad o dimensión con la selección."}</p>}
           </article>;})}</div>
         </section>
         <section className="bi-explorer-config"><span className="eyebrow">2 · Forma del análisis</span>
@@ -642,7 +646,7 @@ function BiKpiCard({ metric, currencyCode, active, onFocus, onOpen, onDefinition
       <span>Diferencia <b className={delta.absolute>=0?"is-positive":"is-negative"}>{formatDifference(metric,delta.absolute,currencyCode)}</b></span>
       <small className={delta.absolute>=0?"is-positive":"is-negative"}>{delta.absolute>=0?<ArrowUpRight size={12}/>:<ArrowDownRight size={12}/>} {delta.percent==null?"Base anterior en cero":`${Math.abs(delta.percent).toLocaleString("es-MX",{maximumFractionDigits:1})}%`}</small>
     </div>}
-    {metric.code === "inventory_value" && metric.coverage != null && <small>Cobertura de costo: {metric.coverage}%</small>}
+    {(metric.code === "inventory_value" || metric.code === "gross_margin") && metric.coverage != null && <small>Cobertura de costo: {metric.coverage}%</small>}
     <button type="button" className="bi-kpi__drill" disabled={!metric.available} onClick={onOpen}>Ver operaciones <ChevronRight size={14} /></button>
   </article>;
 }
