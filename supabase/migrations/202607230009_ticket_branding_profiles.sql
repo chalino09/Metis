@@ -99,19 +99,24 @@ begin
 end;
 $$;
 
-insert into storage.buckets(id, name, public, file_size_limit, allowed_mime_types)
-values ('ticket-branding-assets', 'ticket-branding-assets', true, 2097152, array['image/png', 'image/jpeg'])
-on conflict (id) do update set public = excluded.public, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+do $storage$
+begin
+  if to_regclass('storage.buckets') is not null and to_regclass('storage.objects') is not null then
+    insert into storage.buckets(id, name, public, file_size_limit, allowed_mime_types)
+    values ('ticket-branding-assets', 'ticket-branding-assets', true, 2097152, array['image/png', 'image/jpeg'])
+    on conflict (id) do update set public = excluded.public, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
 
-create policy ticket_branding_assets_read on storage.objects for select to authenticated
-  using (bucket_id = 'ticket-branding-assets' and public.has_company_access((storage.foldername(name))[1]::uuid));
-create policy ticket_branding_assets_write on storage.objects for insert to authenticated
-  with check (bucket_id = 'ticket-branding-assets' and public.has_company_permission((storage.foldername(name))[1]::uuid, 'manage_ticket_branding'));
-create policy ticket_branding_assets_update on storage.objects for update to authenticated
-  using (bucket_id = 'ticket-branding-assets' and public.has_company_permission((storage.foldername(name))[1]::uuid, 'manage_ticket_branding'))
-  with check (bucket_id = 'ticket-branding-assets' and public.has_company_permission((storage.foldername(name))[1]::uuid, 'manage_ticket_branding'));
-create policy ticket_branding_assets_delete on storage.objects for delete to authenticated
-  using (bucket_id = 'ticket-branding-assets' and public.has_company_permission((storage.foldername(name))[1]::uuid, 'manage_ticket_branding'));
+    execute $policy$create policy ticket_branding_assets_read on storage.objects for select to authenticated
+      using (bucket_id = 'ticket-branding-assets' and public.has_company_access((storage.foldername(name))[1]::uuid))$policy$;
+    execute $policy$create policy ticket_branding_assets_write on storage.objects for insert to authenticated
+      with check (bucket_id = 'ticket-branding-assets' and public.has_company_permission((storage.foldername(name))[1]::uuid, 'manage_ticket_branding'))$policy$;
+    execute $policy$create policy ticket_branding_assets_update on storage.objects for update to authenticated
+      using (bucket_id = 'ticket-branding-assets' and public.has_company_permission((storage.foldername(name))[1]::uuid, 'manage_ticket_branding'))
+      with check (bucket_id = 'ticket-branding-assets' and public.has_company_permission((storage.foldername(name))[1]::uuid, 'manage_ticket_branding'))$policy$;
+    execute $policy$create policy ticket_branding_assets_delete on storage.objects for delete to authenticated
+      using (bucket_id = 'ticket-branding-assets' and public.has_company_permission((storage.foldername(name))[1]::uuid, 'manage_ticket_branding'))$policy$;
+  end if;
+end $storage$;
 
 grant select on public.ticket_branding_profiles to authenticated;
 grant execute on function public.get_ticket_branding(uuid) to authenticated;
