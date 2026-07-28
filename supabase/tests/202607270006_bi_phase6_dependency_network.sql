@@ -4,7 +4,9 @@ begin;
 do $installation$
 begin
   if to_regprocedure('public.bi_dependency_network_query(uuid,date,date,uuid,uuid,uuid,uuid,text[],text,text,text,text,text,text,text,uuid,integer,integer,integer)')is null then raise exception'Falta BI Fase 6.';end if;
+  if to_regprocedure('public.bi_supplier_dependency_overview(uuid,date,date,uuid,uuid,uuid,uuid,text,integer,integer)')is null then raise exception'Falta panorama ejecutivo por proveedor.';end if;
   if has_function_privilege('anon','public.bi_dependency_network_query(uuid,date,date,uuid,uuid,uuid,uuid,text[],text,text,text,text,text,text,text,uuid,integer,integer,integer)','execute')then raise exception'anon no debe consultar la red.';end if;
+  if has_function_privilege('anon','public.bi_supplier_dependency_overview(uuid,date,date,uuid,uuid,uuid,uuid,text,integer,integer)','execute')then raise exception'anon no debe consultar dependencia por proveedor.';end if;
 end;$installation$;
 
 do $fixtures$
@@ -47,7 +49,7 @@ declare c1 uuid:='b1600000-0000-4000-8000-000000000001';c2 uuid:='b1600000-0000-
 u1 uuid:='b1600000-0000-4000-8000-000000000003';u2 uuid:='b1600000-0000-4000-8000-000000000004';
 l1 uuid:='b1600000-0000-4000-8000-000000000005';l2 uuid:='b1600000-0000-4000-8000-000000000006';
 p uuid:='b1600000-0000-4000-8000-000000000008';s uuid:='b1600000-0000-4000-8000-000000000009';
-r jsonb;e jsonb;d jsonb;blocked boolean;job uuid;
+r jsonb;e jsonb;d jsonb;overview jsonb;blocked boolean;job uuid;
 begin
   perform set_config('request.jwt.claim.role','authenticated',true);perform set_config('request.jwt.claim.sub',u1::text,true);
   r:=public.bi_dependency_network_query(c1,date'2026-07-01',date'2026-07-31',null,null,null,null,null,null,null,'purchases','node_type','amount','supplier_dependency',null,null,0,120,240);
@@ -56,6 +58,12 @@ begin
   if e->>'metric_source'<>'confirmed_receipt'then raise exception'No prevaleció recepción confirmada.';end if;
   if not exists(select 1 from jsonb_array_elements(r->'edges')x where x->>'type'='product_location_assortment')then raise exception'Falta surtido comercial.';end if;
   if not exists(select 1 from jsonb_array_elements(r->'edges')x where x->>'type'='product_location_availability'and x->>'operational_state'='blocked_readiness')then raise exception'Falta bloqueo readiness separado.';end if;
+
+  overview:=public.bi_supplier_dependency_overview(c1,date'2026-07-01',date'2026-07-31',null,null,null,null,null,1,24);
+  if(overview->'pagination'->>'total')::integer<>1 or jsonb_array_length(overview->'items')<>1 then raise exception'Panorama por proveedor no paginó el total real: %',overview;end if;
+  if((overview->'items'->0->>'total_amount')::numeric)<>100 then raise exception'Panorama duplicó etapas de compra: %',overview;end if;
+  if(overview->'items'->0->>'unique_product_count')::integer<>1 then raise exception'Panorama no detectó proveedor único: %',overview;end if;
+  if(overview->'items'->0->>'location_count')::integer<>1 then raise exception'Panorama no conservó cobertura por surtido: %',overview;end if;
 
   r:=public.bi_dependency_network_query(c1,date'2026-07-01',date'2026-07-31',null,null,null,null,null,null,null,'connections','node_type','frequency','selected_impact','product',p,99,2,2);
   if(r->'limits'->>'nodes')::integer<>2 or(r->'limits'->>'edges')::integer<>2 or(r->'limits'->>'expansion_levels')::integer<>2 then raise exception'Límites incorrectos.';end if;

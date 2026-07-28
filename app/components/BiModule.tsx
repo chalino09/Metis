@@ -22,6 +22,7 @@ type BiFilters = {
   customer: FilterSelection;
   supplier: FilterSelection;
 };
+type ExecutivePeriodPreset = "today" | "last7" | "last30" | "last90" | "thisMonth" | "previousMonth" | "thisQuarter" | "custom";
 type BiMetric = { code: string; value: number | null; previous_value?: number | null; available: boolean; reason?: string | null; coverage?: number | null };
 type BiChartPoint = { index?: number; date: string; value: number | null; previous_date?: string; previous_value?: number | null; period?: "current" | "previous" };
 type BiChart = {
@@ -137,8 +138,40 @@ function initialFilters(search?: { get(name: string): string | null }): BiFilter
   const queryFrom=search?.get("from"),queryTo=search?.get("to");
   const dateFrom=queryFrom&&/^\d{4}-\d{2}-\d{2}$/.test(queryFrom)?queryFrom:defaultFrom;
   const dateTo=queryTo&&/^\d{4}-\d{2}-\d{2}$/.test(queryTo)?queryTo:defaultTo;
-  return { dateFrom, dateTo, locationId: search?.get("location") ?? "", product: null, customer: null, supplier: null };
+  const selected=(dimension:"product"|"customer"|"supplier"):FilterSelection=>{
+    const id=search?.get(dimension);return id?{id,label:search?.get(`${dimension}_label`)??"Selección conservada"}:null;
+  };
+  return { dateFrom, dateTo, locationId: search?.get("location") ?? "", product:selected("product"), customer:selected("customer"), supplier:selected("supplier") };
 }
+function executivePeriodRange(preset:Exclude<ExecutivePeriodPreset,"custom">){
+  const today=new Date(),from=new Date(today),to=new Date(today);
+  if(preset==="last7")from.setDate(from.getDate()-6);
+  if(preset==="last30")from.setDate(from.getDate()-29);
+  if(preset==="last90")from.setDate(from.getDate()-89);
+  if(preset==="thisMonth")from.setDate(1);
+  if(preset==="previousMonth"){
+    from.setMonth(from.getMonth()-1,1);
+    to.setDate(0);
+  }
+  if(preset==="thisQuarter"){
+    from.setMonth(Math.floor(from.getMonth()/3)*3,1);
+  }
+  return{dateFrom:isoDate(from),dateTo:isoDate(to)};
+}
+function inferExecutivePeriod(filters:Pick<BiFilters,"dateFrom"|"dateTo">):ExecutivePeriodPreset{
+  const presets=(["today","last7","last30","last90","thisMonth","previousMonth","thisQuarter"] as const);
+  return presets.find(preset=>{const range=executivePeriodRange(preset);return range.dateFrom===filters.dateFrom&&range.dateTo===filters.dateTo;})??"custom";
+}
+const EXECUTIVE_PERIOD_OPTIONS=[
+  {value:"today",label:"Hoy"},
+  {value:"last7",label:"Últimos 7 días"},
+  {value:"last30",label:"Últimos 30 días"},
+  {value:"last90",label:"Últimos 90 días"},
+  {value:"thisMonth",label:"Este mes"},
+  {value:"previousMonth",label:"Mes anterior"},
+  {value:"thisQuarter",label:"Este trimestre"},
+  {value:"custom",label:"Periodo personalizado"},
+] satisfies Array<{value:ExecutivePeriodPreset;label:string}>;
 function formatMoney(value: number | null | undefined, currencyCode?: string | null) {
   if (value == null) return "—";
   if (!currencyCode) return value.toLocaleString("es-MX", { maximumFractionDigits: 0 });
@@ -199,10 +232,7 @@ const EXPLORER_COLORS=["#1f5c53","#417ca0","#b8782d","#76568f"];
 
 function explorerFilters(search:{get(name:string):string|null}):BiFilters{
   const base=initialFilters(search);
-  const selected=(dimension:"product"|"customer"|"supplier"):FilterSelection=>{
-    const id=search.get(dimension);return id?{id,label:search.get(`${dimension}_label`)??"Selección conservada"}:null;
-  };
-  return{...base,product:selected("product"),customer:selected("customer"),supplier:selected("supplier")};
+  return base;
 }
 
 function BiExplorer({companyId}:{companyId:string}){
@@ -451,6 +481,8 @@ function BiExecutiveSummary({ companyId }: { companyId: string }) {
   const [selectedMetric, setSelectedMetric] = useState<DrillRequest | null>(null);
   const [definitionMetric, setDefinitionMetric] = useState<string | null>(null);
   const [activeChart,setActiveChart]=useState<BiChart["code"]>("sales");
+  const [periodPreset,setPeriodPreset]=useState<ExecutivePeriodPreset>(()=>inferExecutivePeriod(filters));
+  const [advancedFiltersOpen,setAdvancedFiltersOpen]=useState(false);
   const canViewBudgets=Boolean(appState?.membership.permissions.includes("*")||appState?.membership.permissions.includes("view_bi_budgets"));
 
   const load = useCallback(async (next: BiFilters) => {
@@ -486,6 +518,7 @@ function BiExecutiveSummary({ companyId }: { companyId: string }) {
 
   useEffect(() => { void Promise.resolve().then(() => load(applied)); }, [applied, load]);
   const activeFilterCount = [applied.locationId, applied.product, applied.customer, applied.supplier].filter(Boolean).length;
+  const advancedFilterCount = [applied.product, applied.customer, applied.supplier].filter(Boolean).length;
   const dirty = JSON.stringify(filters) !== JSON.stringify(applied);
   const metrics=useMemo(()=>summary?.metrics.map(metric=>({...metric,...(analytics?.comparisons?.[metric.code]??{})}))??[],[analytics,summary]);
   const charts=useMemo(()=>analytics?.charts??(summary?fallbackCharts({...summary,metrics}):[]),[analytics,metrics,summary]);
@@ -495,7 +528,22 @@ function BiExecutiveSummary({ companyId }: { companyId: string }) {
     const query=new URLSearchParams();
     query.set("from",next.dateFrom);query.set("to",next.dateTo);
     if(next.locationId)query.set("location",next.locationId);
+    for(const [dimension,selection] of Object.entries({product:next.product,customer:next.customer,supplier:next.supplier})){
+      if(selection){query.set(dimension,selection.id);query.set(`${dimension}_label`,selection.label);}
+    }
     router.replace(`/satrapy/bi?${query.toString()}`);
+  }
+  function changePeriod(value:string){
+    const preset=value as ExecutivePeriodPreset;setPeriodPreset(preset);
+    if(preset==="custom")return;
+    const range=executivePeriodRange(preset);
+    setFilters(current=>({...current,...range}));
+  }
+  function resetFilters(){
+    const next=initialFilters();setPeriodPreset("last30");setAdvancedFiltersOpen(false);applyFilters(next);
+  }
+  function removeAppliedFilter(key:"locationId"|"product"|"customer"|"supplier"){
+    const next={...applied,[key]:key==="locationId"?"":null};applyFilters(next);setFilters(next);
   }
   function focusMetric(code:string){
     const chart=CHART_FOR_METRIC[code];if(chart)setActiveChart(chart);
@@ -503,16 +551,42 @@ function BiExecutiveSummary({ companyId }: { companyId: string }) {
 
   return <section className="content-frame module-page bi-module">
     <PageHeading eyebrow="Business Intelligence" title="Resumen ejecutivo" description="Lectura transversal con distinción entre devengado, efectivo y operación. Cada cifra conserva fórmula, fuente y acceso al origen." action={<Button variant="secondary" size="sm" onClick={() => void load(applied)} disabled={loading}><RefreshCw size={14} /> Actualizar</Button>} />
-    <div className="bi-filters" aria-label="Filtros globales de BI">
-      <label><span>Desde</span><Input type="date" value={filters.dateFrom} max={filters.dateTo} onChange={event => setFilters(current => ({ ...current, dateFrom: event.target.value }))} aria-label="Periodo desde" /></label>
-      <label><span>Hasta</span><Input type="date" value={filters.dateTo} min={filters.dateFrom} max={isoDate(new Date())} onChange={event => setFilters(current => ({ ...current, dateTo: event.target.value }))} aria-label="Periodo hasta" /></label>
-      <label><span>Ubicación</span><Select ariaLabel="Filtrar por ubicación" value={filters.locationId || "__all__"} onValueChange={value => setFilters(current => ({ ...current, locationId: value === "__all__" ? "" : value }))} options={[{ value: "__all__", label: "Todas las accesibles" }, ...accessibleLocations.filter(location => location.is_active).map(location => ({ value: location.id, label: location.name }))]} /></label>
-      <BiEntityFilter companyId={companyId} dimension="product" label="Producto" value={filters.product} onChange={value => setFilters(current => ({ ...current, product: value }))} />
-      <BiEntityFilter companyId={companyId} dimension="customer" label="Cliente" value={filters.customer} onChange={value => setFilters(current => ({ ...current, customer: value }))} />
-      <BiEntityFilter companyId={companyId} dimension="supplier" label="Proveedor" value={filters.supplier} onChange={value => setFilters(current => ({ ...current, supplier: value }))} />
-      <div className="bi-filters__actions"><Button variant="primary" size="sm" disabled={!dirty || !filters.dateFrom || !filters.dateTo} onClick={() => applyFilters(filters)}>Aplicar filtros</Button>{(activeFilterCount > 0 || dirty) && <Button variant="ghost" size="sm" onClick={() => applyFilters(initialFilters())}><X size={14} /> Limpiar</Button>}</div>
-    </div>
-    {summary && <div className="bi-query-status"><Database size={14} /><span>Periodo {new Date(`${summary.period.from}T00:00:00`).toLocaleDateString("es-MX")}–{new Date(`${summary.period.to}T00:00:00`).toLocaleDateString("es-MX")} · actualizado {new Date(summary.updated_at).toLocaleString("es-MX")}</span><Badge tone="neutral">{activeFilterCount ? `${activeFilterCount} filtros` : "Sin dimensiones adicionales"}</Badge></div>}
+    <section className={`bi-executive-filterbar${dirty?" has-pending":""}`} aria-label="Filtros del Resumen ejecutivo">
+      <div className="bi-executive-filterbar__primary">
+        <label><span>Periodo</span><Select ariaLabel="Periodo del resumen" value={periodPreset} onValueChange={changePeriod} options={EXECUTIVE_PERIOD_OPTIONS} /></label>
+        <label><span>Ubicación</span><Select ariaLabel="Filtrar por ubicación" value={filters.locationId || "__all__"} onValueChange={value => setFilters(current => ({ ...current, locationId: value === "__all__" ? "" : value }))} options={[{ value: "__all__", label: "Todas las ubicaciones" }, ...accessibleLocations.filter(location => location.is_active).map(location => ({ value: location.id, label: location.name }))]} /></label>
+        <Button className="bi-executive-filterbar__more" variant="secondary" size="sm" aria-expanded={advancedFiltersOpen} aria-controls="bi-executive-advanced-filters" onClick={()=>setAdvancedFiltersOpen(current=>!current)}><Plus size={14}/><span>Más filtros{advancedFilterCount>0?` · ${advancedFilterCount}`:""}</span></Button>
+        <div className="bi-executive-filterbar__actions">
+          {(activeFilterCount>0||dirty)&&<Button variant="ghost" size="sm" onClick={resetFilters}>Restablecer</Button>}
+          <Button variant={dirty?"primary":"secondary"} size="sm" disabled={!dirty||!filters.dateFrom||!filters.dateTo} onClick={()=>applyFilters(filters)}>Aplicar cambios</Button>
+        </div>
+      </div>
+      {periodPreset==="custom"&&<div className="bi-executive-filterbar__custom">
+        <span>Periodo personalizado</span>
+        <label><span>Desde</span><Input type="date" value={filters.dateFrom} max={filters.dateTo} onChange={event=>setFilters(current=>({...current,dateFrom:event.target.value}))} aria-label="Periodo desde"/></label>
+        <label><span>Hasta</span><Input type="date" value={filters.dateTo} min={filters.dateFrom} max={isoDate(new Date())} onChange={event=>setFilters(current=>({...current,dateTo:event.target.value}))} aria-label="Periodo hasta"/></label>
+      </div>}
+      {advancedFiltersOpen&&<div id="bi-executive-advanced-filters" className="bi-executive-filterbar__advanced">
+        <header><div><strong>Filtros de detalle</strong><span>Las opciones se consultan conforme escribes; no se cargan catálogos completos.</span></div><button type="button" aria-label="Cerrar filtros de detalle" onClick={()=>setAdvancedFiltersOpen(false)}><X size={15}/></button></header>
+        <div>
+          <BiEntityFilter companyId={companyId} dimension="product" label="Producto" value={filters.product} onChange={value=>setFilters(current=>({...current,product:value}))}/>
+          <BiEntityFilter companyId={companyId} dimension="customer" label="Cliente" value={filters.customer} onChange={value=>setFilters(current=>({...current,customer:value}))}/>
+          <BiEntityFilter companyId={companyId} dimension="supplier" label="Proveedor" value={filters.supplier} onChange={value=>setFilters(current=>({...current,supplier:value}))}/>
+        </div>
+      </div>}
+      <div className="bi-executive-filterbar__applied">
+        <div className="bi-executive-filterbar__context">
+          <span className="bi-executive-filterbar__status" aria-live="polite">{dirty?<><i/>Cambios sin aplicar</>:<><i/>Contexto aplicado</>}</span>
+          <strong>{EXECUTIVE_PERIOD_OPTIONS.find(option=>option.value===inferExecutivePeriod(applied))?.label??"Periodo personalizado"}</strong>
+          <small>{formatSourceDate(applied.dateFrom)}–{formatSourceDate(applied.dateTo)}{summary?` · actualizado ${new Date(summary.updated_at).toLocaleString("es-MX")}`:""}</small>
+        </div>
+        <div className="bi-executive-filterbar__chips" aria-label="Filtros aplicados">
+          {applied.locationId&&<button type="button" onClick={()=>removeAppliedFilter("locationId")}>Ubicación: {accessibleLocations.find(location=>location.id===applied.locationId)?.name??"Selección"}<X size={12}/></button>}
+          {(["product","customer","supplier"] as const).map(key=>applied[key]&&<button type="button" key={key} onClick={()=>removeAppliedFilter(key)}>{key==="product"?"Producto":key==="customer"?"Cliente":"Proveedor"}: {applied[key]?.label}<X size={12}/></button>)}
+          {!activeFilterCount&&<span>Sin dimensiones adicionales</span>}
+        </div>
+      </div>
+    </section>
     {analyticsError&&summary&&<div className="bi-partial-state" role="status"><AlertCircle size={15}/><span><strong>Datos parciales</strong>{analyticsError}</span></div>}
     <DataState loading={loading && !summary} error={error} hasData={summary?.metrics.length ?? 0} empty="No hay métricas disponibles para este acceso." errorAction={<Button size="sm" onClick={() => void load(applied)}>Reintentar</Button>}>
       {summary && <>
