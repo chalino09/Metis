@@ -19,9 +19,14 @@ begin
 end;$setup$;
 set constraints all immediate;
 do $assert$
-declare c uuid:='4b060000-0000-4000-8000-000000000001';u uuid:='4b060000-0000-4000-8000-000000000002';d numeric;h numeric;
+declare c uuid:='4b060000-0000-4000-8000-000000000001';u uuid:='4b060000-0000-4000-8000-000000000002';d numeric;h numeric;recognized numeric;cogs numeric;
 begin
   if (select count(*) from public.accounting_events where company_id=c and status='posted')<>4 then raise exception 'Cobro, apertura, movimiento y venta no generaron cuatro eventos.';end if;
+  select recognized_cost_amount into recognized from public.sale_items where id='4b060000-0000-4000-8000-000000000024';
+  if recognized<>60 then raise exception 'La partida vendida no congeló el costo reconocido: %',recognized;end if;
+  select (line->>'debit')::numeric into cogs from public.accounting_events e cross join lateral jsonb_array_elements(e.requested_lines) line
+  where e.company_id=c and e.event_type='sale_confirmed' and line->>'role'='cost_of_goods_sold';
+  if cogs<>60 then raise exception 'La póliza de venta no usó el costo reconocido de la partida: %',cogs;end if;
   select sum(l.debit),sum(l.credit) into d,h from public.accounting_journal_lines l where l.company_id=c;if d<>362 or h<>362 then raise exception 'Pólizas operativas desbalanceadas: % / %',d,h;end if;
   if (select requested_lines from public.accounting_events where company_id=c and event_type='receivable_payment_confirmed')->2->>'role'<>'vat_pending' or (select requested_lines from public.accounting_events where company_id=c and event_type='receivable_payment_confirmed')->3->>'role'<>'vat_collected' then raise exception 'El cobro parcial no reclasificó IVA efectivo.';end if;
   perform public.reverse_receivable_payment(c,'4b060000-0000-4000-8000-000000000012','Reversa de cobro aplicada','4b060000-0000-4000-8000-000000000019');if (select outstanding_amount from public.customer_receivables where id='4b060000-0000-4000-8000-000000000030')<>116 or not exists(select 1 from public.accounting_events where company_id=c and event_type='receivable_payment_reversed' and status='posted') then raise exception 'La reversa de cobro no restauró CxC y póliza.';end if;

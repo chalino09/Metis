@@ -26,12 +26,13 @@ test("empresa, ubicación, permiso y auditoría se validan dentro de las RPC", (
   assert.match(migration, /revoke all on function public\.bi_get_executive_charts/);
 });
 
-test("las seis visualizaciones declaran disponibilidad y margen queda bloqueado", () => {
+test("las seis visualizaciones conservan contrato y la UI admite el margen reconocido", () => {
   for (const code of ["sales", "gross_margin", "cash_flow", "receivables", "payables", "inventory"]) {
     assert.match(migration, new RegExp(`'code','${code}'`));
   }
   assert.match(migration, /No existe costo reconocido por partida vendida y fecha/);
-  assert.match(ui, /No existe costo reconocido por partida vendida y fecha/);
+  assert.match(ui, /costo reconocido congelado por partida/);
+  assert.match(ui, /metric\("gross_margin"\)\?\.available/);
   assert.match(ui, /Datos parciales/);
   assert.match(ui, /No hay datos para los filtros seleccionados/);
 });
