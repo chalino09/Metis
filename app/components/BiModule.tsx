@@ -9,6 +9,7 @@ import { getSupabaseClient } from "@/app/lib/supabase";
 import { useSatrapy } from "@/app/components/SatrapyProvider";
 import { BiBudgetsModule } from "@/app/components/BiBudgetsModule";
 import { BiDependencyNetwork } from "@/app/components/BiDependencyNetwork";
+import { neutralMetricValue, type NeutralValueState } from "@/app/lib/neutral-start";
 
 export type BiView = "summary" | "explorer" | "reports" | "budgets" | "network";
 
@@ -23,7 +24,7 @@ type BiFilters = {
   supplier: FilterSelection;
 };
 type ExecutivePeriodPreset = "today" | "last7" | "last30" | "last90" | "thisMonth" | "previousMonth" | "thisQuarter" | "custom";
-type BiMetric = { code: string; value: number | null; previous_value?: number | null; available: boolean; reason?: string | null; coverage?: number | null };
+type BiMetric = { code: string; value: number | null; previous_value?: number | null; available: boolean; reason?: string | null; coverage?: number | null; value_state?: NeutralValueState; comparison_available?: boolean };
 type BiChartPoint = { index?: number; date: string; value: number | null; previous_date?: string; previous_value?: number | null; period?: "current" | "previous" };
 type BiChart = {
   code: "sales" | "gross_margin" | "cash_flow" | "receivables" | "payables" | "inventory";
@@ -180,7 +181,9 @@ function formatMoney(value: number | null | undefined, currencyCode?: string | n
 }
 function formatMetric(metric: BiMetric, currencyCode?: string | null) {
   const meta = METRICS[metric.code];
-  if (!metric.available || metric.value == null) return "—";
+  const neutralValue = neutralMetricValue(metric.value_state, meta?.format === "integer" ? "integer" : meta?.format === "percent" ? "percent" : "currency");
+  if (neutralValue) return neutralValue;
+  if (!metric.available || metric.value == null) return "No disponible";
   if (meta?.format === "integer") return metric.value.toLocaleString("es-MX", { maximumFractionDigits: 0 });
   if (meta?.format === "percent") return `${metric.value.toLocaleString("es-MX", { maximumFractionDigits: 1 })}%`;
   return formatMoney(metric.value, currencyCode);
@@ -604,7 +607,7 @@ function BiExecutiveSummary({ companyId }: { companyId: string }) {
           </div>
         </div>
         <BiLocationChart locations={summary.locations} currencyCode={summary.currency_code} onInspect={() => setSelectedMetric({code:"net_sales"})} />
-        <article className="bi-accrual-note"><AlertCircle size={18} /><div><strong>Devengado no es efectivo</strong><p>Ventas reconoce la operación cuando se completa; cobranza, pagos y bancos reconocen movimientos efectivos. El margen histórico aún no se publica porque la partida vendida no conserva el costo reconocido. No se sustituye con una estimación.</p></div></article>
+        <article className="bi-accrual-note"><AlertCircle size={18} /><div><strong>Devengado no es efectivo</strong><p>Ventas reconoce la operación cuando se completa; cobranza, pagos y bancos reconocen movimientos efectivos. El margen usa sólo el costo reconocido congelado por partida; una comparación sin base histórica queda “No disponible” y nunca se sustituye con una estimación.</p></div></article>
         <div className="bi-trace"><Database size={15} /><span><strong>Trazabilidad de consulta</strong>{summary.trace.query}{analytics?` + ${analytics.trace.query}`:""} · {[...summary.trace.sources,...(analytics?.trace.sources??[])].filter((source,index,all)=>all.indexOf(source)===index).join(", ")}</span></div>
       </>}
     </DataState>
@@ -641,7 +644,7 @@ function BiKpiCard({ metric, currencyCode, active, onFocus, onOpen, onDefinition
   return <article className={`bi-kpi ${metric.available ? "" : "is-unavailable"} ${active?"is-active":""}`}>
     <header><Badge tone={meta.kind === "Efectivo" ? "info" : meta.kind === "Devengado" ? "primary" : "neutral"}>{meta.kind}</Badge><button type="button" aria-label={`Definición de ${meta.label}`} onClick={onDefinition}><CircleHelp size={15} /></button></header>
     <button type="button" className="bi-kpi__focus" onClick={onFocus} disabled={!CHART_FOR_METRIC[metric.code]}><span>{meta.label}</span><strong>{formatMetric(metric, currencyCode)}</strong></button>
-    {delta == null ? <small>{metric.available ? "Comparación no disponible" : metric.reason}</small> : <div className="bi-kpi__comparison">
+    {delta == null ? <small>{metric.reason ?? (metric.available ? "Comparación no disponible" : "No disponible")}</small> : <div className="bi-kpi__comparison">
       <span>Anterior <b>{formatMetric({...metric,value:metric.previous_value??null},currencyCode)}</b></span>
       <span>Diferencia <b className={delta.absolute>=0?"is-positive":"is-negative"}>{formatDifference(metric,delta.absolute,currencyCode)}</b></span>
       <small className={delta.absolute>=0?"is-positive":"is-negative"}>{delta.absolute>=0?<ArrowUpRight size={12}/>:<ArrowDownRight size={12}/>} {delta.percent==null?"Base anterior en cero":`${Math.abs(delta.percent).toLocaleString("es-MX",{maximumFractionDigits:1})}%`}</small>

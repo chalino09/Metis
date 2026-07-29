@@ -60,6 +60,7 @@ import { InitialMigrationView } from "@/app/components/InitialMigrationView";
 import { ProductCatalogView } from "@/app/components/ProductCatalogView";
 import { CollaboratorsDirectoryView, PayrollView } from "@/app/components/CollaboratorsModule";
 import { BiModule } from "@/app/components/BiModule";
+import { NeutralStartNotice } from "@/app/components/NeutralStartNotice";
 import type {
   AppRoleCode,
   ImportBatchRow,
@@ -461,10 +462,10 @@ export function SatrapyRouteContent() {
   if (activeView === "procurement") return <ProcurementView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "purchase_orders") return <PurchaseOrdersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "purchase_receipts") return <PurchaseReceiptsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
-  if (activeView === "supplier_invoices") return <SupplierInvoicesView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
+  if (activeView === "supplier_invoices") return <NeutralStartNotice companyId={appState.membership.companyId} module="payables"><SupplierInvoicesView companyId={appState.membership.companyId} permissions={appState.membership.permissions} /></NeutralStartNotice>;
   if (activeView === "supplier_paying_accounts") return <SupplierPayingAccountsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "products") return <ProductCatalogView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
-  if (activeView === "inventory") return <InventoryView companyId={appState.membership.companyId} />;
+  if (activeView === "inventory") return <NeutralStartNotice companyId={appState.membership.companyId} module="inventory"><InventoryView companyId={appState.membership.companyId} /></NeutralStartNotice>;
   if (activeView === "inventory_counts") return <InventoryCountsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "inventory_transfers") return <InventoryTransfersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "inventory_replenishment") return <InventoryReplenishmentView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
@@ -481,24 +482,24 @@ export function SatrapyRouteContent() {
   if (activeView === "customers" && creatingCustomer) return <NewCustomerMasterView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "customers" && selectedCustomerId) return <CustomerMasterView companyId={appState.membership.companyId} customerId={selectedCustomerId} permissions={appState.membership.permissions} />;
   if (activeView === "customers") return <CustomersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
-  if (activeView === "receivables") return <ReceivablesView companyId={appState.membership.companyId} />;
-  if (activeView === "cash") return <CashDeskView companyId={appState.membership.companyId} />;
+  if (activeView === "receivables") return <NeutralStartNotice companyId={appState.membership.companyId} module="receivables"><ReceivablesView companyId={appState.membership.companyId} /></NeutralStartNotice>;
+  if (activeView === "cash") return <NeutralStartNotice companyId={appState.membership.companyId} module="cash_banks"><CashDeskView companyId={appState.membership.companyId} /></NeutralStartNotice>;
   if (activeView === "sales_settings") return <SalesSettingsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "collaborators_directory") return <CollaboratorsDirectoryView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "payroll") return <PayrollView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
-  if (activeView === "bi_summary") return <BiModule companyId={appState.membership.companyId} view="summary" />;
+  if (activeView === "bi_summary") return <NeutralStartNotice companyId={appState.membership.companyId} module="bi"><BiModule companyId={appState.membership.companyId} view="summary" /></NeutralStartNotice>;
   if (activeView === "bi_explorer") return <BiModule companyId={appState.membership.companyId} view="explorer" />;
   if (activeView === "bi_reports") return <BiModule companyId={appState.membership.companyId} view="reports" />;
   if (activeView === "bi_budgets") return <BiModule companyId={appState.membership.companyId} view="budgets" />;
   if (activeView === "bi_network") return <BiModule companyId={appState.membership.companyId} view="network" />;
-  if (activeView === "accounting_summary") return <AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="summary" />;
+  if (activeView === "accounting_summary") return <NeutralStartNotice companyId={appState.membership.companyId} module="accounting"><AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="summary" /></NeutralStartNotice>;
   if (activeView === "accounting_accounts") return <AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="accounts" />;
   if (activeView === "accounting_periods") return <AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="periods" />;
   if (activeView === "accounting_reports") return <AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="reports" />;
   if (activeView === "accounting_journals") return <AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="journals" />;
   if (activeView === "accounting_events") return <AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="events" />;
-  if (activeView === "accounting_banking") return <BankingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
-  if (activeView === "accounting_opening") return <AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="opening" />;
+  if (activeView === "accounting_banking") return <NeutralStartNotice companyId={appState.membership.companyId} module="cash_banks"><BankingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} /></NeutralStartNotice>;
+  if (activeView === "accounting_opening") return <NeutralStartNotice companyId={appState.membership.companyId} module="accounting"><AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="opening" /></NeutralStartNotice>;
   if (activeView === "accounting_settings") return <AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="settings" />;
   return <CommercialAssortmentsView key={appState.membership.companyId} companyId={appState.membership.companyId} />;
 }

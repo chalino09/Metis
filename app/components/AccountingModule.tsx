@@ -105,12 +105,12 @@ function AccountingSummary({ data, approved, draft }: { data: Payload; approved?
   const posted = data.journals.filter((item) => item.status === "posted").length;
   const opening = data.batches.find((item) => item.import_type === "trial_balance" && item.status === "promoted");
   const steps = [
-    { label: "Origen", complete: data.batches.length > 0 || Boolean(draft||approved), description: data.batches.length ? `${data.batches.length} archivo${data.batches.length === 1 ? "" : "s"} contable${data.batches.length === 1 ? "" : "s"} detectado${data.batches.length === 1 ? "" : "s"}` : draft||approved ? "Inicio manual sin archivos" : "Elige captura manual o importación", href: "/satrapy/configuracion/contabilidad" },
+    { label: "Origen", complete: data.batches.length > 0 || Boolean(draft||approved), description: data.batches.length ? `${data.batches.length} archivo${data.batches.length === 1 ? "" : "s"} contable${data.batches.length === 1 ? "" : "s"} detectado${data.batches.length === 1 ? "" : "s"}` : draft||approved ? "Configuración guiada sin saldos" : "Configura la estructura o importa archivos por conjunto", href: "/satrapy/configuracion/contabilidad" },
     { label: "Configuración", complete: Boolean(draft || approved), description: approved ? `Versión ${approved.version} aprobada` : draft ? `Versión ${draft.version} confirmada` : "Revisa la detección automática", href: "/satrapy/configuracion/contabilidad" },
     { label: "Catálogo", complete: data.accounts.length > 0, description: data.accounts.length ? `${data.accounts.length.toLocaleString("es-MX")} cuentas disponibles` : "Crea cuentas o importa el catálogo", href: "/satrapy/contabilidad/catalogo" },
     { label: "Controles", complete: Boolean(approved), description: approved ? "Nueve auxiliares vinculados" : "Confirma las cuentas sugeridas", href: "/satrapy/configuracion/contabilidad" },
     { label: "Periodo", complete: open > 0, description: open ? `${open} periodo${open === 1 ? "" : "s"} abierto${open === 1 ? "" : "s"}` : "Abre el periodo del corte", href: "/satrapy/contabilidad/periodos" },
-    { label: "Apertura", complete: Boolean(opening)||Boolean(approved&&!data.batches.length), description: opening ? "Póliza de apertura creada" : approved&&!data.batches.length ? "Inicio documentado con saldo cero" : "Concilia la balanza o inicia en cero", href: "/satrapy/contabilidad/apertura" },
+    { label: "Apertura", complete: Boolean(opening)||Boolean(approved&&!data.batches.length), description: opening ? "Póliza de apertura creada" : approved&&!data.batches.length ? "Estado neutral, sin póliza de apertura" : "Promueve una balanza importada o continúa neutral", href: "/satrapy/contabilidad/apertura" },
   ];
   return <div className="accounting-dashboard">
     <section className={`accounting-readiness ${approved && data.accounts.length && open ? "is-ready" : ""}`}>

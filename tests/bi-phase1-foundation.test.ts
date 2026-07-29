@@ -54,11 +54,11 @@ test("los filtros usan identidades canónicas y búsquedas paginadas", () => {
   assert.match(ui, /p_supplier_id: next\.supplier\?\.id/);
 });
 
-test("el contrato distingue naturalezas y declara el margen bloqueado", () => {
+test("el contrato distingue naturalezas y conserva el margen verificable", () => {
   assert.match(ui, /kind: "Devengado"/);
   assert.match(ui, /kind: "Efectivo"/);
   assert.match(ui, /kind: "Operativo"/);
   assert.match(design, /KPI bloqueado: margen bruto histórico exacto/);
   assert.match(design, /no conserva el costo reconocido por partida y fecha/);
-  assert.match(ui, /El margen histórico aún no se publica/);
+  assert.match(ui, /El margen usa sólo el costo reconocido congelado por partida/);
 });
