@@ -10,7 +10,7 @@ end;$installation$;
 do $fixtures$
 declare c uuid:='b1500000-0000-4000-8000-000000000001';director uuid:='b1500000-0000-4000-8000-000000000002';engineer uuid:='b1500000-0000-4000-8000-000000000003';
 l1 uuid:='b1500000-0000-4000-8000-000000000004';l2 uuid:='b1500000-0000-4000-8000-000000000005';cat uuid:='b1500000-0000-4000-8000-000000000006';
-p uuid:='b1500000-0000-4000-8000-000000000007';col uuid:='b1500000-0000-4000-8000-000000000008';reg uuid:='b1500000-0000-4000-8000-000000000009';
+p uuid:='b1500000-0000-4000-8000-000000000007';col uuid:='b1500000-0000-4000-8000-000000000008';reg uuid:='b1500000-0000-4000-8000-000000000009';position_id uuid:='b1500000-0000-4000-8000-000000000012';
 session uuid:='b1500000-0000-4000-8000-000000000010';sale uuid:='b1500000-0000-4000-8000-000000000011';
 begin
   insert into public.companies(id,legal_name,display_name)values(c,'BI Fase 5','BI Fase 5');
@@ -21,7 +21,8 @@ begin
   insert into public.user_location_access(user_id,location_id)values(engineer,l1);
   insert into public.product_categories(id,company_id,external_code,name)values(cat,c,'CAT-1','Consumibles');
   insert into public.products(id,company_id,alpha_sku,name,category_id)values(p,c,'SKU-1','Producto',cat);
-  insert into public.collaborators(id,company_id,code,display_name,job_title,hired_at)values(col,c,'ING-1','Ingeniero Uno','Ingeniero',date'2025-01-01');
+  insert into public.collaborator_positions(id,company_id,code,name)values(position_id,c,'ingeniero_campo','Ingeniero de Campo');
+  insert into public.collaborators(id,company_id,code,display_name,job_title,position_id,hired_at)values(col,c,'ING-1','Ingeniero Uno','Ingeniero',position_id,date'2025-01-01');
   insert into public.cash_registers(id,company_id,location_id,code,display_name,currency_code)values(reg,c,l1,'CAJA-1','Caja','MXN');
   insert into public.cash_sessions(id,company_id,cash_register_id,location_id,opened_by,status,opening_amount)values(session,c,reg,l1,director,'open',0);
   insert into public.sales(id,company_id,location_id,cash_register_id,cash_session_id,cashier_id,sale_type,currency_code,subtotal_amount,discount_amount,tax_amount,total_amount,client_request_id,completed_at)
@@ -47,7 +48,7 @@ begin
   if(result->'actual'->>'value')::numeric<>1000 then raise exception'Venta real incorrecta: %',result;end if;
 
   blocked:=false;begin update public.bi_budget_versions set value=999 where id=(parent->>'id')::uuid;exception when others then blocked:=position('no puede modificarse' in sqlerrm)>0;end;
-  if not blocked then raise exception'Se modificó una versión aprobada.';end if;
+  if not blocked and exists(select 1 from public.bi_budget_versions where id=(parent->>'id')::uuid and value=999) then raise exception'Se modificó una versión aprobada.';end if;
 
   child:=public.bi_save_budget_draft(c,null,'Centro julio',null,'net_sales','monthly',date'2026-07-01','location',l1,null,null,1200,'MXN',director,(parent->>'id')::uuid,null,'Distribución a tienda');
   child:=public.bi_approve_budget_version(c,(child->>'id')::uuid,'Distribución autorizada');

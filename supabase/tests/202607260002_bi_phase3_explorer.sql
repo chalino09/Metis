@@ -18,9 +18,9 @@ begin
   insert into public.companies(id,legal_name,display_name) values(c1,'BI Explorer A','BI Explorer A'),(c2,'BI Explorer B','BI Explorer B');
   insert into auth.users(id,aud,role,email,encrypted_password) values(u1,'authenticated','authenticated','bi-explorer@example.com','');
   insert into public.user_roles(user_id,role_id,company_id) select u1,id,c1 from public.roles where code='direccion_admin';
-  insert into public.locations(id,company_id,code,name,is_active)
-  values('b1300000-0000-4000-8000-000000000010',c1,'A-1','Ubicación A',true),
-        ('b1300000-0000-4000-8000-000000000011',c2,'B-1','Ubicación B',true);
+  insert into public.locations(id,company_id,external_code,name,location_type,classification_source,is_active)
+  values('b1300000-0000-4000-8000-000000000010',c1,'A-1','Ubicación A','sucursal','manual_review',true),
+        ('b1300000-0000-4000-8000-000000000011',c2,'B-1','Ubicación B','sucursal','manual_review',true);
   insert into public.payroll_periods(company_id,payment_frequency,starts_on,ends_on,payment_date,status,prepared_at,approved_at)
   select c1,'weekly',date '2026-01-01'+n,date '2026-01-01'+n,date '2026-01-01'+n,'approved',now(),now()
   from generate_series(0,149)n;

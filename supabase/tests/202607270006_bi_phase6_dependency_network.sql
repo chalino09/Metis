@@ -26,21 +26,24 @@ begin
   insert into public.locations(id,company_id,external_code,name,location_type)values(l1,c1,'L1','Centro','sucursal'),(l2,c1,'L2','Norte','sucursal');
   insert into public.user_location_access(user_id,location_id)values(u2,l1);
   insert into public.product_categories(id,company_id,external_code,name,source)values(cat,c1,'CAT-F6','Categoría F6','satrapy');
-  insert into public.products(id,company_id,alpha_sku,internal_sku,name,category_id,is_active,is_sellable,is_inventory_tracked,commercial_review_required)
-    values(p,c1,'LEG-F6','SKU-F6','Producto F6',cat,true,true,true,true);
+  insert into public.products(id,company_id,alpha_sku,internal_sku,name,unit,product_type,category_id,is_active,is_sellable,is_inventory_tracked,commercial_review_required)
+    values(p,c1,'LEG-F6','SKU-F6','Producto F6','PZA','P. TERMINADO',cat,true,true,true,true);
   insert into public.suppliers(id,company_id,code,display_name)values(s,c1,'PROV-F6','Proveedor F6');
   insert into public.purchase_orders(id,company_id,supplier_id,folio,status,origin,currency_code,ordered_date,subtotal,total)
-    values(po,c1,s,'OC-F6','approved','operational','MXN',date'2026-07-10',100,100);
+    values(po,c1,s,'OC-F6','draft','operational','MXN',date'2026-07-10',100,100);
   insert into public.purchase_order_lines(id,company_id,purchase_order_id,line_number,product_id,description,quantity,unit_cost)
     values(pol,c1,po,1,p,'Producto F6',10,10);
+  update public.purchase_orders set status='approved' where id=po;
   insert into public.purchase_receipts(id,company_id,purchase_order_id,supplier_id,location_id,folio,status,receipt_date,client_request_id,confirmed_at,confirmed_by,confirm_request_id)
-    values(pr,c1,po,s,l1,'REC-F6','confirmed',date'2026-07-12',gen_random_uuid(),now(),u1,gen_random_uuid());
+    values(pr,c1,po,s,l1,'REC-F6','draft',date'2026-07-12',gen_random_uuid(),null,null,null);
   insert into public.purchase_receipt_lines(company_id,purchase_receipt_id,purchase_order_line_id,product_id,quantity,unit_cost)
     values(c1,pr,pol,p,10,10);
+  update public.purchase_receipts set status='confirmed',confirmed_at=now(),confirmed_by=u1,confirm_request_id=gen_random_uuid() where id=pr;
   insert into public.inventory_balances(company_id,location_id,product_id,quantity_on_hand)values(c1,l1,p,10),(c1,l2,p,0);
-  insert into public.sales_assortments(id,company_id,code,name,status,valid_from)values(sa,c1,'SUR-F6','Surtido F6','active','2026-01-01');
+  insert into public.sales_assortments(id,company_id,code,name,status,valid_from)values(sa,c1,'SUR-F6','Surtido F6','draft','2026-01-01');
   insert into public.sales_assortment_items(assortment_id,product_id)values(sa,p);
   insert into public.location_sales_assortments(location_id,assortment_id,valid_from)values(l1,sa,'2026-01-01');
+  update public.sales_assortments set status='active' where id=sa;
 end;$fixtures$;
 
 set local role authenticated;

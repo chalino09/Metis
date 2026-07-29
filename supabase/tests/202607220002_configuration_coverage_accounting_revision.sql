@@ -24,7 +24,7 @@ begin
   result:=public.save_accounting_config_revision(draft_id,'MXN','2026-07-31','{"format":"4-3-3"}','{"vat_pending":"effective_cash_flow","vat_collected":"on_collection","vat_paid":"on_payment","withholdings":"separate_by_tax"}',jsonb_build_object('adjustments',admin_user,'close',admin_user,'reopen',admin_user),controls,'Aprobación julio',stamp,'ce000000-0000-4000-8000-000000000013',true);
   if result->>'status'<>'approved' or (select status from public.accounting_config_versions where id=cfg)<>'superseded' then raise exception 'La aprobación no versionó correctamente: %',result;end if;
   coverage:=public.get_initial_migration_readiness(c);
-  if jsonb_array_length(coverage->'modules')<>6 or (coverage->>'total_checks')::int<>25 or (coverage->>'ready_checks')::int>=(coverage->>'total_checks')::int then raise exception 'La cobertura volvió a declarar completitud sin evidencia: %',coverage;end if;
+  if jsonb_array_length(coverage->'modules')<>7 or (coverage->>'total_checks')::int<>18 or (coverage->>'ready_checks')::int>=(coverage->>'total_checks')::int or coalesce((coverage->>'ready')::boolean,false) then raise exception 'La cobertura volvió a declarar completitud sin evidencia: %',coverage;end if;
   perform set_config('request.jwt.claim.sub',branch_user::text,true);
   begin perform public.start_accounting_config_revision(c,'No autorizado','ce000000-0000-4000-8000-000000000014');exception when others then blocked:=position('no autorizado' in lower(sqlerrm))>0;end;
   if not blocked then raise exception 'Un rol operativo versionó Contabilidad.';end if;

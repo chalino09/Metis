@@ -38,39 +38,47 @@ as $$
 declare
   v_account public.financial_accounts%rowtype;
   v_currency text;
+  v_account_id uuid;
 begin
   if new.settlement_kind <> 'external' then
     return new;
   end if;
 
-  if nullif(current_setting('satrapy.receivable_financial_account_id', true), '') is null then
+  v_account_id := coalesce(
+    nullif(current_setting('satrapy.receivable_financial_account_id', true), '')::uuid,
+    new.financial_account_id
+  );
+  if v_account_id is null then
     raise exception 'Selecciona la cuenta financiera que recibió el cobro.';
   end if;
 
   select * into v_account
   from public.financial_accounts
-  where id = current_setting('satrapy.receivable_financial_account_id', true)::uuid
+  where id = v_account_id
     and company_id = new.company_id
     and is_active;
   if not found then raise exception 'Cuenta financiera receptora no disponible.'; end if;
 
-  select min(coalesce(sale.currency_code, customer_price.currency_code, default_price.currency_code))
-  into v_currency
-  from public.customer_receivables receivable
-  join public.customers customer_data on customer_data.id = receivable.customer_id
-  left join public.sales sale on sale.id = receivable.sale_id
-  left join public.price_lists customer_price on customer_price.id = customer_data.price_list_id
-  left join public.companies company_data on company_data.id = receivable.company_id
-  left join public.price_lists default_price on default_price.id = company_data.default_price_list_id
-  where receivable.company_id = new.company_id
-    and receivable.customer_id = new.customer_id
-    and receivable.outstanding_amount > 0;
+  v_currency := upper(nullif(trim(coalesce(new.currency_code, '')), ''));
+  if v_currency is null then
+    select min(coalesce(sale.currency_code, customer_price.currency_code, default_price.currency_code))
+    into v_currency
+    from public.customer_receivables receivable
+    join public.customers customer_data on customer_data.id = receivable.customer_id
+    left join public.sales sale on sale.id = receivable.sale_id
+    left join public.price_lists customer_price on customer_price.id = customer_data.price_list_id
+    left join public.companies company_data on company_data.id = receivable.company_id
+    left join public.price_lists default_price on default_price.id = company_data.default_price_list_id
+    where receivable.company_id = new.company_id
+      and receivable.customer_id = new.customer_id
+      and receivable.outstanding_amount > 0;
+  end if;
   if v_currency is null then raise exception 'No hay una moneda canónica configurada para el cobro.'; end if;
   if v_account.currency_code <> v_currency then raise exception 'La moneda del cobro no coincide con la cuenta financiera.'; end if;
 
   new.financial_account_id := v_account.id;
   new.currency_code := v_currency;
-  new.bank_reference := nullif(trim(coalesce(new.payment_reference, '')), '');
+  new.bank_reference := nullif(trim(coalesce(new.bank_reference, new.payment_reference, '')), '');
   return new;
 end;
 $$;

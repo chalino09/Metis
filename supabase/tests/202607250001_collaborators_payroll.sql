@@ -26,8 +26,9 @@ begin
     perform public.save_payroll_movements_batch(c,jsonb_build_array(jsonb_build_object('id',(select payroll_movement_id from public.payroll_period_line_concepts where payroll_period_line_id=(select id from public.payroll_period_lines where payroll_period_id=period_id limit 1) and payroll_movement_id is not null),'collaborator_id',collaborator_id,'movement_type','overtime','direction','addition','effective_on','2026-07-24','units',4,'amount',900,'description','No debe editarse')),true);
   exception when others then blocked:=position('aprobada o pagada' in lower(sqlerrm))>0;end;
   if not blocked then raise exception 'Un movimiento ya aprobado se pudo editar.';end if;
-  detail:=public.advance_payroll_period(c,period_id,'pay','TRF-0001');
-  if detail->>'status'<>'paid' or detail->>'payment_reference'<>'TRF-0001' then raise exception 'El pago no quedó cerrado y referenciado: %',detail;end if;
+  detail:=public.set_payroll_line_payment_method(c,(select id from public.payroll_period_lines where payroll_period_id=period_id limit 1),'transfer');
+  detail:=public.record_payroll_payment_batch(c,period_id,'transfer','2026-07-27','TRF-0001');
+  if detail->>'status'<>'paid' or not exists(select 1 from jsonb_array_elements(detail->'payment_batches') batch where batch->>'payment_method'='transfer' and batch->>'payment_reference'='TRF-0001') then raise exception 'El pago no quedó cerrado y referenciado por método: %',detail;end if;
   if (public.search_collaborators(c,'andrea','active',1,50)#>>'{pagination,total}')::int<>1 then raise exception 'El directorio paginado no encontró el colaborador.';end if;
   raise notice 'Colaboradores: historial salarial, movimiento aprobado, corrida semanal, cierre e inmutabilidad aprobados.';
 end $test$;

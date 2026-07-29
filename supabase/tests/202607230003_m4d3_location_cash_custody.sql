@@ -25,6 +25,7 @@ declare
   product_id uuid:='4d030000-0000-4000-8000-000000000056';
   cash_payment uuid:='4d030000-0000-4000-8000-000000000054';
   external_payment uuid:='4d030000-0000-4000-8000-000000000055';
+  receiving_account uuid:='4d030000-0000-4000-8000-000000000057';
   supplier uuid:='4d030000-0000-4000-8000-000000000060';
   invoice uuid:='4d030000-0000-4000-8000-000000000061';
   expense_a uuid:='4d030000-0000-4000-8000-000000000062';
@@ -90,6 +91,8 @@ begin
 
   insert into public.payment_methods(id,company_id,code,display_name,settlement_kind) values
     (cash_method,c,'CASH','Efectivo','cash_drawer'),(external_method,c,'EXT','Externo','external');
+  insert into public.financial_accounts(id,company_id,institution_name,alias,currency_code,account_last4,created_by,updated_by)
+  values(receiving_account,c,'Institución de prueba','Cobranza M4D3','MXN','0057',u1,u1);
   insert into public.customers(id,company_id,code,display_name) values(customer,c,'CLI-M4D3','Cliente M4D3');
   insert into public.products(id,company_id,internal_sku,name) values(product_id,c,'SKU-M4D3','Producto M4D3');
   insert into public.product_costs(company_id,product_id,cost_type,amount,currency_code,valid_from)
@@ -114,10 +117,10 @@ begin
   values(c,sa,'cash_sale',250,u1,'sales',sale_id);
 
   insert into public.receivable_payments(id,company_id,customer_id,payment_method_id,payment_method_code,settlement_kind,
-    cash_session_id,amount,client_request_id,received_by)
+    cash_session_id,amount,client_request_id,received_by,financial_account_id,currency_code,bank_reference)
   values
-    (cash_payment,c,customer,cash_method,'CASH','cash_drawer',sa,125,'4d030000-0000-4000-8000-000000000074',u1),
-    (external_payment,c,customer,external_method,'EXT','external',null,80,'4d030000-0000-4000-8000-000000000075',u1);
+    (cash_payment,c,customer,cash_method,'CASH','cash_drawer',sa,125,'4d030000-0000-4000-8000-000000000074',u1,null,null,null),
+    (external_payment,c,customer,external_method,'EXT','external',null,80,'4d030000-0000-4000-8000-000000000075',u1,receiving_account,'MXN','M4D3-EXT-001');
   insert into public.cash_movements(company_id,cash_session_id,movement_type,amount,actor_id,source_entity_type,source_entity_id)
   values(c,sa,'receivable_payment',125,u1,'receivable_payments',cash_payment);
 

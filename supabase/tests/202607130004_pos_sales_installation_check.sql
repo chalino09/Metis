@@ -23,7 +23,7 @@ begin
     'public.get_or_create_sale_cart(uuid,uuid)',
     'public.change_sale_cart_item(uuid,uuid,numeric,integer)',
     'public.quote_sale_cart(uuid)',
-    'public.complete_sale(uuid,integer,text,uuid,numeric,uuid)',
+    'public.complete_pos_sale(uuid,integer,text,uuid,numeric,uuid,text)',
     'public.close_cash_session(uuid,jsonb,text,uuid)',
     'public.record_receivable_payment(uuid,uuid,uuid,numeric,uuid,uuid,text)',
     'public.get_canonical_ticket(uuid)'
@@ -40,7 +40,8 @@ begin
     raise exception 'authenticated no debe mutar documentos críticos directamente.';
   end if;
 
-  if not has_function_privilege('authenticated', 'public.complete_sale(uuid,integer,text,uuid,numeric,uuid)', 'execute')
+  if not has_function_privilege('authenticated', 'public.complete_pos_sale(uuid,integer,text,uuid,numeric,uuid,text)', 'execute')
+    or has_function_privilege('authenticated', 'public.complete_sale(uuid,integer,text,uuid,numeric,uuid)', 'execute')
     or not has_function_privilege('authenticated', 'public.close_cash_session(uuid,jsonb,text,uuid)', 'execute') then
     raise exception 'Faltan grants de ejecución para operaciones POS.';
   end if;

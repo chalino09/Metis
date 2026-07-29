@@ -96,21 +96,23 @@ begin
   v_quote := public.quote_sale_cart((v_cart ->> 'cart_id')::uuid);
   if (v_quote ->> 'total_amount')::numeric <> 116 then raise exception 'Total con impuesto inesperado: %', v_quote; end if;
 
-  v_sale := public.complete_sale(
+  v_sale := public.complete_pos_sale(
     (v_cart ->> 'cart_id')::uuid,
     (v_quote ->> 'revision')::integer,
     'cash',
     '14000000-0000-4000-8000-000000000014',
     120,
-    '14000000-0000-4000-8000-000000000017'
+    '14000000-0000-4000-8000-000000000017',
+    null
   );
-  v_retry := public.complete_sale(
+  v_retry := public.complete_pos_sale(
     (v_cart ->> 'cart_id')::uuid,
     (v_quote ->> 'revision')::integer,
     'cash',
     '14000000-0000-4000-8000-000000000014',
     120,
-    '14000000-0000-4000-8000-000000000017'
+    '14000000-0000-4000-8000-000000000017',
+    null
   );
   if not coalesce((v_retry ->> 'idempotent')::boolean, false) or v_retry ->> 'sale_id' <> v_sale ->> 'sale_id' then
     raise exception 'El reintento idempotente no devolvió la misma venta.';

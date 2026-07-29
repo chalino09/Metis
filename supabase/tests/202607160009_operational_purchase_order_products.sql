@@ -46,7 +46,7 @@ begin
   begin
     perform public.save_purchase_order(v_company,null,v_supplier,'MXN','2026-07-16',null,null,null,null,0,
       jsonb_build_array(jsonb_build_object('product_id',v_other_product,'description','Producto ajeno','quantity',1,'unit_cost',1)),null);
-  exception when others then v_forbidden:=position('no pertenece a la empresa' in lower(sqlerrm))>0;end;
+  exception when others then v_forbidden:=position('producto canónico' in lower(sqlerrm))>0 or (position('producto' in lower(sqlerrm))>0 and position('empresa' in lower(sqlerrm))>0);end;
   if not v_forbidden then raise exception 'Se vinculó un producto de otra empresa.';end if;v_forbidden:=false;
 
   begin
