@@ -35,6 +35,7 @@ import { QuoteBrandingSettings } from "@/app/components/QuoteBrandingSettings";
 type PosLocation = { id: string; name: string; code: string };
 type PosRegister = { id: string; location_id: string; name: string; code: string; currency_code: string };
 type PaymentMethod = { id: string; code: string; name: string; settlement_kind: "cash_drawer" | "external" };
+type ReceivableFinancialAccount = { id: string; alias: string; institution_name: string; currency_code: string; masked_ending: string };
 type CashSession = { id: string; cash_register_id: string; location_id: string; status: string; opening_amount: number; opened_at?: string };
 type PosContext = { locations: PosLocation[]; registers: PosRegister[]; payment_methods: PaymentMethod[]; own_open_session: CashSession | null };
 type ProductSearchItem = { product_id: string; code: string | null; name: string; unit: string | null; inventory_tracked: boolean; quantity_on_hand: number; base_price_amount?: number; tax_amount?: number; price_amount: number; currency_code: string };
@@ -806,6 +807,8 @@ export function ReceivablesView({ companyId }: { companyId: string }) {
   const [customerContextLoading, setCustomerContextLoading] = useState(false);
   const [customerContextError, setCustomerContextError] = useState<string | null>(null);
   const [methodId, setMethodId] = useState("");
+  const [financialAccounts, setFinancialAccounts] = useState<ReceivableFinancialAccount[]>([]);
+  const [financialAccountId, setFinancialAccountId] = useState("");
   const [amount, setAmount] = useState("");
   const [paymentReference, setPaymentReference] = useState("");
   const [documents, setDocuments] = useState<ReceivableDocument[]>([]);
@@ -847,6 +850,16 @@ export function ReceivablesView({ companyId }: { companyId: string }) {
   useEffect(() => { customerRequestRef.current += 1; const timer = window.setTimeout(() => { void loadReceivableCustomers(1, false); }, 120); return () => window.clearTimeout(timer); }, [loadReceivableCustomers]);
   useEffect(() => { let active = true; void getSupabaseClient().rpc("get_receivable_integrity_audit", { p_company_id: companyId }).then(({ data, error }) => { if (!active || error) return; setIntegrity(data as typeof integrity); }); return () => { active = false; }; }, [companyId]);
   useEffect(() => { if (context) void Promise.resolve().then(() => setMethodId((current) => context.payment_methods.some((method) => method.id === current) ? current : context.payment_methods[0]?.id ?? "")); }, [context]);
+  useEffect(() => {
+    let active = true;
+    void getSupabaseClient().rpc("list_receivable_financial_accounts", { p_company_id: companyId }).then(({ data, error }) => {
+      if (!active) return;
+      const accounts = error ? [] : (data ?? []) as ReceivableFinancialAccount[];
+      setFinancialAccounts(accounts);
+      setFinancialAccountId((current) => accounts.some((account) => account.id === current) ? current : accounts.length === 1 ? accounts[0].id : "");
+    });
+    return () => { active = false; };
+  }, [companyId]);
 
   const method = context?.payment_methods.find((item) => item.id === methodId) ?? null;
   const cashSession = context?.own_open_session?.status === "open" ? context.own_open_session : null;
@@ -894,9 +907,10 @@ export function ReceivablesView({ companyId }: { companyId: string }) {
     event.preventDefault(); if (!selected || !method) return;
     if (method.settlement_kind === "cash_drawer" && !cashSession) { toast({ title: "Abre una caja", description: "Un abono en efectivo requiere una sesión propia abierta.", tone: "error" }); return; }
     if (method.settlement_kind === "external" && !paymentReference.trim()) { toast({ title: "Falta la referencia", description: "Los pagos externos requieren una referencia bancaria o documental.", tone: "error" }); return; }
+    if (method.settlement_kind === "external" && !financialAccountId) { toast({ title: "Falta la cuenta receptora", description: "Indica en qué cuenta financiera se recibió el cobro.", tone: "error" }); return; }
     setBusy(true);
-    const operationFingerprint = JSON.stringify({ companyId, customerId: selected.id, methodId: method.id, amount: Number(amount), cashSessionId: method.settlement_kind === "cash_drawer" ? cashSession?.id : null, paymentReference: paymentReference.trim() || null });
-    const { data, error } = await getSupabaseClient().rpc("record_receivable_payment", { p_company_id: companyId, p_customer_id: selected.id, p_payment_method_id: method.id, p_amount: Number(amount), p_cash_session_id: method.settlement_kind === "cash_drawer" ? cashSession?.id : null, p_client_request_id: idempotency.get("receivable-payment", operationFingerprint), p_payment_reference: paymentReference.trim() || null });
+    const operationFingerprint = JSON.stringify({ companyId, customerId: selected.id, methodId: method.id, amount: Number(amount), cashSessionId: method.settlement_kind === "cash_drawer" ? cashSession?.id : null, paymentReference: paymentReference.trim() || null, financialAccountId: method.settlement_kind === "external" ? financialAccountId : null });
+    const { data, error } = await getSupabaseClient().rpc("record_receivable_payment_to_account", { p_company_id: companyId, p_customer_id: selected.id, p_payment_method_id: method.id, p_amount: Number(amount), p_cash_session_id: method.settlement_kind === "cash_drawer" ? cashSession?.id : null, p_client_request_id: idempotency.get("receivable-payment", operationFingerprint), p_payment_reference: paymentReference.trim() || null, p_financial_account_id: method.settlement_kind === "external" ? financialAccountId : null });
     if (error) toast({ title: "No se pudo registrar el abono", description: rpcError(error, "Verifica el saldo y la forma de pago."), tone: "error" });
     else {
       idempotency.clear("receivable-payment"); const result = data as { receipt?: ReceivableReceipt };
@@ -944,7 +958,7 @@ export function ReceivablesView({ companyId }: { companyId: string }) {
           <DataToolbar search={documentQuery} onSearchChange={(value) => { setDocumentQuery(value); setDocumentPage(1); }} placeholder="Buscar referencia" filters={<Select ariaLabel="Filtrar documentos por vencimiento" value={documentDue} onValueChange={(value) => { setDocumentDue(value); setDocumentPage(1); }} options={[{ value: "all", label: "Todos" }, { value: "overdue", label: "Vencidos" }, { value: "due_7_days", label: "Vencen en 7 días" }, { value: "future", label: "Posteriores" }]} />} activeFilters={(documentQuery ? 1 : 0) + (documentDue !== "all" ? 1 : 0)} onClear={() => { setDocumentQuery(""); setDocumentDue("all"); setDocumentPage(1); }} results={documentTotal} />
           <div className="table-wrap surface-table receivables-documents"><table><thead><tr><th>Documento</th><th>Emisión</th><th>Vencimiento</th><th className="number-cell">Importe</th><th className="number-cell">Saldo</th></tr></thead><tbody>{documents.map((document) => <tr key={document.id}><td className="mono">{document.reference ?? "Sin referencia"}</td><td>{new Date(document.issued_at).toLocaleDateString("es-MX")}</td><td>{new Date(`${document.due_date}T12:00:00`).toLocaleDateString("es-MX")}</td><td className="number-cell">{money(document.original_amount, document.currency_code)}</td><td className="number-cell"><strong>{money(document.outstanding_amount, document.currency_code)}</strong></td></tr>)}</tbody></table>{documentsLoading && <p className="customer-master-empty">Cargando documentos…</p>}{!documentsLoading && !documents.length && <p className="customer-master-empty">Sin documentos abiertos para estos filtros.</p>}</div>
           <Pagination page={documentPage} total={documentTotal} pageSize={25} onChange={setDocumentPage} />
-          <form className="sales-form receivables-payment-form" onSubmit={recordPayment}><h3>Registrar abono</h3><Select ariaLabel="Forma de pago del abono" value={methodId} onValueChange={setMethodId} options={context.payment_methods.map((payment) => ({ value: payment.id, label: payment.name }))} /><div className="sales-form__row"><label>Importe<Input required min="0.01" step="0.01" inputMode="decimal" value={amount} onChange={(event) => { setAmount(event.target.value); setPreview([]); }} placeholder={String(selected.outstanding_amount)} /></label><label>Referencia {method?.settlement_kind === "external" ? "obligatoria" : "opcional"}<Input required={method?.settlement_kind === "external"} value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} placeholder={method?.settlement_kind === "external" ? "Transferencia, depósito o terminal" : "Nota del cobro"} /></label></div>{method?.settlement_kind === "cash_drawer" && <small className="settings-note">Este abono afectará la caja abierta.</small>}{preview.length > 0 && <div className="fifo-preview"><strong>Aplicación FIFO prevista</strong>{preview.map((item) => <span key={item.receivable_id}><b>{item.reference ?? "Sin referencia"}</b><small>{money(item.amount_applied)} · saldo posterior {money(item.remaining_after)}</small></span>)}</div>}<Button type="submit" variant="primary" loading={busy} disabled={!preview.length}>Registrar abono y generar recibo</Button></form>
+          <form className="sales-form receivables-payment-form" onSubmit={recordPayment}><h3>Registrar abono</h3><Select ariaLabel="Forma de pago del abono" value={methodId} onValueChange={setMethodId} options={context.payment_methods.map((payment) => ({ value: payment.id, label: payment.name }))} />{method?.settlement_kind === "external" && <Select ariaLabel="Cuenta financiera receptora" value={financialAccountId} onValueChange={setFinancialAccountId} placeholder="Cuenta receptora" options={financialAccounts.map((account) => ({ value: account.id, label: `${account.alias} · ${account.currency_code} · ${account.masked_ending}` }))} />}<div className="sales-form__row"><label>Importe<Input required min="0.01" step="0.01" inputMode="decimal" value={amount} onChange={(event) => { setAmount(event.target.value); setPreview([]); }} placeholder={String(selected.outstanding_amount)} /></label><label>Referencia {method?.settlement_kind === "external" ? "obligatoria" : "opcional"}<Input required={method?.settlement_kind === "external"} value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} placeholder={method?.settlement_kind === "external" ? "Transferencia, depósito o terminal" : "Nota del cobro"} /></label></div>{method?.settlement_kind === "cash_drawer" && <small className="settings-note">Este abono afectará la caja abierta.</small>}{preview.length > 0 && <div className="fifo-preview"><strong>Aplicación FIFO prevista</strong>{preview.map((item) => <span key={item.receivable_id}><b>{item.reference ?? "Sin referencia"}</b><small>{money(item.amount_applied)} · saldo posterior {money(item.remaining_after)}</small></span>)}</div>}<Button type="submit" variant="primary" loading={busy} disabled={!preview.length || method?.settlement_kind === "external" && !financialAccountId}>Registrar abono y generar recibo</Button></form>
         </>}
       </section>
     </div>

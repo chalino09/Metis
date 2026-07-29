@@ -56,6 +56,15 @@ export function BankingModule({ companyId, permissions }: { companyId: string; p
     setBusy(false);
   }
 
+  async function refresh() {
+    setLoading(true);
+    if (accountId && permissions.includes("reconcile_banking")) {
+      const { error: refreshError } = await getSupabaseClient().rpc("refresh_bank_reconciliation_candidates_with_receivables", { p_company_id: companyId, p_financial_account_id: accountId });
+      if (refreshError) toast({ title: "No se pudo actualizar la conciliación", description: refreshError.message, tone: "error" });
+    }
+    await load(accountId, page);
+  }
+
   const byTransaction = useMemo(() => Object.fromEntries(data.transactions.map((item) => [item.id, item])), [data.transactions]);
   const selectedAccount = data.accounts.find((item) => item.id === accountId);
   const exactCount = data.candidates.filter((item) => item.match_quality === "exact").length;
@@ -64,7 +73,7 @@ export function BankingModule({ companyId, permissions }: { companyId: string; p
   const canDisconnect = permissions.includes("unreconcile_banking");
 
   return <div className="content-frame banking-module">
-    <PageHeading eyebrow="Tesorería" title="Bancos y conciliación" description="Explica estados completos y confirma coincidencias contra cobros bancarios y pagos registrados." action={<Button variant="secondary" loading={loading} onClick={() => void load()}><RefreshCw size={15} />Actualizar</Button>} />
+    <PageHeading eyebrow="Tesorería" title="Bancos y conciliación" description="Explica estados completos y confirma coincidencias contra cobros bancarios y pagos registrados." action={<Button variant="secondary" loading={loading} onClick={() => void refresh()}><RefreshCw size={15} />Actualizar</Button>} />
     <DataState loading={loading} error={error} hasData={1} empty="" errorAction={<Button size="sm" onClick={() => void load()}>Reintentar</Button>}>
       <section className="banking-toolbar">
         <div><span className="eyebrow">Cuenta financiera</span><Select ariaLabel="Cuenta financiera" value={accountId} onValueChange={(value) => { setAccountId(value); setPage(1); void load(value, 1); }} placeholder="Cuenta financiera" options={data.accounts.map((item) => ({ value: item.id, label: `${item.alias} · ${item.currency_code} · ${item.masked_ending}` }))} /></div>

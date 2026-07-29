@@ -1,0 +1,9 @@
+Terminacion cuenta,1234,,,,,
+Moneda,MXN,,,,,
+Periodo inicio,2026-07-28,,,,,
+Periodo fin,2026-07-28,,,,,
+Saldo inicial,0,,,,,
+Saldo final,1,,,,,
+,,,,,,
+Fecha,Fecha valor,Referencia,Descripcion,Abono,Cargo,Saldo
+2026-07-28,2026-07-28,M4C-QA-20260728,Abono controlado para validacion M4C,1,0,1
