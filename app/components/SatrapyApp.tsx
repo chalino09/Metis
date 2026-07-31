@@ -349,7 +349,7 @@ export function SatrapyShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { appState, companies, configured, isSuperAdmin, loading, notice, previewRole, setPreviewRole, selectCompany, refreshAccess } = useSatrapy();
 
-  if (loading) return <LoadingScreen />;
+  if (loading && !appState) return <LoadingScreen />;
   if (!configured) return <AccessUnavailableScreen />;
   if (!appState) return <LoginScreen notice={notice} onRetry={() => void refreshAccess()} />;
 
@@ -589,7 +589,23 @@ function AccessUnavailableScreen() {
 }
 
 function LoadingScreen() {
-  return <main className="auth-page"><div className="loading-copy" role="status" aria-live="polite"><LoaderCircle className="spin" size={22} aria-hidden="true" /><span>Validando acceso…</span></div></main>;
+  return <main className="app-shell app-loading-shell" aria-busy="true">
+    <header className="global-header app-loading-header" aria-hidden="true">
+      <div className="brand-lockup"><span className="brand-mark">S</span><div><strong>Satrapy</strong><span>Operación, en orden</span></div></div>
+      <div className="app-loading-nav"><i/><i/><i/><i/><i/></div>
+      <div className="app-loading-session"><i/><i/></div>
+    </header>
+    <section className="main-panel">
+      <div className="context-nav app-loading-context" aria-hidden="true"><i/><i/><i/></div>
+      <div className="content-frame app-loading-content" aria-hidden="true">
+        <div className="app-loading-heading"><i/><i/><i/></div>
+        <div className="app-loading-current"/>
+        <div className="app-loading-cards"><i/><i/><i/><i/></div>
+        <div className="app-loading-table"><i/><i/><i/><i/><i/></div>
+      </div>
+    </section>
+    <span className="sr-only" role="status" aria-live="polite">Validando acceso…</span>
+  </main>;
 }
 
 function RolePreview({ selectedRole, onChange, compact = false }: { selectedRole: AppRoleCode | null; onChange: (role: AppRoleCode | null) => void; compact?: boolean }) {

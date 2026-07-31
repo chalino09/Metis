@@ -11,6 +11,7 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
   type ChangeEvent,
   type ButtonHTMLAttributes,
@@ -43,7 +44,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       {...props}
     >
       {loading && <span className="ui-button__spinner" aria-hidden="true" />}
-      <span className={loading ? "ui-button__content is-loading" : "ui-button__content"}>{children}</span>
+      <span className={loading ? "ui-button__content is-loading" : "ui-button__content"} style={{ color: "inherit" }}>{children}</span>
     </button>
   );
 });
@@ -54,6 +55,50 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
 ) {
   if (props.type === "date") return <DateInput ref={ref} className={className} {...props} />;
   return <input ref={ref} className={cx("ui-input", className)} {...props} />;
+});
+
+function normalizeCurrencyInput(value: string) {
+  const cleaned = value.replace(/[^\d.]/g, "");
+  const [integer = "", ...decimalParts] = cleaned.split(".");
+  const hasDecimal = cleaned.includes(".");
+  const decimal = decimalParts.join("").slice(0, 2);
+  return `${integer}${hasDecimal ? `.${decimal}` : ""}`;
+}
+
+function formatCurrencyInput(value: string) {
+  const normalized = normalizeCurrencyInput(value);
+  if (!normalized) return "";
+  const [integer = "", decimal] = normalized.split(".");
+  const grouped = (integer || "0").replace(/^0+(?=\d)/, "").replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return decimal === undefined ? grouped : `${grouped}.${decimal}`;
+}
+
+export const CurrencyInput = forwardRef<HTMLInputElement, Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "value" | "onChange"> & {
+  value: string;
+  onValueChange: (value: string) => void;
+  currency?: string;
+}>(function CurrencyInput(
+  { className, value, onValueChange, currency = "MXN", onBlur, "aria-label": ariaLabel, ...props },
+  ref,
+) {
+  return <div className="ui-currency-input">
+    <input
+      ref={ref}
+      type="text"
+      className={cx("ui-input", className)}
+      inputMode="decimal"
+      value={formatCurrencyInput(value)}
+      onChange={event => onValueChange(normalizeCurrencyInput(event.target.value))}
+      onBlur={event => {
+        const amount = Number(value);
+        if (value && Number.isFinite(amount)) onValueChange(amount.toFixed(2));
+        onBlur?.(event);
+      }}
+      aria-label={ariaLabel ? `${ariaLabel} en ${currency}` : undefined}
+      {...props}
+    />
+    <span aria-hidden="true">{currency}</span>
+  </div>;
 });
 
 function isoToDisplay(value: string) {
@@ -226,15 +271,16 @@ type ModalProps = {
   children?: ReactNode;
   footer?: ReactNode;
   labelledBy?: string;
+  className?: string;
 };
 
-export function Modal({ open, onOpenChange, eyebrow, title, description, children, footer, labelledBy }: ModalProps) {
+export function Modal({ open, onOpenChange, eyebrow, title, description, children, footer, labelledBy, className }: ModalProps) {
   const titleId = labelledBy ?? "satrapy-dialog-title";
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="ui-dialog-overlay" />
-        <Dialog.Content className="ui-dialog" aria-describedby={description ? `${titleId}-description` : undefined}>
+        <Dialog.Content className={cx("ui-dialog", className)} aria-describedby={description ? `${titleId}-description` : undefined}>
           <Dialog.Close asChild><button className="ui-dialog__close" aria-label="Cerrar"><X size={17} /></button></Dialog.Close>
           {eyebrow && <span className="eyebrow">{eyebrow}</span>}
           <Dialog.Title id={titleId}>{title}</Dialog.Title>
@@ -253,18 +299,28 @@ export function Drawer({
   title,
   children,
   className,
+  returnFocusRef,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
   children: ReactNode;
   className?: string;
+  returnFocusRef?: { current: HTMLElement | null };
 }) {
+  const previousFocusRef = useRef<HTMLElement | null>(null);
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="ui-dialog-overlay" />
-        <Dialog.Content className={cx("ui-drawer", className)}>
+        <Dialog.Content className={cx("ui-drawer", className)} onOpenAutoFocus={() => {
+          previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        }} onCloseAutoFocus={event => {
+          const target = returnFocusRef?.current ?? previousFocusRef.current;
+          if (!target) return;
+          event.preventDefault();
+          target.focus();
+        }}>
           <Dialog.Title>{title}</Dialog.Title>
           <Dialog.Close asChild><button className="ui-dialog__close" aria-label="Cerrar"><X size={17} /></button></Dialog.Close>
           <div className="ui-drawer__body">{children}</div>

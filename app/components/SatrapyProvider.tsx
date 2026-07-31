@@ -171,7 +171,9 @@ export function SatrapyProvider({ children }: { children: ReactNode }) {
     void Promise.resolve().then(() => loadSession(true));
     if (!configured) return;
     const { data } = getSupabaseClient().auth.onAuthStateChange((event) => {
-      if (event === "TOKEN_REFRESHED") return;
+      // La sesión inicial ya se resuelve arriba. Repetirla aquí duplica todas las
+      // consultas de acceso y provoca un segundo montaje visible de la aplicación.
+      if (event === "INITIAL_SESSION" || event === "TOKEN_REFRESHED") return;
       queryCache.clear();
       void loadSession(event === "SIGNED_IN" || event === "SIGNED_OUT");
     });
