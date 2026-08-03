@@ -42,7 +42,7 @@ import { purchasingUploadPackageState } from "@/app/lib/purchasing-upload-packag
 import { COMMERCIAL_ASSORTMENTS_PATH, LEGACY_POS_PREPARATION_PATH, MANAGE_ASSORTMENTS_REQUIREMENT, matchesNavigationRequirement, ROLE_PREVIEW_PERMISSIONS, type NavigationRequirement } from "@/app/lib/navigation-access";
 import { useSatrapy } from "@/app/components/SatrapyProvider";
 import { roleDisplayName } from "@/app/lib/role-labels";
-import { CashDeskView, CustomerMasterView, CustomersView, NewCustomerMasterView, PosSalesView, ReceivablesView, SalesAuditView, SalesHistoryView, SalesSettingsView } from "@/app/components/SalesModule";
+import { CashDeskView, CustomersView, PosSalesView, ReceivablesView, SalesAuditView, SalesHistoryView, SalesSettingsView } from "@/app/components/SalesModule";
 import { CommercialAssortmentsView } from "@/app/components/CommercialAssortmentsView";
 import { SalesQuotesView } from "@/app/components/SalesQuotesModule";
 import { SalesOrdersView } from "@/app/components/SalesOrdersModule";
@@ -248,7 +248,7 @@ const VIEW_META: Record<ViewName, {
     requirement: { all: ["view_sales_quotes"] },
   },
   sales_orders: {
-    label: "Órdenes de venta",
+    label: "Pedidos",
     icon: PackageSearch,
     href: "/satrapy/ventas/pedidos",
     area: "sales",
@@ -479,10 +479,8 @@ export function SatrapyRouteContent() {
   if (activeView === "sales_history") return <SalesHistoryView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "sales_quotes") return <SalesQuotesView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "sales_orders") return <SalesOrdersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
-  if (activeView === "customers" && creatingCustomer) return <NewCustomerMasterView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
-  if (activeView === "customers" && selectedCustomerId) return <CustomerMasterView companyId={appState.membership.companyId} customerId={selectedCustomerId} permissions={appState.membership.permissions} />;
-  if (activeView === "customers") return <CustomersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
-  if (activeView === "receivables") return <NeutralStartNotice companyId={appState.membership.companyId} module="receivables"><ReceivablesView companyId={appState.membership.companyId} /></NeutralStartNotice>;
+  if (activeView === "customers") return <CustomersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} initialCustomerId={selectedCustomerId} initialCreateOpen={creatingCustomer} />;
+  if (activeView === "receivables") return <ReceivablesView companyId={appState.membership.companyId} />;
   if (activeView === "cash") return <NeutralStartNotice companyId={appState.membership.companyId} module="cash_banks"><CashDeskView companyId={appState.membership.companyId} /></NeutralStartNotice>;
   if (activeView === "sales_settings") return <SalesSettingsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "collaborators_directory") return <CollaboratorsDirectoryView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
