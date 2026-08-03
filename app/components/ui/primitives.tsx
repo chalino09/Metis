@@ -10,6 +10,7 @@ import {
   forwardRef,
   useCallback,
   useContext,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -120,18 +121,28 @@ function isoDate(value: Date) {
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
 }
 
+function dateValidationMessage(value: string, min?: string, max?: string) {
+  const parsed = displayToIso(value);
+  if (!parsed) return "Escribe una fecha válida en formato dd/mm/aaaa.";
+  if (min && parsed < min) return `Selecciona una fecha igual o posterior al ${isoToDisplay(min)}.`;
+  if (max && parsed > max) return `Selecciona una fecha igual o anterior al ${isoToDisplay(max)}.`;
+  return null;
+}
+
 function parseIsoDate(value: string) {
   const [year, month, day] = value.split("-").map(Number);
   return new Date(year, month - 1, day);
 }
 
 const DateInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function DateInput(
-  { className, type: _type, value, defaultValue: _defaultValue, min, max, required, disabled, onChange, onBlur, onKeyDown, "aria-label": ariaLabel, name, style, ...props },
+  { className, type: _type, value, defaultValue: _defaultValue, min, max, required, disabled, onChange, onBlur, onKeyDown, "aria-label": ariaLabel, "aria-describedby": ariaDescribedBy, name, style, ...props },
   ref,
 ) {
   void _type; void _defaultValue;
   const isoValue = typeof value === "string" ? value : "";
   const [draftText, setDraftText] = useState<string | null>(null);
+  const [validationMessage, setValidationMessage] = useState<string | null>(null);
+  const validationMessageId = useId();
   const text = draftText ?? isoToDisplay(isoValue);
   const [open, setOpen] = useState(false);
   const [viewMonth, setViewMonth] = useState(() => {
@@ -151,20 +162,21 @@ const DateInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElem
     onChange?.({ target: { value: next }, currentTarget: { value: next } } as ChangeEvent<HTMLInputElement>);
   }
   function commit(nextText: string) {
-    if (!nextText.trim()) { notify(""); return; }
-    const next = displayToIso(nextText);
-    if (next && !isUnavailable(next)) { notify(next); setDraftText(null); }
-    else setDraftText(null);
+    if (!nextText.trim()) { notify(""); setDraftText(null); setValidationMessage(null); return; }
+    const message = dateValidationMessage(nextText, minValue, maxValue);
+    if (message) { setDraftText(nextText); setValidationMessage(message); return; }
+    notify(displayToIso(nextText)!); setDraftText(null); setValidationMessage(null);
   }
   function choose(next: string) {
     if (isUnavailable(next)) return;
-    notify(next); setDraftText(null); setOpen(false);
+    notify(next); setDraftText(null); setValidationMessage(null); setOpen(false);
   }
   return <div className="satrapy-date-picker" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}>
     <div className="satrapy-date-control" style={{ position: "relative", display: "block" }}>
-      <input ref={ref} className={cx("ui-input", "satrapy-date-input", className)} value={text} onChange={event => setDraftText(event.target.value.replace(/[^\d/]/g, "").slice(0, 10))} onBlur={event => { commit(event.currentTarget.value); onBlur?.(event); }} onKeyDown={event => { if (event.key === "Enter") commit(event.currentTarget.value); onKeyDown?.(event); }} inputMode="numeric" autoComplete="off" placeholder="dd/mm/aaaa" aria-label={ariaLabel} name={name} required={required} disabled={disabled} {...props} style={{ ...style, paddingRight: 43 }} />
+      <input ref={ref} className={cx("ui-input", "satrapy-date-input", className)} value={text} onChange={event => { setDraftText(event.target.value.replace(/[^\d/]/g, "").slice(0, 10)); setValidationMessage(null); }} onBlur={event => { commit(event.currentTarget.value); onBlur?.(event); }} onKeyDown={event => { if (event.key === "Enter") commit(event.currentTarget.value); onKeyDown?.(event); }} inputMode="numeric" autoComplete="off" placeholder="dd/mm/aaaa" aria-label={ariaLabel} aria-invalid={validationMessage ? true : undefined} aria-describedby={[ariaDescribedBy, validationMessage ? validationMessageId : null].filter(Boolean).join(" ") || undefined} name={name} required={required} disabled={disabled} {...props} style={{ ...style, paddingRight: 43 }} />
       <button type="button" className="satrapy-date-control__button" style={{ position: "absolute", top: 1, right: 1, bottom: 1, display: "grid", width: 39, placeItems: "center", border: 0, background: "transparent" }} aria-label={ariaLabel ? `Abrir calendario: ${ariaLabel}` : "Abrir calendario"} aria-haspopup="dialog" aria-expanded={open} disabled={disabled} onClick={() => { if (!open) { const base = isoValue ? parseIsoDate(isoValue) : new Date(); setViewMonth(new Date(base.getFullYear(), base.getMonth(), 1)); } setOpen(current => !current); }}><CalendarDays size={17} /></button>
     </div>
+    {validationMessage && <small id={validationMessageId} className="ui-field__error" role="alert">{validationMessage}</small>}
     {open && <div className="satrapy-calendar" role="dialog" aria-label={`Calendario${ariaLabel ? ` de ${ariaLabel}` : ""}`}>
       <header><strong>{monthLabel}</strong><div><button type="button" aria-label="Mes anterior" onClick={() => setViewMonth(current => new Date(current.getFullYear(), current.getMonth() - 1, 1))}><ChevronLeft size={17} /></button><button type="button" aria-label="Mes siguiente" onClick={() => setViewMonth(current => new Date(current.getFullYear(), current.getMonth() + 1, 1))}><ChevronRight size={17} /></button></div></header>
       <div className="satrapy-calendar-weekdays" aria-hidden="true">{["L", "M", "M", "J", "V", "S", "D"].map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}</div>
