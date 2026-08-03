@@ -129,14 +129,14 @@ const VIEW_META: Record<ViewName, {
     requirement: { all: ["view_suppliers"] },
   },
   procurement: {
-    label: "Abastecimiento",
+    label: "Historial de abastecimiento",
     icon: ShoppingCart,
     href: "/satrapy/compras/abastecimiento",
     area: "purchasing",
     requirement: { all: ["view_procurement"] },
   },
   purchase_orders: {
-    label: "Órdenes de compra",
+    label: "Cotizaciones y órdenes",
     icon: ClipboardCheck,
     href: "/satrapy/compras/ordenes",
     area: "purchasing",
@@ -313,7 +313,7 @@ function viewForPath(pathname: string): ViewName | undefined {
 
 const NAVIGATION_SECTIONS: Array<{ id: AreaName; label: string; views: ViewName[] }> = [
   { id: "sales", label: "Ventas", views: ["pos", "sales_history", "sales_quotes", "sales_orders", "customers", "receivables", "cash"] },
-  { id: "purchasing", label: "Compras", views: ["suppliers", "procurement", "purchase_orders", "purchase_receipts", "supplier_invoices"] },
+  { id: "purchasing", label: "Compras", views: ["suppliers", "purchase_orders", "purchase_receipts", "supplier_invoices"] },
   { id: "inventory", label: "Inventario", views: ["products", "inventory", "inventory_counts", "inventory_transfers", "inventory_replenishment"] },
   { id: "collaborators", label: "Colaboradores", views: ["collaborators_directory", "payroll"] },
   { id: "accounting", label: "Contabilidad", views: ["accounting_summary", "accounting_accounts", "accounting_reports", "accounting_periods", "accounting_journals", "accounting_events", "accounting_banking", "accounting_opening"] },
