@@ -93,7 +93,7 @@ const status: Record<string, string> = {
   draft: "Borrador",
   quoting: "En cotización",
   recommended: "Por aprobar",
-  approved: "Adjudicada",
+  approved: "Compra autorizada",
   cancelled: "Cancelada",
 };
 
@@ -206,7 +206,7 @@ export function ProcurementView({
   async function saveManual() {
     if (!manual.locationId || !manual.productId || !(Number(manual.quantity) > 0) || !manual.reason.trim()) {
       toast({
-        title: "Revisa la requisición",
+        title: "Revisa la solicitud",
         description: "La excepción requiere ubicación, producto, cantidad y motivo.",
         tone: "error",
       });
@@ -223,13 +223,13 @@ export function ProcurementView({
     });
     setSaving(false);
     if (rpcError) {
-      toast({ title: "No se creó la requisición", description: rpcError.message, tone: "error" });
+      toast({ title: "No se creó la solicitud", description: rpcError.message, tone: "error" });
       return;
     }
     setManualOpen(false);
     await load();
     toast({
-      title: "Requisición excepcional creada",
+      title: "Solicitud de compra creada",
       description: "Quedó identificada y auditada como excepción manual.",
       tone: "success",
     });
@@ -380,14 +380,14 @@ export function ProcurementView({
     });
     setSaving(false);
     if (rpcError) {
-      toast({ title: "No se guardó la recomendación", description: rpcError.message, tone: "error" });
+      toast({ title: "No se guardó la selección", description: rpcError.message, tone: "error" });
       return;
     }
     setReason("");
     setDecision(null);
     await open(detail.id);
     await load();
-    toast({ title: "Recomendación preparada", description: "Quedó lista para aprobación.", tone: "success" });
+    toast({ title: "Selección preparada", description: "Quedó lista para aprobación.", tone: "success" });
   }
 
   async function approve() {
@@ -415,8 +415,8 @@ export function ProcurementView({
     await open(detail.id);
     await load();
     toast({
-      title: "Adjudicación aprobada",
-      description: "Se generó una OC por cada proveedor seleccionado.",
+      title: "Compra autorizada",
+      description: "Se generó una orden de compra por cada proveedor seleccionado.",
       tone: "success",
     });
   }
@@ -426,12 +426,12 @@ export function ProcurementView({
       <div className="page-heading">
         <div>
           <span className="eyebrow">Compras</span>
-          <h1>Abastecimiento</h1>
-          <p>Requisiciones, cotizaciones y adjudicaciones antes de emitir órdenes de compra.</p>
+          <h1>Solicitudes de compra</h1>
+          <p>Solicitudes, cotizaciones y selecciones de proveedores antes de emitir órdenes de compra.</p>
         </div>
         {canCreate && (
           <Button variant="secondary" onClick={() => void openManual()}>
-            Requisición excepcional
+            Nueva solicitud de compra
           </Button>
         )}
       </div>
@@ -468,41 +468,43 @@ export function ProcurementView({
         empty="Las necesidades generadas desde reabastecimiento aparecerán aquí."
         errorAction={<Button onClick={() => void load()}>Reintentar</Button>}
       >
-        <table>
-          <thead>
-            <tr>
-              <th>Folio</th>
-              <th>Destino</th>
-              <th>Origen</th>
-              <th>Objetivo</th>
-              <th>Estado</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <InteractiveTableRow key={row.id} label={`Abrir ${row.folio}`} onActivate={() => void open(row.id)}>
-                <td>
-                  <strong className="mono">{row.folio}</strong>
-                </td>
-                <td>{row.location_name}</td>
-                <td>{row.source === "replenishment" ? "Reabastecimiento" : "Excepción manual"}</td>
-                <td>{formatDate(row.target_date)}</td>
-                <td>
-                  <Badge tone={row.status === "approved" ? "success" : row.status === "recommended" ? "warning" : "neutral"}>
-                    {status[row.status] ?? row.status}
-                  </Badge>
-                </td>
-              </InteractiveTableRow>
-            ))}
-          </tbody>
-        </table>
+        <div className="table-wrap surface-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Folio</th>
+                <th>Destino</th>
+                <th>Origen</th>
+                <th>Objetivo</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <InteractiveTableRow key={row.id} label={`Abrir ${row.folio}`} onActivate={() => void open(row.id)}>
+                  <td>
+                    <strong className="mono">{row.folio}</strong>
+                  </td>
+                  <td>{row.location_name}</td>
+                  <td>{row.source === "replenishment" ? "Reabastecimiento" : "Excepción manual"}</td>
+                  <td>{formatDate(row.target_date)}</td>
+                  <td>
+                    <Badge tone={row.status === "approved" ? "success" : row.status === "recommended" ? "warning" : "neutral"}>
+                      {status[row.status] ?? row.status}
+                    </Badge>
+                  </td>
+                </InteractiveTableRow>
+              ))}
+            </tbody>
+          </table>
+        </div>
         <DataPagination page={page} total={total} pageSize={pageSize} onChange={setPage} />
       </DataState>
 
       <Drawer
         open={Boolean(detail)}
         onOpenChange={(isOpen) => !isOpen && !saving && setDetail(null)}
-        title={detail?.folio ?? "Requisición"}
+        title={detail?.folio ?? "Solicitud de compra"}
         className="purchase-order-detail-drawer procurement-detail-drawer"
       >
         {detail && (
@@ -523,7 +525,7 @@ export function ProcurementView({
                   <span className="eyebrow">Necesidad de compra</span>
                   <h3>Partidas solicitadas</h3>
                 </div>
-                <p>Existencia al crear la requisición y cantidad a recuperar.</p>
+                <p>Existencia al crear la solicitud y cantidad a recuperar.</p>
               </header>
               <table>
                 <thead>
@@ -678,7 +680,7 @@ export function ProcurementView({
                 <header className="procurement-section-header">
                   <div>
                     <span className="eyebrow">Selección formal</span>
-                    <h3>{detail.award.status === "approved" ? "Adjudicación aprobada" : "Recomendación pendiente"}</h3>
+                    <h3>{detail.award.status === "approved" ? "Compra autorizada" : "Selección pendiente"}</h3>
                   </div>
                   <Badge tone={detail.award.status === "approved" ? "success" : "warning"}>
                     {detail.award.status === "approved" ? "Aprobada" : "Por aprobar"}
@@ -713,7 +715,7 @@ export function ProcurementView({
               {canQuote && detail.status !== "approved" && <Button onClick={() => void openQuote()}>Registrar cotización</Button>}
               {canRecommend && detail.status === "quoting" && (
                 <Button variant="primary" onClick={openRecommendation}>
-                  Preparar recomendación
+                  Preparar selección
                 </Button>
               )}
               {canApprove && detail.status === "recommended" && (
@@ -737,14 +739,14 @@ export function ProcurementView({
                 title={decision === "approve" ? "Aprobar selección" : "Seleccionar proveedor por partida"}
                 description={
                   decision === "approve"
-                    ? "La aprobación creará una OC por proveedor seleccionado."
+                    ? "La aprobación creará una orden de compra por proveedor seleccionado."
                     : "Elige la cotización que gana cada partida; el precio menor se propone como punto de partida."
                 }
                 footer={
                   <>
                     <Button onClick={() => setDecision(null)}>Cancelar</Button>
                     <Button variant="primary" loading={saving} onClick={() => void (decision === "approve" ? approve() : recommend())}>
-                      {decision === "approve" ? "Aprobar y crear OC" : "Guardar recomendación"}
+                      {decision === "approve" ? "Aprobar y crear orden de compra" : "Guardar selección"}
                     </Button>
                   </>
                 }
@@ -899,13 +901,13 @@ export function ProcurementView({
         open={manualOpen}
         onOpenChange={(isOpen) => !saving && setManualOpen(isOpen)}
         eyebrow="Sólo excepción"
-        title="Requisición excepcional"
+        title="Nueva solicitud de compra"
         description="Úsala únicamente cuando la compra no provenga de faltantes; el motivo queda auditado."
         footer={
           <>
             <Button onClick={() => setManualOpen(false)}>Cancelar</Button>
             <Button variant="primary" loading={saving} onClick={() => void saveManual()}>
-              Crear requisición
+              Crear solicitud
             </Button>
           </>
         }
