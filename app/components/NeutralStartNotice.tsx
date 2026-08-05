@@ -5,7 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Badge } from "@/app/components/ui/primitives";
 import { getSupabaseClient } from "@/app/lib/supabase";
 
-export type NeutralStartModule = "inventory" | "cash_banks" | "receivables" | "payables" | "accounting" | "bi";
+export type NeutralStartModule = "inventory" | "cash_banks" | "payables" | "accounting" | "bi";
 
 type ModuleState = {
   neutral: boolean;
@@ -27,10 +27,6 @@ const MODULE_COPY: Record<NeutralStartModule, { title: string; description: stri
   cash_banks: {
     title: "Caja y bancos en arranque neutral",
     description: "No hay dinero supuesto: los saldos permanecen en cero hasta movimientos reales o un estado bancario importado y promovido.",
-  },
-  receivables: {
-    title: "Cuentas por cobrar en arranque neutral",
-    description: "El saldo es $0 mientras no existan ventas a crédito ni una apertura formal importada.",
   },
   payables: {
     title: "Cuentas por pagar en arranque neutral",

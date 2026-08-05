@@ -43,7 +43,7 @@ test("la entrega queda separada del pago y confirma venta e inventario", () => {
 test("Ventas muestra un flujo explícito de pedidos y anticipos", () => {
   assert.match(app, /\/satrapy\/ventas\/pedidos/);
   assert.match(app, /SalesOrdersView/);
-  assert.match(moduleSource, /Órdenes de venta/);
+  assert.match(moduleSource, /Cumplimiento de pedidos/);
   assert.match(moduleSource, /Registrar pago a cuenta/);
   assert.match(moduleSource, /Confirmar entrega/);
   assert.match(moduleSource, /deliver_sales_deposit_order/);

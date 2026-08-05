@@ -43,7 +43,7 @@ test("la UI explica el estado sin presentar la migración como requisito operati
   assert.match(notice, /get_company_neutral_start/);
   assert.match(app, /module="inventory"/);
   assert.match(app, /module="cash_banks"/);
-  assert.match(app, /module="receivables"/);
+  assert.doesNotMatch(app, /module="receivables"/);
   assert.match(app, /module="payables"/);
   assert.match(app, /module="accounting"/);
   assert.match(app, /module="bi"/);

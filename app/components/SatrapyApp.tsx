@@ -11,6 +11,8 @@ import {
   Check,
   ClipboardCheck,
   FileSpreadsheet,
+  Eye,
+  EyeOff,
   History,
   Landmark,
   LayoutGrid,
@@ -21,6 +23,7 @@ import {
   RefreshCw,
   ReceiptText,
   ShoppingCart,
+  ShieldAlert,
   Target,
   TrendingUp,
   Truck,
@@ -40,7 +43,7 @@ import { OperationIdempotencyKeys } from "@/app/lib/operation-idempotency";
 import { presentImportedSourceText } from "@/app/lib/presentation-text";
 import { purchasingUploadPackageState } from "@/app/lib/purchasing-upload-package";
 import { COMMERCIAL_ASSORTMENTS_PATH, LEGACY_POS_PREPARATION_PATH, MANAGE_ASSORTMENTS_REQUIREMENT, matchesNavigationRequirement, ROLE_PREVIEW_PERMISSIONS, type NavigationRequirement } from "@/app/lib/navigation-access";
-import { useSatrapy } from "@/app/components/SatrapyProvider";
+import { useSatrapy, type SatrapyAccessIssue } from "@/app/components/SatrapyProvider";
 import { roleDisplayName } from "@/app/lib/role-labels";
 import { CashDeskView, CustomersView, PosSalesView, ReceivablesView, SalesAuditView, SalesHistoryView, SalesSettingsView } from "@/app/components/SalesModule";
 import { CommercialAssortmentsView } from "@/app/components/CommercialAssortmentsView";
@@ -347,11 +350,12 @@ function getAllowedNavigation(permissions: string[], previewRole: AppRoleCode | 
 export function SatrapyShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { appState, companies, configured, isSuperAdmin, loading, notice, previewRole, setPreviewRole, selectCompany, refreshAccess } = useSatrapy();
+  const { accessIssue, appState, companies, configured, isSuperAdmin, loading, previewRole, setPreviewRole, selectCompany, refreshAccess } = useSatrapy();
 
   if (loading && !appState) return <LoadingScreen />;
   if (!configured) return <AccessUnavailableScreen />;
-  if (!appState) return <LoginScreen notice={notice} onRetry={() => void refreshAccess()} />;
+  if (accessIssue && !appState) return <AccessRecoveryScreen issue={accessIssue} onRetry={() => void refreshAccess()} />;
+  if (!appState) return <LoginScreen />;
 
   const { navigation: allowedNavigation, views: allowedViews } = getAllowedNavigation(appState.membership.permissions, previewRole);
   const requestedView = customerMasterId(pathname) ? "customers" : viewForPath(pathname);
@@ -454,7 +458,9 @@ export function SatrapyRouteContent() {
     router.replace(VIEW_META[allowedViews[0]].href);
   }, [allowedViews, appState, loading, pathname, requestedView, router]);
 
-  if (loading || !appState) return null;
+  // La revalidación de acceso no debe desmontar formularios que ya tienen una
+  // identidad válida; sólo la carga inicial o un cierre de sesión ocultan la ruta.
+  if (!appState) return null;
   if (isForbidden) return <AccessDeniedScreen onGoHome={() => router.replace(VIEW_META[allowedViews[0]].href)} />;
   if (!requestedView) return <div className="route-loading" aria-live="polite"><LoaderCircle className="spin" size={18} /> Abriendo tu espacio de trabajo…</div>;
   if (activeView === "migration") return <MigrationCenter companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
@@ -502,19 +508,46 @@ export function SatrapyRouteContent() {
   return <CommercialAssortmentsView key={appState.membership.companyId} companyId={appState.membership.companyId} />;
 }
 
-function LoginScreen({ notice, onRetry }: { notice: string | null; onRetry: () => void }) {
+type AuthFormError = {
+  field: "email" | "password" | "passwordConfirmation" | null;
+  message: string;
+};
+
+function LoginScreen() {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
-  const [error, setError] = useState<string | null>(notice);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordConfirmation, setShowPasswordConfirmation] = useState(false);
+  const [error, setError] = useState<AuthFormError | null>(null);
   const [sending, setSending] = useState(false);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const passwordConfirmationRef = useRef<HTMLInputElement>(null);
+  const errorRef = useRef<HTMLDivElement>(null);
+
+  function presentError(nextError: AuthFormError) {
+    setError(nextError);
+    window.requestAnimationFrame(() => {
+      if (nextError.field === "email") emailRef.current?.focus();
+      else if (nextError.field === "password") passwordRef.current?.focus();
+      else if (nextError.field === "passwordConfirmation") passwordConfirmationRef.current?.focus();
+      else errorRef.current?.focus();
+    });
+  }
+
+  function clearError() {
+    if (error) setError(null);
+  }
 
   function changeMode(nextMode: "login" | "register") {
     setMode(nextMode);
     setPassword("");
     setPasswordConfirmation("");
+    setShowPassword(false);
+    setShowPasswordConfirmation(false);
     setError(null);
   }
 
@@ -522,51 +555,73 @@ function LoginScreen({ notice, onRetry }: { notice: string | null; onRetry: () =
     event.preventDefault();
     setSending(true);
     setError(null);
-    if (mode === "register") {
-      if (password !== passwordConfirmation) {
-        setError("Las contraseñas no coinciden.");
-        setSending(false);
-        return;
+    try {
+      if (mode === "register") {
+        if (password !== passwordConfirmation) {
+          presentError({ field: "passwordConfirmation", message: "Las contraseñas no coinciden." });
+          return;
+        }
+        const response = await fetch("/api/auth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fullName, email, password }) });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          presentError({ field: null, message: result.message ?? "No pudimos crear la cuenta. Revisa los datos e intenta de nuevo." });
+          return;
+        }
       }
-      const response = await fetch("/api/auth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fullName, email, password }) });
-      const result = await response.json();
-      if (!response.ok) {
-        setError(result.message ?? "No pudimos crear la cuenta.");
-        setSending(false);
-        return;
+      const { error: signInError } = await getSupabaseClient().auth.signInWithPassword({ email, password });
+      if (signInError) {
+        const needsEmailConfirmation = signInError.code === "email_not_confirmed" || signInError.message.toLowerCase().includes("email not confirmed");
+        presentError(needsEmailConfirmation
+          ? { field: "email", message: "Confirma tu correo electrónico antes de iniciar sesión." }
+          : { field: "password", message: "El correo o la contraseña no coinciden. Revisa los datos e intenta de nuevo." });
       }
+    } catch {
+      presentError({ field: null, message: "No pudimos conectar con Satrapy. Revisa tu conexión e intenta de nuevo." });
+    } finally {
+      setSending(false);
     }
-    const { error: signInError } = await getSupabaseClient().auth.signInWithPassword({ email, password });
-    if (signInError) {
-      const needsEmailConfirmation = signInError.code === "email_not_confirmed" || signInError.message.toLowerCase().includes("email not confirmed");
-      setError(needsEmailConfirmation
-        ? "Confirma tu correo electrónico antes de iniciar sesión."
-        : "No pudimos iniciar sesión. Verifica tus credenciales o contacta a tu administrador.");
-    }
-    setSending(false);
   }
 
   return (
     <main className="auth-page">
-      <section className="auth-card">
+      <section className="auth-card" aria-labelledby="auth-title">
         <div className="brand-lockup"><span className="brand-mark">S</span><strong>Satrapy</strong></div>
         <div className="auth-heading">
-          <h1>{mode === "login" ? "Iniciar sesión" : "Crear cuenta"}</h1>
-          <p>{mode === "login" ? "Entra con tus credenciales de Satrapy." : "Completa tus datos para comenzar."}</p>
-        </div>
-        <div className="auth-mode-switch" aria-label="Acceso a Satrapy">
-          <button type="button" className={mode === "login" ? "is-active" : ""} onClick={() => changeMode("login")}>Iniciar sesión</button>
-          <button type="button" className={mode === "register" ? "is-active" : ""} onClick={() => changeMode("register")}>Crear cuenta</button>
+          <h1 id="auth-title">{mode === "login" ? "Bienvenido de nuevo" : "Crea tu acceso"}</h1>
+          <p>{mode === "login" ? "Ingresa con el correo autorizado para tu empresa." : "Usa el correo que tu administrador autorizó para Satrapy."}</p>
         </div>
         <form onSubmit={submit} className="auth-form">
-          {mode === "register" && <label>Nombre completo<input required value={fullName} onChange={(event) => setFullName(event.target.value)} autoComplete="name" /></label>}
-          <label>Correo<input type="email" required value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" /></label>
-          <label>Contraseña<input type="password" required minLength={mode === "register" ? 8 : undefined} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} /></label>
-          {mode === "register" && <label>Confirmar contraseña<input type="password" required minLength={8} value={passwordConfirmation} onChange={(event) => setPasswordConfirmation(event.target.value)} autoComplete="new-password" /></label>}
-          {error && <p className="form-error"><AlertCircle size={16} />{error}</p>}
-          {notice && mode === "login" && <Button className="auth-retry" type="button" variant="ghost" size="sm" onClick={onRetry}><RefreshCw size={14} /> Reintentar acceso</Button>}
-          <button className="primary-button" disabled={sending}>{sending ? <LoaderCircle className="spin" size={17} /> : null} {mode === "login" ? "Entrar" : "Crear mi cuenta"} <ArrowRight size={17} /></button>
+          {mode === "register" && <label htmlFor="auth-full-name">Nombre completo<input id="auth-full-name" name="name" required value={fullName} onChange={(event) => { setFullName(event.target.value); clearError(); }} autoComplete="name" /></label>}
+          <label htmlFor="auth-email">Correo<input id="auth-email" name="email" ref={emailRef} type="email" required value={email} onChange={(event) => { setEmail(event.target.value); clearError(); }} autoComplete="email" aria-invalid={error?.field === "email" || undefined} aria-describedby={error?.field === "email" ? "auth-form-error" : undefined} /></label>
+          <label htmlFor="auth-password">Contraseña<span className="auth-password-field"><input id="auth-password" name="password" ref={passwordRef} type={showPassword ? "text" : "password"} required minLength={mode === "register" ? 8 : undefined} value={password} onChange={(event) => { setPassword(event.target.value); clearError(); }} autoComplete={mode === "login" ? "current-password" : "new-password"} aria-invalid={error?.field === "password" || undefined} aria-describedby={error?.field === "password" ? "auth-form-error" : undefined} /><button type="button" className="auth-password-toggle" aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"} aria-pressed={showPassword} onClick={() => setShowPassword((visible) => !visible)}>{showPassword ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}</button></span></label>
+          {mode === "register" && <label htmlFor="auth-password-confirmation">Confirmar contraseña<span className="auth-password-field"><input id="auth-password-confirmation" name="password-confirmation" ref={passwordConfirmationRef} type={showPasswordConfirmation ? "text" : "password"} required minLength={8} value={passwordConfirmation} onChange={(event) => { setPasswordConfirmation(event.target.value); clearError(); }} autoComplete="new-password" aria-invalid={error?.field === "passwordConfirmation" || undefined} aria-describedby={error?.field === "passwordConfirmation" ? "auth-form-error" : undefined} /><button type="button" className="auth-password-toggle" aria-label={showPasswordConfirmation ? "Ocultar confirmación de contraseña" : "Mostrar confirmación de contraseña"} aria-pressed={showPasswordConfirmation} onClick={() => setShowPasswordConfirmation((visible) => !visible)}>{showPasswordConfirmation ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}</button></span></label>}
+          {error && <div id="auth-form-error" className="auth-form-error" role="alert" tabIndex={-1} ref={errorRef}><AlertCircle size={17} aria-hidden="true" /><span>{error.message}</span></div>}
+          <button className="primary-button auth-submit" disabled={sending} aria-busy={sending}>{sending && <LoaderCircle className="spin" size={17} aria-hidden="true" />}<span>{mode === "login" ? "Entrar a Satrapy" : "Crear cuenta"}</span><ArrowRight size={17} aria-hidden="true" /></button>
         </form>
+        <div className="auth-alternate">
+          <span>{mode === "login" ? "¿Aún no tienes cuenta?" : "¿Ya tienes una cuenta?"}</span>
+          <button type="button" onClick={() => changeMode(mode === "login" ? "register" : "login")} disabled={sending}>{mode === "login" ? "Crear cuenta" : "Iniciar sesión"}</button>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function AccessRecoveryScreen({ issue, onRetry }: { issue: SatrapyAccessIssue; onRetry: () => void }) {
+  const missingMembership = issue === "membership_missing";
+  return (
+    <main className="auth-page">
+      <section className="auth-card auth-status-card" aria-labelledby="access-status-title">
+        <div className="brand-lockup"><span className="brand-mark">S</span><strong>Satrapy</strong></div>
+        <div className="auth-status-icon" aria-hidden="true"><ShieldAlert size={24} /></div>
+        <div className="auth-heading">
+          <h1 id="access-status-title">{missingMembership ? "Tu cuenta aún no tiene acceso" : "No pudimos abrir tu espacio"}</h1>
+          <p>{missingMembership ? "Tu sesión es válida, pero no encontramos una empresa asignada. Pide a tu administrador que revise tu acceso." : "Tu sesión sigue activa, pero Satrapy no pudo cargar tus permisos. Puedes intentarlo de nuevo sin volver a escribir tu contraseña."}</p>
+        </div>
+        <div className="auth-status-actions">
+          <button className="primary-button" type="button" onClick={onRetry}><RefreshCw size={17} aria-hidden="true" /> Reintentar acceso</button>
+          <button className="auth-secondary-action" type="button" onClick={() => void getSupabaseClient().auth.signOut()}><LogOut size={16} aria-hidden="true" /> Usar otra cuenta</button>
+        </div>
       </section>
     </main>
   );

@@ -31,11 +31,11 @@ test("la interfaz presenta el módulo antes de las órdenes de compra", () => {
   const app = readFileSync("app/components/SatrapyApp.tsx", "utf8");
   assert.match(app, /href: "\/satrapy\/compras\/abastecimiento"/);
   assert.match(app, /<ProcurementView/);
-  assert.match(app, /Preparar requisición/);
+  assert.match(app, /Preparar solicitud de compra/);
   assert.match(app, /generate_procurement_requisition_from_replenishment/);
   assert.match(ui, /Registrar cotización/);
-  assert.match(ui, /Preparar recomendación/);
-  assert.match(ui, /Aprobar y crear OC/);
+  assert.match(ui, /Preparar selección/);
+  assert.match(ui, /Aprobar y crear orden de compra/);
 });
 
 test("reabastecimiento genera necesidades sin duplicar partidas activas", () => {
