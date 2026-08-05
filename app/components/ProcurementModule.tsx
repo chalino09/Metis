@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   DataPagination,
   DataState,
@@ -29,6 +29,7 @@ type Row = {
   source: string;
   target_date: string | null;
   created_at: string;
+  quote_count: number;
 };
 
 type QuoteLine = {
@@ -37,7 +38,6 @@ type QuoteLine = {
   available_quantity: number;
   unit_price: number;
   commercial_discount_percent: number;
-  prompt_payment_discount_percent: number;
   financing_terms: string | null;
   expected_date: string | null;
 };
@@ -59,7 +59,10 @@ type Detail = Row & {
     currency_code: string;
     delivery_days: number | null;
     credit_days_snapshot: number | null;
+    prompt_payment_discount_percent: number;
+    prompt_payment_term_days: number | null;
     valid_until: string | null;
+    notes: string | null;
     lines: QuoteLine[];
   }>;
   award: null | {
@@ -70,7 +73,12 @@ type Detail = Row & {
   };
 };
 
-type Supplier = { id: string; display_name: string; code: string };
+type Supplier = {
+  id: string;
+  display_name: string;
+  code: string;
+  prompt_payment_terms: Array<{ term_days: number; effective_discount_percent: number }>;
+};
 type Product = {
   id: string;
   name: string;
@@ -84,14 +92,14 @@ type QuoteDraftLine = {
   available: string;
   price: string;
   commercial: string;
-  prompt: string;
   financing: string;
+  expectedDate: string;
 };
 
 const pageSize = 50;
 const status: Record<string, string> = {
   draft: "Borrador",
-  quoting: "En cotización",
+  quoting: "Pendiente de cotizar",
   recommended: "Por aprobar",
   approved: "Compra autorizada",
   cancelled: "Cancelada",
@@ -110,6 +118,11 @@ function formatDate(value: string | null) {
   return value ? new Date(`${value}T00:00:00`).toLocaleDateString("es-MX") : "—";
 }
 
+function requisitionStatusLabel(requisition: Pick<Row, "status" | "quote_count">) {
+  if (requisition.status === "quoting") return Number(requisition.quote_count) > 0 ? "Cotizaciones recibidas" : "Pendiente de cotizar";
+  return status[requisition.status] ?? requisition.status;
+}
+
 export function ProcurementView({
   companyId,
   permissions,
@@ -118,6 +131,7 @@ export function ProcurementView({
   permissions: string[];
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { accessibleLocations } = useSatrapy();
   const { toast } = useToast();
   const canCreate = permissions.includes("create_procurement_requisitions");
@@ -135,15 +149,20 @@ export function ProcurementView({
   const [detail, setDetail] = useState<Detail | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [quoteOpen, setQuoteOpen] = useState(false);
+  const [editingQuoteId, setEditingQuoteId] = useState<string | null>(null);
+  const [quantityEditorOpen, setQuantityEditorOpen] = useState(false);
+  const [quantityDraft, setQuantityDraft] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [reason, setReason] = useState("");
-  const [decision, setDecision] = useState<"recommend" | "approve" | null>(null);
+  const [decision, setDecision] = useState<"selection" | "approve" | null>(null);
   const [awardChoices, setAwardChoices] = useState<Record<string, string>>({});
   const [quote, setQuote] = useState({
     supplierId: "",
     currency: "MXN",
     validUntil: "",
     deliveryDays: "",
+    promptPaymentDiscount: "0",
+    promptPaymentDays: "",
     notes: "",
     lines: [] as QuoteDraftLine[],
   });
@@ -180,7 +199,7 @@ export function ProcurementView({
     void Promise.resolve().then(load);
   }, [load]);
 
-  async function open(id: string) {
+  const open = useCallback(async (id: string) => {
     const { data, error: rpcError } = await getSupabaseClient().rpc(
       "get_procurement_requisition",
       { p_company_id: companyId, p_requisition_id: id },
@@ -190,7 +209,14 @@ export function ProcurementView({
       return;
     }
     setDetail(data as Detail);
-  }
+  }, [companyId]);
+
+  useEffect(() => {
+    const requisitionId = searchParams.get("solicitud");
+    if (!requisitionId) return;
+    const timer = window.setTimeout(() => void open(requisitionId), 0);
+    return () => window.clearTimeout(timer);
+  }, [open, searchParams]);
 
   async function openManual() {
     const { data } = await getSupabaseClient().rpc("search_purchase_order_products", {
@@ -235,7 +261,7 @@ export function ProcurementView({
     });
   }
 
-  async function openQuote() {
+  async function openQuote(existingQuote?: Detail["quotes"][number]) {
     if (!detail) return;
     const { data } = await getSupabaseClient().rpc("search_suppliers", {
       p_company_id: companyId,
@@ -245,20 +271,28 @@ export function ProcurementView({
       p_is_active: true,
       p_origin: null,
     });
-    setSuppliers(((data as { items?: Supplier[] } | null)?.items ?? []));
+    const supplierRows = ((data as { items?: Supplier[] } | null)?.items ?? []);
+    const supplierDefaultTerm = existingQuote
+      ? supplierRows.find((supplier) => supplier.id === existingQuote.supplier_id)?.prompt_payment_terms?.[0]
+      : undefined;
+    const hasSavedPromptPayment = Boolean(existingQuote && (Number(existingQuote.prompt_payment_discount_percent) > 0 || existingQuote.prompt_payment_term_days != null));
+    setSuppliers(supplierRows);
+    setEditingQuoteId(existingQuote?.id ?? null);
     setQuote({
-      supplierId: "",
-      currency: "MXN",
-      validUntil: "",
-      deliveryDays: "",
-      notes: "",
+      supplierId: existingQuote?.supplier_id ?? "",
+      currency: existingQuote?.currency_code ?? "MXN",
+      validUntil: existingQuote?.valid_until ?? "",
+      deliveryDays: existingQuote?.delivery_days == null ? "" : String(existingQuote.delivery_days),
+      promptPaymentDiscount: hasSavedPromptPayment ? String(existingQuote?.prompt_payment_discount_percent ?? 0) : supplierDefaultTerm ? String(supplierDefaultTerm.effective_discount_percent) : "0",
+      promptPaymentDays: hasSavedPromptPayment ? (existingQuote?.prompt_payment_term_days == null ? "" : String(existingQuote.prompt_payment_term_days)) : supplierDefaultTerm ? String(supplierDefaultTerm.term_days) : "",
+      notes: existingQuote?.notes ?? "",
       lines: detail.lines.map((line) => ({
         requisitionLineId: line.id,
-        available: String(line.required_quantity),
-        price: "",
-        commercial: "0",
-        prompt: "0",
-        financing: "",
+        available: String(existingQuote?.lines.find((quoteLine) => quoteLine.requisition_line_id === line.id)?.available_quantity ?? line.required_quantity),
+        price: String(existingQuote?.lines.find((quoteLine) => quoteLine.requisition_line_id === line.id)?.unit_price ?? ""),
+        commercial: String(existingQuote?.lines.find((quoteLine) => quoteLine.requisition_line_id === line.id)?.commercial_discount_percent ?? 0),
+        financing: existingQuote?.lines.find((quoteLine) => quoteLine.requisition_line_id === line.id)?.financing_terms ?? "",
+        expectedDate: existingQuote?.lines.find((quoteLine) => quoteLine.requisition_line_id === line.id)?.expected_date ?? "",
       })),
     });
     setQuoteOpen(true);
@@ -268,17 +302,23 @@ export function ProcurementView({
     if (
       !detail ||
       !quote.supplierId ||
+      !quote.validUntil ||
       quote.lines.some(
         (line) =>
           !Number.isFinite(Number(line.available)) ||
-          Number(line.available) < 0 ||
+          Number(line.available) <= 0 ||
           !Number.isFinite(Number(line.price)) ||
-          Number(line.price) < 0,
+          Number(line.price) <= 0 ||
+          !line.expectedDate ||
+          !Number.isFinite(Number(quote.promptPaymentDiscount)) ||
+          Number(quote.promptPaymentDiscount) < 0 ||
+          Number(quote.promptPaymentDiscount) > 100 ||
+          (Number(quote.promptPaymentDiscount) > 0 && (!Number.isInteger(Number(quote.promptPaymentDays)) || Number(quote.promptPaymentDays) < 0)),
       )
     ) {
       toast({
         title: "Revisa la cotización",
-        description: "Selecciona proveedor y captura cantidades y precios válidos.",
+        description: "Captura vigencia, fecha estimada, disponibilidad y precio mayor a cero para cada partida.",
         tone: "error",
       });
       return;
@@ -291,14 +331,16 @@ export function ProcurementView({
       p_currency_code: quote.currency,
       p_valid_until: quote.validUntil || null,
       p_delivery_days: quote.deliveryDays ? Number(quote.deliveryDays) : null,
+      p_prompt_payment_discount_percent: Number(quote.promptPaymentDiscount) || 0,
+      p_prompt_payment_term_days: quote.promptPaymentDays === "" ? null : Number(quote.promptPaymentDays),
       p_notes: quote.notes || null,
       p_lines: quote.lines.map((line) => ({
         requisition_line_id: line.requisitionLineId,
         available_quantity: Number(line.available),
         unit_price: Number(line.price),
         commercial_discount_percent: Number(line.commercial) || 0,
-        prompt_payment_discount_percent: Number(line.prompt) || 0,
         financing_terms: line.financing || null,
+        expected_date: line.expectedDate || null,
       })),
     });
     setSaving(false);
@@ -306,11 +348,11 @@ export function ProcurementView({
       toast({ title: "No se guardó la cotización", description: rpcError.message, tone: "error" });
       return;
     }
-    setQuoteOpen(false);
+    setQuoteOpen(false); setEditingQuoteId(null);
     await open(detail.id);
     await load();
     toast({
-      title: "Cotización registrada",
+      title: editingQuoteId ? "Cotización actualizada" : "Cotización registrada",
       description: "Se conservaron precios y condiciones del proveedor.",
       tone: "success",
     });
@@ -347,7 +389,7 @@ export function ProcurementView({
     }
     setAwardChoices(next);
     setReason("");
-    setDecision("recommend");
+    setDecision("selection");
   }
 
   function selectedAwards() {
@@ -360,24 +402,21 @@ export function ProcurementView({
     });
   }
 
-  async function recommend() {
+  async function completeSelection() {
     if (!detail) return;
     const lines = selectedAwards();
-    if (lines.length !== detail.lines.length || !reason.trim()) {
+    if (lines.length !== detail.lines.length) {
       toast({
-        title: "No se puede recomendar",
-        description: "Selecciona una cotización disponible por partida e indica el motivo.",
+        title: "Completa la selección",
+        description: "Elige una cotización que cubra cada partida.",
         tone: "error",
       });
       return;
     }
     setSaving(true);
-    const { error: rpcError } = await getSupabaseClient().rpc("recommend_procurement_award", {
-      p_company_id: companyId,
-      p_requisition_id: detail.id,
-      p_reason: reason.trim(),
-      p_lines: lines,
-    });
+    const { error: rpcError } = canApprove
+      ? await getSupabaseClient().rpc("create_procurement_order_from_selection", { p_company_id: companyId, p_requisition_id: detail.id, p_lines: lines })
+      : await getSupabaseClient().rpc("recommend_procurement_award", { p_company_id: companyId, p_requisition_id: detail.id, p_reason: "Selección preparada desde cotizaciones registradas.", p_lines: lines });
     setSaving(false);
     if (rpcError) {
       toast({ title: "No se guardó la selección", description: rpcError.message, tone: "error" });
@@ -387,7 +426,31 @@ export function ProcurementView({
     setDecision(null);
     await open(detail.id);
     await load();
-    toast({ title: "Selección preparada", description: "Quedó lista para aprobación.", tone: "success" });
+    toast({ title: canApprove ? "Orden de compra creada" : "Selección enviada a aprobación", description: canApprove ? "La compra quedó autorizada y lista para recibir." : "La compra quedó lista para que una persona autorizada la apruebe.", tone: "success" });
+  }
+
+  function openQuantityEditor() {
+    if (!detail) return;
+    setQuantityDraft(Object.fromEntries(detail.lines.map((line) => [line.id, String(line.required_quantity)])));
+    setQuantityEditorOpen(true);
+  }
+
+  async function saveAdjustedQuantities() {
+    if (!detail || detail.lines.some((line) => !Number.isFinite(Number(quantityDraft[line.id])) || Number(quantityDraft[line.id]) <= 0)) {
+      toast({ title: "Revisa las cantidades", description: "Usa una cantidad mayor a cero para cada partida.", tone: "error" });
+      return;
+    }
+    setSaving(true);
+    const { error: rpcError } = await getSupabaseClient().rpc("adjust_procurement_requisition_quantities", {
+      p_company_id: companyId,
+      p_requisition_id: detail.id,
+      p_lines: detail.lines.map((line) => ({ requisition_line_id: line.id, required_quantity: Number(quantityDraft[line.id]) })),
+    });
+    setSaving(false);
+    if (rpcError) { toast({ title: "No se ajustó la necesidad", description: rpcError.message, tone: "error" }); return; }
+    setQuantityEditorOpen(false);
+    await open(detail.id); await load();
+    toast({ title: "Necesidad ajustada", description: "La cantidad quedó actualizada antes de pedir cotizaciones.", tone: "success" });
   }
 
   async function approve() {
@@ -420,6 +483,13 @@ export function ProcurementView({
       tone: "success",
     });
   }
+
+  const hasCompleteQuote = detail ? detail.quotes.some((supplierQuote) => detail.lines.every((line) => {
+    const quoteLine = supplierQuote.lines.find((candidate) => candidate.requisition_line_id === line.id);
+    return quoteLine && Number(quoteLine.available_quantity) >= Number(line.required_quantity);
+  })) : false;
+  const canAdjustNeed = Boolean(detail && detail.status === "quoting" && detail.quotes.length === 0 && canCreate);
+  const canSelectSupplier = Boolean(detail && detail.status === "quoting" && hasCompleteQuote && canRecommend);
 
   return (
     <div className="content-frame">
@@ -490,7 +560,7 @@ export function ProcurementView({
                   <td>{formatDate(row.target_date)}</td>
                   <td>
                     <Badge tone={row.status === "approved" ? "success" : row.status === "recommended" ? "warning" : "neutral"}>
-                      {status[row.status] ?? row.status}
+                      {requisitionStatusLabel(row)}
                     </Badge>
                   </td>
                 </InteractiveTableRow>
@@ -513,9 +583,10 @@ export function ProcurementView({
               <div>
                 <span className="eyebrow">Destino</span>
                 <strong>{detail.location_name}</strong>
+                <small>{detail.source === "replenishment" ? "Origen: Reabastecimiento" : "Origen: excepción manual"}</small>
               </div>
               <Badge tone={detail.status === "approved" ? "success" : detail.status === "recommended" ? "warning" : "neutral"}>
-                {status[detail.status] ?? detail.status}
+                {requisitionStatusLabel({ ...detail, quote_count: detail.quotes.length })}
               </Badge>
             </header>
 
@@ -552,7 +623,24 @@ export function ProcurementView({
               </table>
             </section>
 
-            <section className="procurement-comparison">
+            {detail.status === "quoting" && (
+              <section className="procurement-next-action" aria-labelledby="procurement-next-action-title">
+                <div>
+                  <span className="eyebrow">Siguiente paso</span>
+                  <h3 id="procurement-next-action-title">{detail.quotes.length === 0 ? "Registra la propuesta del proveedor" : hasCompleteQuote ? "Elige cómo atender la necesidad" : "Completa una propuesta que cubra la necesidad"}</h3>
+                  <p>{detail.quotes.length === 0 ? "Captura proveedor, precio y fecha estimada. Después podrás crear la orden de compra." : hasCompleteQuote ? "La cotización más conveniente se propone automáticamente; puedes cambiarla antes de confirmar." : "La disponibilidad actual no cubre todas las partidas. Registra otra cotización o actualiza la existente."}</p>
+                </div>
+                <div>
+                  {detail.quotes.length === 0 && canQuote && <Button variant="primary" onClick={() => void openQuote()}>Registrar cotización</Button>}
+                  {detail.quotes.length > 0 && !hasCompleteQuote && canQuote && <Button variant="primary" onClick={() => void openQuote()}>Registrar otra cotización</Button>}
+                  {canSelectSupplier && <Button variant="primary" onClick={openRecommendation}>{canApprove ? "Crear orden de compra" : "Elegir proveedor"}</Button>}
+                  {canAdjustNeed && <Button variant="secondary" onClick={openQuantityEditor}>Ajustar cantidad</Button>}
+                  {detail.quotes.length > 0 && canQuote && <Button variant="secondary" onClick={() => void openQuote()}>Agregar cotización</Button>}
+                </div>
+              </section>
+            )}
+
+            {detail.quotes.length > 0 && <section className="procurement-comparison">
               <header className="procurement-section-header">
                 <div>
                   <span className="eyebrow">Cotizaciones recibidas</span>
@@ -561,8 +649,7 @@ export function ProcurementView({
                 <p>El descuento comercial afecta el total; pronto pago y financiamiento se muestran por separado.</p>
               </header>
 
-              {detail.quotes.length ? (
-                <div className="procurement-quote-grid">
+              <div className="procurement-quote-grid">
                   {detail.quotes.map((supplierQuote) => {
                     const quoteLines = detail.lines.map((line) => ({
                       requisitionLine: line,
@@ -608,6 +695,10 @@ export function ProcurementView({
                             <dd>{supplierQuote.credit_days_snapshot ?? "—"} días</dd>
                           </div>
                           <div>
+                            <dt>Pronto pago</dt>
+                            <dd>{Number(supplierQuote.prompt_payment_discount_percent) > 0 ? `${Number(supplierQuote.prompt_payment_discount_percent)}% · ${supplierQuote.prompt_payment_term_days ?? "—"} días` : "No aplica"}</dd>
+                          </div>
+                          <div>
                             <dt>Vigencia</dt>
                             <dd>{formatDate(supplierQuote.valid_until)}</dd>
                           </div>
@@ -644,10 +735,6 @@ export function ProcurementView({
                                     <dt>Desc. comercial</dt>
                                     <dd>{commercialDiscount}%</dd>
                                   </div>
-                                  <div>
-                                    <dt>Pronto pago</dt>
-                                    <dd>{Number(quoteLine?.prompt_payment_discount_percent ?? 0)}%</dd>
-                                  </div>
                                   <div className="procurement-quote-card__finance">
                                     <dt>Financiamiento / precio posterior</dt>
                                     <dd>{quoteLine?.financing_terms || "No informado"}</dd>
@@ -662,18 +749,13 @@ export function ProcurementView({
                           <span>Total con descuento comercial</span>
                           <strong>{formatMoney(commercialTotal, supplierQuote.currency_code)}</strong>
                           <small>No incluye descuento por pronto pago.</small>
+                          {canQuote && detail.status === "quoting" && <Button variant="secondary" size="sm" onClick={() => void openQuote(supplierQuote)}>Editar cotización</Button>}
                         </footer>
                       </article>
                     );
                   })}
                 </div>
-              ) : (
-                <div className="procurement-empty-comparison">
-                  <strong>Aún no hay cotizaciones registradas.</strong>
-                  <span>Registra las respuestas de los proveedores para preparar la selección.</span>
-                </div>
-              )}
-            </section>
+            </section>}
 
             {detail.award && (
               <section className="procurement-award">
@@ -712,17 +794,11 @@ export function ProcurementView({
             )}
 
             <div className="purchase-order-actions">
-              {canQuote && detail.status !== "approved" && <Button onClick={() => void openQuote()}>Registrar cotización</Button>}
-              {canRecommend && detail.status === "quoting" && (
-                <Button variant="primary" onClick={openRecommendation}>
-                  Preparar selección
-                </Button>
-              )}
               {canApprove && detail.status === "recommended" && (
                 <Button
                   variant="primary"
                   onClick={() => {
-                    setReason("");
+                    setReason("Aprobación operativa de la selección preparada.");
                     setDecision("approve");
                   }}
                 >
@@ -736,22 +812,24 @@ export function ProcurementView({
                 open={Boolean(decision)}
                 onOpenChange={(isOpen) => !isOpen && !saving && setDecision(null)}
                 eyebrow="Decisión auditada"
-                title={decision === "approve" ? "Aprobar selección" : "Seleccionar proveedor por partida"}
+                title={decision === "approve" ? "Aprobar selección" : canApprove ? "Crear orden de compra" : "Elegir proveedor"}
                 description={
                   decision === "approve"
                     ? "La aprobación creará una orden de compra por proveedor seleccionado."
-                    : "Elige la cotización que gana cada partida; el precio menor se propone como punto de partida."
+                    : canApprove
+                      ? "Confirma la cotización elegida para cada partida. La orden de compra se creará al continuar."
+                      : "Elige la cotización que gana cada partida para enviarla a aprobación."
                 }
                 footer={
                   <>
                     <Button onClick={() => setDecision(null)}>Cancelar</Button>
-                    <Button variant="primary" loading={saving} onClick={() => void (decision === "approve" ? approve() : recommend())}>
-                      {decision === "approve" ? "Aprobar y crear orden de compra" : "Guardar selección"}
+                    <Button variant="primary" loading={saving} onClick={() => void (decision === "approve" ? approve() : completeSelection())}>
+                      {decision === "approve" ? "Aprobar y crear orden de compra" : canApprove ? "Crear orden de compra" : "Enviar a aprobación"}
                     </Button>
                   </>
                 }
               >
-                {decision === "recommend" && (
+                {decision === "selection" && (
                   <div className="purchase-order-form">
                     {detail.lines.map((line) => {
                       const choices = awardCandidates(line.id, Number(line.required_quantity));
@@ -774,9 +852,6 @@ export function ProcurementView({
                     })}
                   </div>
                 )}
-                <Field label="Motivo">
-                  <Input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Explica la elección o aprobación" />
-                </Field>
               </Modal>
             )}
           </div>
@@ -785,15 +860,20 @@ export function ProcurementView({
 
       <Modal
         open={quoteOpen}
-        onOpenChange={(isOpen) => !saving && setQuoteOpen(isOpen)}
+        onOpenChange={(isOpen) => {
+          if (!saving) {
+            setQuoteOpen(isOpen);
+            if (!isOpen) setEditingQuoteId(null);
+          }
+        }}
         eyebrow="Proveedor"
-        title="Registrar cotización"
-        description="Las condiciones de crédito y pronto pago se toman del proveedor; captura la respuesta comercial."
+        title={editingQuoteId ? "Editar cotización" : "Registrar cotización"}
+        description={editingQuoteId ? "Actualiza la respuesta comercial de este proveedor." : "Las condiciones de crédito y pronto pago se toman del proveedor; captura la respuesta comercial."}
         footer={
           <>
-            <Button onClick={() => setQuoteOpen(false)}>Cancelar</Button>
+            <Button onClick={() => { setQuoteOpen(false); setEditingQuoteId(null); }}>Cancelar</Button>
             <Button variant="primary" loading={saving} onClick={() => void saveQuote()}>
-              Guardar cotización
+              {editingQuoteId ? "Guardar cambios" : "Guardar cotización"}
             </Button>
           </>
         }
@@ -803,7 +883,16 @@ export function ProcurementView({
             <Select
               ariaLabel="Proveedor"
               value={quote.supplierId}
-              onValueChange={(supplierId) => setQuote({ ...quote, supplierId })}
+              onValueChange={(supplierId) => {
+                const defaultTerm = suppliers.find((supplier) => supplier.id === supplierId)?.prompt_payment_terms?.[0];
+                setQuote({
+                  ...quote,
+                  supplierId,
+                  promptPaymentDiscount: defaultTerm ? String(defaultTerm.effective_discount_percent) : "0",
+                  promptPaymentDays: defaultTerm ? String(defaultTerm.term_days) : "",
+                });
+              }}
+              disabled={Boolean(editingQuoteId)}
               options={[
                 { value: "", label: "Selecciona proveedor", disabled: true },
                 ...suppliers.map((supplier) => ({ value: supplier.id, label: `${supplier.display_name} · ${supplier.code}` })),
@@ -823,6 +912,23 @@ export function ProcurementView({
           </Field>
           <Field label="Días de entrega">
             <Input type="number" min="0" value={quote.deliveryDays} onChange={(event) => setQuote({ ...quote, deliveryDays: event.target.value })} />
+          </Field>
+          <section className="procurement-prompt-payment" aria-labelledby="procurement-prompt-payment-title">
+            <header>
+              <h3 id="procurement-prompt-payment-title">Pronto pago</h3>
+              <p>Se precarga desde el proveedor. Ajusta esta cotización sólo si acordaste una condición distinta.</p>
+            </header>
+            <div className="purchase-order-grid">
+              <Field label="Descuento %">
+                <Input type="number" min="0" max="100" step="0.0001" value={quote.promptPaymentDiscount} onChange={(event) => setQuote({ ...quote, promptPaymentDiscount: event.target.value })} />
+              </Field>
+              <Field label="Si se paga en (días)">
+                <Input type="number" min="0" step="1" value={quote.promptPaymentDays} onChange={(event) => setQuote({ ...quote, promptPaymentDays: event.target.value })} placeholder="Ej. 10" />
+              </Field>
+            </div>
+          </section>
+          <Field label="Notas para Compras">
+            <Input value={quote.notes} onChange={(event) => setQuote({ ...quote, notes: event.target.value })} placeholder="Ej. incluye flete o condiciones especiales" />
           </Field>
           {detail?.lines.map((line, index) => (
             <section key={line.id}>
@@ -875,24 +981,67 @@ export function ProcurementView({
                     }
                   />
                 </Field>
-                <Field label="Pronto pago %">
+                <Field label="Fecha estimada">
                   <Input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={quote.lines[index]?.prompt ?? "0"}
+                    type="date"
+                    value={quote.lines[index]?.expectedDate ?? ""}
                     onChange={(event) =>
                       setQuote({
                         ...quote,
                         lines: quote.lines.map((item, itemIndex) =>
-                          itemIndex === index ? { ...item, prompt: event.target.value } : item,
+                          itemIndex === index ? { ...item, expectedDate: event.target.value } : item,
                         ),
                       })
                     }
                   />
                 </Field>
+                <Field label="Financiamiento o condición">
+                  <Input
+                    value={quote.lines[index]?.financing ?? ""}
+                    onChange={(event) =>
+                      setQuote({
+                        ...quote,
+                        lines: quote.lines.map((item, itemIndex) =>
+                          itemIndex === index ? { ...item, financing: event.target.value } : item,
+                        ),
+                      })
+                    }
+                    placeholder="Ej. 30 días"
+                  />
+                </Field>
               </div>
             </section>
+          ))}
+        </div>
+      </Modal>
+
+      <Modal
+        open={quantityEditorOpen}
+        onOpenChange={(isOpen) => !saving && setQuantityEditorOpen(isOpen)}
+        eyebrow="Necesidad de compra"
+        title="Ajustar cantidades"
+        description="Puedes ajustar la necesidad antes de registrar cotizaciones. La solicitud conservará su origen en Reabastecimiento."
+        footer={
+          <>
+            <Button onClick={() => setQuantityEditorOpen(false)}>Cancelar</Button>
+            <Button variant="primary" loading={saving} onClick={() => void saveAdjustedQuantities()}>
+              Guardar cantidades
+            </Button>
+          </>
+        }
+      >
+        <div className="purchase-order-form">
+          {detail?.lines.map((line) => (
+            <Field key={line.id} label={line.product_name} hint={`Existencia al crear la solicitud: ${Number(line.available_quantity_snapshot).toLocaleString("es-MX")}`}>
+              <Input
+                aria-label={`Cantidad requerida de ${line.product_name}`}
+                type="number"
+                min="0.000001"
+                step="0.001"
+                value={quantityDraft[line.id] ?? ""}
+                onChange={(event) => setQuantityDraft({ ...quantityDraft, [line.id]: event.target.value })}
+              />
+            </Field>
           ))}
         </div>
       </Modal>
