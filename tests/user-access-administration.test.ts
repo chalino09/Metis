@@ -41,7 +41,7 @@ test("el admin autoriza el correo sin enviar invitación ni crear credenciales",
   assert.match(registrationRoute,/auth\.admin\.createUser/);
   assert.match(registrationRoute,/complete_pending_user_registration/);
   assert.match(registrationRoute,/SUPABASE_SERVICE_ROLE_KEY/);
-  assert.match(view,/Alta individual para equipos pequeños/);
+  assert.match(view,/Autorizar correo/);
   assert.match(view,/p_location_ids:scoped\?form\.locationIds:\[\]/);
   assert.match(view,/No se enviará correo/);
   assert.match(shell,/Crear cuenta/);
