@@ -543,6 +543,36 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .user-location-picker strong { font-size:10px; }
 .user-location-picker small { margin-top:2px; color:var(--muted); font-size:9px; }
 .company-user-actions { display:flex; justify-content:flex-end; gap:8px; border-top:1px solid var(--line); padding-top:14px; }
+.user-profile-chips { display:flex; max-width:320px; flex-wrap:wrap; gap:4px; }
+.access-profile-picker,.permission-picker { display:grid; max-height:300px; overflow:auto; border:1px solid var(--line); border-radius:var(--radius-lg); background:var(--surface); }
+.access-profile-picker section + section,.permission-picker section + section { border-top:1px solid var(--line); }
+.access-profile-picker h3,.permission-picker h3 { position:sticky; z-index:1; top:0; margin:0; background:var(--surface-subtle); padding:7px 10px; color:var(--muted); font-size:9px; font-weight:750; letter-spacing:.04em; text-transform:uppercase; }
+.access-profile-picker label,.permission-picker label { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:start; gap:9px; padding:10px; cursor:pointer; }
+.access-profile-picker label:hover,.permission-picker label:hover { background:var(--surface-subtle); }
+.access-profile-picker input,.permission-picker input { margin-top:2px; accent-color:var(--accent); }
+.access-profile-picker strong,.access-profile-picker small,.permission-picker strong,.permission-picker small { display:block; }
+.access-profile-picker strong,.permission-picker strong { font-size:10px; }
+.access-profile-picker small,.permission-picker small { margin-top:3px; color:var(--muted); font-size:9px; line-height:1.4; }
+.access-profile-picker b { align-self:center; color:var(--muted); font-size:9px; font-weight:600; white-space:nowrap; }
+.access-profile-picker label.is-included { cursor:default; background:#f6faf8; }
+.access-profile-picker label.is-included input { opacity:.72; }
+.access-profile-picker label.is-included b { color:var(--accent-strong); font-weight:700; }
+.permission-picker { max-height:340px; margin-top:7px; }
+.permission-picker label { grid-template-columns:auto minmax(0,1fr); }
+.access-warning { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:start; gap:8px; margin:0; border:1px solid #ead8a8; border-radius:var(--radius-md); background:var(--warning-soft); padding:10px 11px; color:#735d25; font-size:10px; line-height:1.45; }
+.access-warning strong { display:block; margin-bottom:2px; }
+.access-profile-catalog { display:grid; align-content:start; gap:14px; }
+.access-profile-catalog > div { overflow:hidden; border:1px solid var(--line); border-radius:var(--radius-xl); background:var(--surface); box-shadow:var(--shadow-xs); }
+.access-profile-catalog > div > header { display:flex; align-items:center; justify-content:space-between; padding:13px 15px; background:var(--surface-subtle); }
+.access-profile-catalog h2,.access-profile-catalog header p { margin:0; }
+.access-profile-catalog h2 { font-size:13px; }.access-profile-catalog header p { margin-top:2px; color:var(--muted); font-size:9px; }
+.access-profile-catalog > div > div { display:grid; grid-template-columns:repeat(auto-fit,minmax(420px,1fr)); }
+.access-profile-catalog article { display:grid; grid-template-columns:auto minmax(0,1fr) auto auto; align-items:center; gap:10px; border-top:1px solid var(--line); padding:13px 14px; }
+.access-profile-catalog article:only-child { grid-column:1 / -1; }
+.access-profile-catalog article:nth-child(odd) { border-right:1px solid var(--line); }
+.profile-icon { display:grid; width:32px; height:32px; place-items:center; border-radius:10px; background:var(--accent-soft); color:var(--accent-strong); }
+.access-profile-catalog article strong { font-size:11px; }.access-profile-catalog article p { margin:3px 0; color:var(--muted); font-size:9px; line-height:1.4; }.access-profile-catalog article small { color:var(--muted); font-size:9px; }
+.profile-assignees { display:flex; align-items:center; gap:4px; color:var(--muted); font-size:10px; }
 
 .ticket-branding-form fieldset > label { display:grid; gap:5px; color:var(--muted); font-size:11px; font-weight:650; }
 .ticket-branding-form textarea { box-sizing:border-box; width:100%; }
@@ -550,6 +580,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 @media (max-width:1050px) { .configuration-command-center { grid-template-columns:1fr; }.configuration-readiness { border-top:1px solid #cbded7; border-left:0; }.location-management-summary,.user-access-summary { grid-template-columns:repeat(4,minmax(0,1fr)); }.location-management-summary > div,.user-access-summary > div { grid-column:1 / -1; } }
 @media (max-width:900px) { .ticket-branding-workspace { grid-template-columns:1fr; }.ticket-preview { position:static; }.ticket-preview__paper { margin:0; } }
 @media (max-width:700px) { .configuration-home__heading { align-items:flex-start; flex-direction:column; }.configuration-home__heading h1 { font-size:29px; }.configuration-command-center__search { padding:16px; }.configuration-readiness { grid-template-columns:auto minmax(0,1fr); }.configuration-readiness > a { grid-column:1 / -1; justify-content:center; }.configuration-readiness__notice { grid-template-columns:auto minmax(0,1fr); }.configuration-readiness__notice button { grid-column:1 / -1; justify-content:center; }.configuration-mode-nav { box-sizing:border-box; width:100%; overflow-x:auto; }.configuration-mode-nav button { flex:0 0 auto; }.configuration-directory,.location-management-summary,.user-access-summary,.location-admin-form,.migration-coverage__grid { grid-template-columns:1fr; }.configuration-directory__kind { display:none; }.configuration-directory__group > div > a { grid-template-columns:auto minmax(0,1fr) auto; }.location-management-summary > div,.user-access-summary > div { grid-column:auto; }.migration-progress-card__summary { grid-template-columns:auto 1fr; }.migration-progress-card__summary > b { grid-column:2; font-size:22px; }.migration-progress-card > footer { align-items:flex-start; flex-direction:column; }.migration-progress-card > footer .ui-button { width:100%; }.migration-journey article { grid-template-columns:auto auto minmax(0,1fr) auto; }.migration-journey article > .ui-badge { grid-column:3; justify-self:start; }.migration-coverage__checks > div { grid-template-columns:auto minmax(0,1fr); }.migration-coverage__checks small { grid-column:2; } }
+@media (max-width:800px) { .access-profile-catalog > div > div { grid-template-columns:1fr; }.access-profile-catalog article:nth-child(odd) { border-right:0; } }
 @media (max-width:700px) { .sales-quote-form__grid,.sales-quote-detail__totals { grid-template-columns:1fr; }.sales-quote-lines__list article { grid-template-columns:minmax(0,1fr) 76px auto; }.sales-quote-lines__list article > b { grid-column:2; }.sales-quote-lines__list article > .ui-button { grid-column:3; grid-row:1 / span 2; }.sales-quote-history article { display:grid; }.sales-quote-history article p { max-width:none; text-align:left; }.sales-quote-detail__actions { justify-content:flex-start; flex-wrap:wrap; } }
 
 @media (max-width:1000px) { .accounting-kpis,.accounting-steps { grid-template-columns:repeat(2,minmax(0,1fr)); }.accounting-settings-layout,.accounting-period-workspace,.accounting-report-builder__body { grid-template-columns:1fr; }.accounting-guide,.accounting-period-create { position:static; }.accounting-guide ol { grid-template-columns:repeat(3,1fr); }.accounting-control-form,.accounting-close-checks { grid-template-columns:repeat(2,minmax(0,1fr)); }.accounting-exception { grid-template-columns:1fr; }.accounting-period-dates { grid-template-columns:repeat(2,minmax(0,1fr)); } }
@@ -895,6 +926,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .payroll-adjustment__table td > strong,.payroll-adjustment__preview strong { color:var(--ink); font-size:11px; }
 .payroll-adjustment__table td > small,.payroll-adjustment__preview small { display:block; margin-top:3px; color:var(--muted); font-size:9px; line-height:1.35; }
 .payroll-adjustment__table .ui-input { width:100%; min-width:0; min-height:36px; padding:7px 8px; font-size:11px; font-variant-numeric:tabular-nums; }
+.payroll-adjustment__table td[data-label="Descripción y motivo"] { display:grid; gap:6px; }
 .payroll-adjustment__preview { display:grid; min-width:0; gap:2px; overflow-wrap:anywhere; }
 .payroll-adjustment__preview strong { color:var(--accent-strong); font-variant-numeric:tabular-nums; }
 .payroll-adjustment__remove { width:40px; padding-inline:4px!important; }
