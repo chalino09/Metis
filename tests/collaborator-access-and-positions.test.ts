@@ -11,7 +11,7 @@ test("separa colaborador, puesto laboral, cuenta y perfil de acceso",()=>{
   assert.match(sql,/alter table public\.collaborators add column if not exists position_id/);
   assert.match(sql,/\('ingeniero_campo','Ingeniero de campo'\)/);
   assert.match(collaborators,/puesto laboral no concede permisos por sí solo/i);
-  assert.match(users,/Perfil de acceso/);
+  assert.match(users,/Perfiles de acceso/);
 });
 
 test("no reclasifica puestos importados ni deduce identidades",()=>{
@@ -40,6 +40,6 @@ test("BI sólo ofrece responsables que sean ingenieros activos con cuenta y perf
 test("Usuarios y accesos conserva la administración sin duplicar personas",()=>{
   assert.match(sql,/create or replace function public\.list_company_users/);
   assert.match(sql,/jsonb_build_object\('id',c\.id,'code',c\.code,'name',c\.display_name\)collaborator/);
-  assert.match(users,/El acceso de un Ingeniero de Campo se crea desde su expediente/);
+  assert.match(users,/El perfil Ingeniero de campo se asigna desde el expediente/);
   assert.match(users,/Sin vínculo/);
 });

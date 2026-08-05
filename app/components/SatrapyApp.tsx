@@ -480,7 +480,7 @@ export function SatrapyRouteContent() {
   if (activeView === "sales_quotes") return <SalesQuotesView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "sales_orders") return <SalesOrdersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "customers") return <CustomersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} initialCustomerId={selectedCustomerId} initialCreateOpen={creatingCustomer} />;
-  if (activeView === "receivables") return <ReceivablesView companyId={appState.membership.companyId} />;
+  if (activeView === "receivables") return <NeutralStartNotice companyId={appState.membership.companyId} module="receivables"><ReceivablesView companyId={appState.membership.companyId} /></NeutralStartNotice>;
   if (activeView === "cash") return <NeutralStartNotice companyId={appState.membership.companyId} module="cash_banks"><CashDeskView companyId={appState.membership.companyId} /></NeutralStartNotice>;
   if (activeView === "sales_settings") return <SalesSettingsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "collaborators_directory") return <CollaboratorsDirectoryView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
