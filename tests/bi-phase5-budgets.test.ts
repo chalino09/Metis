@@ -21,7 +21,7 @@ test("versiones, aprobación y sustitución son inmutables y auditadas",()=>{
   assert.match(sql,/Una versión aprobada no puede modificarse destructivamente/);
   assert.match(sql,/replaces_version_id/);assert.match(sql,/bi\.budget_approved/);
   assert.match(sql,/El motivo de aprobación es obligatorio/);
-  assert.match(ui,/Sustituir/);assert.match(ui,/Motivo de aprobación/);
+  assert.match(ui,/Sustituir/);assert.match(ui,/Motivo de aprobación.*required/s);
 });
 
 test("jerarquía limita combinaciones y evita doble conteo",()=>{

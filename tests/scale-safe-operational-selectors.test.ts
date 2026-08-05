@@ -11,6 +11,7 @@ const receipts = readFileSync("app/components/PurchaseReceiptsModule.tsx", "utf8
 const invoices = readFileSync("app/components/SupplierInvoicesModule.tsx", "utf8");
 const invoiceableReceipts = readFileSync("supabase/migrations/202607180012_fast_invoiceable_receipt_search.sql", "utf8");
 const operationalOptions = readFileSync("supabase/migrations/202607180013_fast_supplier_and_receivable_order_options.sql", "utf8");
+const receivableOrderContext = readFileSync("supabase/migrations/202608050005_receivable_order_picker_context.sql", "utf8");
 
 test("staging expone total y páginas sin perder los lotes posteriores al top 20", () => {
   assert.match(migration, /list_import_staging_batches_page/);
@@ -47,6 +48,15 @@ test("proveedores y OC recibibles usan opciones ligeras sin perfiles ni conteos"
   assert.match(operationalOptions, /create or replace function public\.search_receivable_purchase_order_options/);
   assert.doesNotMatch(operationalOptions, /count\(\*\)/);
   assert.doesNotMatch(operationalOptions, /legal_name|address_line|phone_e164/);
+});
+
+test("el selector de recepción distingue órdenes por entrega y total sin ampliar la consulta", () => {
+  assert.match(receivableOrderContext, /po\.expected_date/);
+  assert.match(receivableOrderContext, /po\.total/);
+  assert.match(receivableOrderContext, /po\.currency_code/);
+  assert.doesNotMatch(receivableOrderContext, /count\(\*\)/);
+  assert.match(receipts, /Entrega esperada:/);
+  assert.match(receipts, /Total:/);
 });
 
 test("recepciones facturables calculan saldos una vez y reutilizan la página", () => {

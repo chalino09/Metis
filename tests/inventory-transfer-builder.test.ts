@@ -16,6 +16,19 @@ test("la operación diaria usa un constructor visual con existencia del origen",
   assert.match(ui, /Importar partidas/);
 });
 
+test("las acciones de despacho y recepción requieren permiso operativo también en el detalle", () => {
+  assert.match(ui, /canOperate && selectedTransfer\.status === "sent" && sourceAccessible/);
+  assert.match(ui, /canOperate && selectedTransfer\.status === "in_transit" && destinationAccessible/);
+});
+
+test("despacho y recepción requieren confirmación antes de modificar inventario", () => {
+  assert.match(ui, /const \[transferConfirmation, setTransferConfirmation\] = useState<"dispatch" \| "receive" \| null>\(null\)/);
+  assert.match(ui, /onClick=\{\(\) => setTransferConfirmation\("dispatch"\)\}>Despachar transferencia/);
+  assert.match(ui, /onClick=\{\(\) => setTransferConfirmation\("receive"\)\}>Confirmar recepción completa/);
+  assert.match(ui, /title=\{transferConfirmation === "dispatch" \? "Despachar transferencia" : "Confirmar recepción completa"\}/);
+  assert.match(ui, /transferConfirmation === "dispatch" \? markInTransit\(\) : receiveTransfer\(\)/);
+});
+
 test("el selector consulta solo la existencia necesaria para transferir", () => {
   assert.match(productSearchMigration, /balance\.quantity_on_hand > 0/);
   assert.match(productSearchMigration, /limit v_limit/);
