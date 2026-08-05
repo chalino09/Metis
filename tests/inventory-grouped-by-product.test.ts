@@ -4,7 +4,7 @@ import test from "node:test";
 
 const ui = readFileSync("app/components/SatrapyApp.tsx", "utf8");
 const migration = readFileSync("supabase/migrations/202607240006_inventory_grouped_by_product.sql", "utf8");
-const movementMigration = readFileSync("supabase/migrations/202608040001_inventory_location_movement_history.sql", "utf8");
+const movementMigration = readFileSync("supabase/migrations/202608050006_inventory_location_movement_history.sql", "utf8");
 
 test("inventario pagina y agrupa por producto desde el servidor", () => {
   assert.match(ui, /search_inventory_products_by_location/);
