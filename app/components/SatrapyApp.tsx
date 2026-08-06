@@ -33,6 +33,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { DataPagination, DataRefreshStatus, DataState, DataToolbar, InteractiveTableRow, PageHeading } from "@/app/components/ui/data";
 import { Badge, Button, Drawer, Input, Modal, Select, ToastProvider, useToast } from "@/app/components/ui/primitives";
@@ -407,13 +408,7 @@ export function SatrapyShell({ children }: { children: ReactNode }) {
             <strong>{appState.membership.companyName}</strong>
             <span>{activeSection?.label ?? "Operación"}</span>
           </div>
-          <div className="context-nav__links">
-            {contextViews?.map((name) => {
-              const item = VIEW_META[name];
-              const Icon = item.icon;
-              return <button className={`context-nav__item ${activeView === name ? "is-active" : ""}`} aria-current={activeView === name ? "page" : undefined} onClick={() => router.push(activeSection?.id === "bi" ? `${item.href}${window.location.search}` : item.href)} key={name}><Icon size={16} />{item.label}</button>;
-            })}
-          </div>
+          {activeSection?.id === "accounting" ? <div className="context-nav__links accounting-context-nav">{contextViews?.map((name) => { const item = VIEW_META[name]; const Icon = item.icon; return <Link className={`context-nav__item ${activeView === name ? "is-active" : ""}`} aria-current={activeView === name ? "page" : undefined} href={item.href} key={name}><Icon size={16} />{item.label}</Link>; })}</div> : <div className="context-nav__links">{contextViews?.map((name) => { const item = VIEW_META[name]; const Icon = item.icon; return <button className={`context-nav__item ${activeView === name ? "is-active" : ""}`} aria-current={activeView === name ? "page" : undefined} onClick={() => router.push(activeSection?.id === "bi" ? `${item.href}${window.location.search}` : item.href)} key={name}><Icon size={16} />{item.label}</button>; })}</div>}
           <span className="topbar__status">Operación en orden</span>
         </nav>}
         {previewRole && (
