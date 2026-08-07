@@ -134,6 +134,8 @@ const DateInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElem
   const [draftText, setDraftText] = useState<string | null>(null);
   const text = draftText ?? isoToDisplay(isoValue);
   const [open, setOpen] = useState(false);
+  const [calendarPlacement, setCalendarPlacement] = useState<"below" | "above" | "fixed">("below");
+  const pickerRef = useRef<HTMLDivElement>(null);
   const [viewMonth, setViewMonth] = useState(() => {
     const base = isoValue ? parseIsoDate(isoValue) : new Date();
     return new Date(base.getFullYear(), base.getMonth(), 1);
@@ -160,12 +162,27 @@ const DateInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElem
     if (isUnavailable(next)) return;
     notify(next); setDraftText(null); setOpen(false);
   }
-  return <div className="satrapy-date-picker" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}>
+  function toggleCalendar() {
+    if (!open) {
+      const rect = pickerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const calendarHeight = 286;
+        const gap = 7;
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceAbove = rect.top;
+        setCalendarPlacement(spaceBelow >= calendarHeight + gap ? "below" : spaceAbove >= calendarHeight + gap ? "above" : "fixed");
+      }
+      const base = isoValue ? parseIsoDate(isoValue) : new Date();
+      setViewMonth(new Date(base.getFullYear(), base.getMonth(), 1));
+    }
+    setOpen(current => !current);
+  }
+  return <div ref={pickerRef} className="satrapy-date-picker" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); setOpen(false); } }}>
     <div className="satrapy-date-control" style={{ position: "relative", display: "block" }}>
       <input ref={ref} className={cx("ui-input", "satrapy-date-input", className)} value={text} onChange={event => setDraftText(event.target.value.replace(/[^\d/]/g, "").slice(0, 10))} onBlur={event => { commit(event.currentTarget.value); onBlur?.(event); }} onKeyDown={event => { if (event.key === "Enter") commit(event.currentTarget.value); onKeyDown?.(event); }} inputMode="numeric" autoComplete="off" placeholder="dd/mm/aaaa" aria-label={ariaLabel} name={name} required={required} disabled={disabled} {...props} style={{ ...style, paddingRight: 43 }} />
-      <button type="button" className="satrapy-date-control__button" style={{ position: "absolute", top: 1, right: 1, bottom: 1, display: "grid", width: 39, placeItems: "center", border: 0, background: "transparent" }} aria-label={ariaLabel ? `Abrir calendario: ${ariaLabel}` : "Abrir calendario"} aria-haspopup="dialog" aria-expanded={open} disabled={disabled} onClick={() => { if (!open) { const base = isoValue ? parseIsoDate(isoValue) : new Date(); setViewMonth(new Date(base.getFullYear(), base.getMonth(), 1)); } setOpen(current => !current); }}><CalendarDays size={17} /></button>
+      <button type="button" className="satrapy-date-control__button" style={{ position: "absolute", top: 1, right: 1, bottom: 1, display: "grid", width: 39, placeItems: "center", border: 0, background: "transparent" }} aria-label={ariaLabel ? `Abrir calendario: ${ariaLabel}` : "Abrir calendario"} aria-haspopup="dialog" aria-expanded={open} disabled={disabled} onClick={toggleCalendar}><CalendarDays size={17} /></button>
     </div>
-    {open && <div className="satrapy-calendar" role="dialog" aria-label={`Calendario${ariaLabel ? ` de ${ariaLabel}` : ""}`}>
+    {open && <div className={cx("satrapy-calendar", `is-${calendarPlacement}`)} role="dialog" aria-label={`Calendario${ariaLabel ? ` de ${ariaLabel}` : ""}`}>
       <header><strong>{monthLabel}</strong><div><button type="button" aria-label="Mes anterior" onClick={() => setViewMonth(current => new Date(current.getFullYear(), current.getMonth() - 1, 1))}><ChevronLeft size={17} /></button><button type="button" aria-label="Mes siguiente" onClick={() => setViewMonth(current => new Date(current.getFullYear(), current.getMonth() + 1, 1))}><ChevronRight size={17} /></button></div></header>
       <div className="satrapy-calendar-weekdays" aria-hidden="true">{["L", "M", "M", "J", "V", "S", "D"].map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}</div>
       <div className="satrapy-calendar-days">{calendarDays.map((day, index) => { if (day === null) return <span key={`empty-${index}`} />; const candidate = isoDate(new Date(viewMonth.getFullYear(), viewMonth.getMonth(), day)); return <button type="button" key={candidate} disabled={isUnavailable(candidate)} className={`${candidate === isoValue ? "is-selected " : ""}${candidate === todayValue ? "is-today" : ""}`} aria-label={new Date(`${candidate}T00:00:00`).toLocaleDateString("es-MX", { dateStyle: "full" })} aria-pressed={candidate === isoValue} onClick={() => choose(candidate)}>{day}</button>; })}</div>
