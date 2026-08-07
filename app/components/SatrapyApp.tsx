@@ -23,6 +23,7 @@ import {
   RefreshCw,
   ReceiptText,
   ShoppingCart,
+  ShoppingBag,
   ShieldAlert,
   Target,
   TrendingUp,
@@ -62,6 +63,7 @@ import { CompanyUsersView } from "@/app/components/CompanyUsersView";
 import { ConfigurationHome } from "@/app/components/ConfigurationHome";
 import { InitialMigrationView } from "@/app/components/InitialMigrationView";
 import { ProductCatalogView } from "@/app/components/ProductCatalogView";
+import { EcommerceModule } from "@/app/components/EcommerceModule";
 import { CollaboratorsDirectoryView, PayrollView } from "@/app/components/CollaboratorsModule";
 import { BiModule } from "@/app/components/BiModule";
 import { NeutralStartNotice } from "@/app/components/NeutralStartNotice";
@@ -74,8 +76,8 @@ import type {
   RoleOption,
 } from "@/app/lib/types";
 
-type ViewName = "bi_summary" | "bi_explorer" | "bi_reports" | "bi_budgets" | "bi_network" | "settings_home" | "initial_migration" | "migration" | "users_access" | "suppliers" | "procurement" | "purchase_orders" | "purchase_receipts" | "supplier_invoices" | "supplier_paying_accounts" | "products" | "inventory" | "inventory_counts" | "inventory_transfers" | "inventory_replenishment" | "locations" | "audit" | "sales_audit" | "assortments" | "pos" | "sales_history" | "sales_quotes" | "sales_orders" | "customers" | "receivables" | "cash" | "sales_settings" | "collaborators_directory" | "payroll" | "accounting_summary" | "accounting_accounts" | "accounting_periods" | "accounting_reports" | "accounting_journals" | "accounting_events" | "accounting_banking" | "accounting_opening" | "accounting_settings";
-type AreaName = "bi" | "sales" | "purchasing" | "inventory" | "collaborators" | "accounting" | "settings";
+type ViewName = "bi_summary" | "bi_explorer" | "bi_reports" | "bi_budgets" | "bi_network" | "settings_home" | "initial_migration" | "migration" | "users_access" | "suppliers" | "procurement" | "purchase_orders" | "purchase_receipts" | "supplier_invoices" | "supplier_paying_accounts" | "products" | "inventory" | "inventory_counts" | "inventory_transfers" | "inventory_replenishment" | "ecommerce_readiness" | "locations" | "audit" | "sales_audit" | "assortments" | "pos" | "sales_history" | "sales_quotes" | "sales_orders" | "customers" | "receivables" | "cash" | "sales_settings" | "collaborators_directory" | "payroll" | "accounting_summary" | "accounting_accounts" | "accounting_periods" | "accounting_reports" | "accounting_journals" | "accounting_events" | "accounting_banking" | "accounting_opening" | "accounting_settings";
+type AreaName = "bi" | "sales" | "ecommerce" | "purchasing" | "inventory" | "collaborators" | "accounting" | "settings";
 
 const ALL_ROLES: RoleOption[] = [
   { code: "super_admin", display_name: "Superadmin" },
@@ -173,6 +175,13 @@ const VIEW_META: Record<ViewName, {
     href: "/satrapy/inventario/productos",
     area: "inventory",
     requirement: { all: ["view_products"] },
+  },
+  ecommerce_readiness: {
+    label: "Preparación",
+    icon: ShoppingBag,
+    href: "/satrapy/ecommerce",
+    area: "ecommerce",
+    requirement: { any: ["view_sales_orders", "view_products"] },
   },
   inventory: {
     label: "Inventario por ubicación",
@@ -322,6 +331,7 @@ const NAVIGATION_SECTIONS: Array<{ id: AreaName; label: string; views: ViewName[
   { id: "collaborators", label: "Colaboradores", views: ["collaborators_directory", "payroll"] },
   { id: "accounting", label: "Contabilidad", views: ["accounting_summary", "accounting_accounts", "accounting_reports", "accounting_periods", "accounting_journals", "accounting_events", "accounting_banking", "accounting_opening"] },
   { id: "bi", label: "BI", views: ["bi_summary", "bi_explorer", "bi_reports", "bi_budgets", "bi_network"] },
+  { id: "ecommerce", label: "Ecommerce", views: ["ecommerce_readiness"] },
   { id: "settings", label: "Configuración", views: ["settings_home", "locations", "users_access", "initial_migration", "migration", "audit", "assortments", "supplier_paying_accounts", "sales_settings", "sales_audit", "accounting_settings"] },
 ];
 
@@ -466,6 +476,7 @@ export function SatrapyRouteContent() {
   if (activeView === "supplier_invoices") return <NeutralStartNotice companyId={appState.membership.companyId} module="payables"><SupplierInvoicesView companyId={appState.membership.companyId} permissions={appState.membership.permissions} /></NeutralStartNotice>;
   if (activeView === "supplier_paying_accounts") return <SupplierPayingAccountsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "products") return <ProductCatalogView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
+  if (activeView === "ecommerce_readiness") return <EcommerceModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "inventory") return <NeutralStartNotice companyId={appState.membership.companyId} module="inventory"><InventoryView companyId={appState.membership.companyId} /></NeutralStartNotice>;
   if (activeView === "inventory_counts") return <InventoryCountsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "inventory_transfers") return <InventoryTransfersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;

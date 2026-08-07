@@ -619,7 +619,43 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 @media (max-width:700px) { .banking-toolbar { grid-template-columns:1fr; align-items:stretch; }.banking-toolbar > .ui-button { width:100%; }.banking-kpis { grid-template-columns:1fr; }.bank-statement-card > header,.bank-statement-card > footer { align-items:flex-start; flex-direction:column; }.bank-statement-card > footer .ui-button { width:100%; }.bank-balance-flow { grid-template-columns:1fr; }.bank-balance-flow > b { display:none; }.bank-balance-flow > span:last-child { grid-column:auto; }.banking-exceptions > div { grid-template-columns:1fr; } }
 @media (max-width:700px) { .accounting-account-drawer .ui-drawer__body { flex:1 1 auto; }.accounting-account-form__identity,.accounting-account-form__classification { grid-template-columns:1fr; }.accounting-account-form__actions .ui-button { min-width:0; flex:1; } }
 
-/* R-OP · Catálogo canónico administrable */
+/* Ecommerce · supervisión del canal */
+.ecommerce-module { display:grid; gap:28px; }
+.ecommerce-module .page-heading { margin-bottom:0; }
+.ecommerce-connections-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.ecommerce-connection { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:start; gap:14px; border:1px solid #d7e4df; border-radius:var(--radius-lg); background:#f8fbfa; padding:18px; }
+.ecommerce-connection__icon { display:grid; width:42px; height:42px; place-items:center; border-radius:var(--radius-md); background:#e5f1ec; color:var(--accent-strong); }
+.ecommerce-connection h3 { margin:2px 0 5px; color:var(--ink); font-size:14px; letter-spacing:-.015em; }
+.ecommerce-section h2 { margin:4px 0 5px; color:var(--ink); font-size:18px; letter-spacing:-.025em; }
+.ecommerce-connection p,.ecommerce-section > header p { max-width:760px; margin:0; color:var(--muted); font-size:12px; line-height:1.55; }
+.ecommerce-connect-form { display:grid; grid-template-columns:minmax(190px,1fr) auto; align-items:end; gap:10px; margin-top:14px; }
+.ecommerce-connect-form .ui-field { min-width:0; }
+.ecommerce-connect-form .ui-button { min-height:40px; white-space:nowrap; }
+.ecommerce-connect-message { margin-top:9px !important; font-size:10px !important; font-weight:620; }
+.ecommerce-connect-message.is-success { color:var(--success) !important; }
+.ecommerce-connect-message.is-error { color:var(--danger) !important; }
+.ecommerce-section { display:grid; gap:15px; }
+.ecommerce-section > header { display:grid; gap:0; }
+.ecommerce-alert-list { display:grid; gap:8px; }
+.ecommerce-alert-list article { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:12px; border-radius:var(--radius-md); background:var(--surface-subtle); padding:12px 14px; }
+.ecommerce-alert-list article > svg { color:#71817a; }
+.ecommerce-alert-list article.is-warning > svg { color:#936311; }
+.ecommerce-alert-list article.is-critical > svg { color:#a13c32; }
+.ecommerce-alert-list article div { display:grid; min-width:0; gap:2px; }
+.ecommerce-alert-list h3 { margin:0; color:var(--ink); font-size:12px; }
+.ecommerce-alert-list p { margin:0; color:var(--muted); font-size:10px; line-height:1.45; }
+.ecommerce-alert-list strong { min-width:30px; border-radius:999px; background:#e6ece9; padding:5px 8px; color:#52665e; font-size:11px; text-align:center; font-variant-numeric:tabular-nums; }
+.ecommerce-alert-list .is-warning strong { background:#fbefd3; color:#80540b; }
+.ecommerce-alert-list .is-critical strong { background:#f8dfdc; color:#8b2e25; }
+.ecommerce-coverage-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; }
+.ecommerce-coverage-grid article { display:grid; gap:4px; border-radius:var(--radius-md); background:var(--surface-subtle); padding:14px; }
+.ecommerce-coverage-grid span { color:var(--muted); font-size:9px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; }
+.ecommerce-coverage-grid strong { color:var(--ink); font-size:23px; letter-spacing:-.04em; font-variant-numeric:tabular-nums; }
+.ecommerce-coverage-grid small { color:var(--muted); font-size:10px; line-height:1.4; }
+.ecommerce-load-error { margin-top:7px !important; color:#9a3329 !important; font-weight:620; }
+@media (max-width:1050px) { .ecommerce-connections-grid { grid-template-columns:1fr; } }
+@media (max-width:700px) { .ecommerce-connection { grid-template-columns:auto 1fr; }.ecommerce-connection > .ui-badge { grid-column:2; justify-self:start; }.ecommerce-connect-form,.ecommerce-coverage-grid { grid-template-columns:1fr; }.ecommerce-connect-form .ui-button { width:100%; } }
+
 .product-catalog__heading-actions { display:flex; align-items:center; gap:8px; }
 .product-catalog__volume-note { margin:-12px 0 18px; border:1px solid #d8e6e1; border-radius:var(--radius-md); background:#f5faf8; padding:10px 12px; color:#52665e; font-size:11px; line-height:1.5; }
 .product-catalog__volume-note strong { color:var(--ink); }
