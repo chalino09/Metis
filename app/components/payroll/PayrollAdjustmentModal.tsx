@@ -30,6 +30,7 @@ type AdjustmentRow = {
   absenceHours: string;
   amount: string;
   description: string;
+  retroactiveReason: string;
 };
 
 type OperationalSettings = {
@@ -81,6 +82,7 @@ function emptyRow(option: CollaboratorOption, effectiveOn: string, overtimeHourl
     absenceHours: "",
     amount: "",
     description: "",
+    retroactiveReason: "",
   };
 }
 
@@ -112,7 +114,7 @@ export function PayrollAdjustmentModal({
   const { toast } = useToast();
   const draftStorageKey = `satrapy:payroll-adjustment:${companyId}:${kind}:${period.starts_on}:${period.ends_on}`;
   const [storedDraft] = useState(() => readDraft(draftStorageKey));
-  const [rows, setRows] = useState<AdjustmentRow[]>(() => Array.isArray(storedDraft?.rows) ? storedDraft.rows : []);
+  const [rows, setRows] = useState<AdjustmentRow[]>(() => Array.isArray(storedDraft?.rows) ? storedDraft.rows.map(row => ({ ...row, retroactiveReason: row.retroactiveReason ?? "" })) : []);
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [options, setOptions] = useState<CollaboratorOption[]>([]);
@@ -249,6 +251,7 @@ export function PayrollAdjustmentModal({
 
   function isInvalid(row: AdjustmentRow) {
     if (!row.effectiveOn) return true;
+    if (row.effectiveOn < period.starts_on && !row.retroactiveReason.trim()) return true;
     if (kind === "overtime") return !(Number(row.payableHours) > 0) || !(Number(row.overtimeHourlyRate) > 0);
     if (kind === "absence") return Number(row.absenceDays || 0) < 0 || Number(row.absenceHours || 0) < 0 || Number(row.absenceDays || 0) + Number(row.absenceHours || 0) <= 0;
     return !(Number(row.amount) > 0);
@@ -278,6 +281,7 @@ export function PayrollAdjustmentModal({
       hours: kind === "absence" ? Number(row.absenceHours || 0) : null,
       amount: kind === "commission" || kind === "bonus" ? Number(row.amount) : null,
       description: row.description.trim() || null,
+      retroactive_reason: row.retroactiveReason.trim() || null,
     }));
     const { error } = await getSupabaseClient().rpc("save_payroll_adjustments_batch", {
       p_company_id: companyId,
@@ -344,7 +348,7 @@ export function PayrollAdjustmentModal({
         <section className="payroll-adjustment__defaults" aria-labelledby="payroll-adjustment-defaults">
           <div>
             <strong id="payroll-adjustment-defaults">Agregar colaboradores</strong>
-            <small>Busca por nombre o código y presiona Enter para agregar la primera coincidencia. Hasta 100 filas por operación.</small>
+            <small>Busca por nombre o código y presiona Enter para agregar la primera coincidencia. Hasta 100 filas por operación. Si eliges una fecha anterior al periodo vigente, indica el motivo.</small>
           </div>
           <div className="payroll-adjustment__controls">
             <div className="payroll-adjustment__search">
@@ -380,7 +384,6 @@ export function PayrollAdjustmentModal({
             <Field label="Fecha del movimiento">
               <Input
                 type="date"
-                min={period.starts_on}
                 max={period.ends_on}
                 value={defaultDate}
                 onChange={event => setDefaultDate(event.target.value)}
@@ -415,7 +418,7 @@ export function PayrollAdjustmentModal({
             <thead><tr>
               <th>Colaborador</th><th>Fecha</th>
               {kindColumns.map(column => <th key={column}>{column}</th>)}
-              <th>Vista previa</th><th>Descripción</th><th aria-label="Acciones" />
+              <th>Vista previa</th><th>Descripción y motivo</th><th aria-label="Acciones" />
             </tr></thead>
             <tbody>{rows.map((row, index) => {
               const invalid = isInvalid(row);
@@ -423,7 +426,7 @@ export function PayrollAdjustmentModal({
               return <tr id={`payroll-adjustment-row-${row.id}`} key={row.id}>
                 <td data-label="Colaborador"><strong>{row.collaboratorName}</strong><small>{row.collaboratorCode}</small></td>
                 <td data-label="Fecha">
-                  <Input type="date" min={period.starts_on} max={period.ends_on} value={row.effectiveOn} onChange={event => updateRow(row.id, { effectiveOn: event.target.value })} aria-label={`Fecha de ${copy[kind].singular} de ${row.collaboratorName}`} />
+                  <Input type="date" max={period.ends_on} value={row.effectiveOn} onChange={event => updateRow(row.id, { effectiveOn: event.target.value })} aria-label={`Fecha de ${copy[kind].singular} de ${row.collaboratorName}`} aria-invalid={Boolean(row.effectiveOn < period.starts_on && !row.retroactiveReason.trim()) || undefined} />
                 </td>
                 {kind === "overtime" && <>
                   <td data-label="Horas extra"><Input type="number" min="0.01" step="0.25" value={row.payableHours} onChange={event => updateRow(row.id, { payableHours: event.target.value })} placeholder="Ej. 1.5" inputMode="decimal" aria-label={`Horas extra redondeadas de ${row.collaboratorName}`} aria-invalid={invalid || undefined} /></td>
@@ -437,7 +440,7 @@ export function PayrollAdjustmentModal({
                   <CurrencyInput value={row.amount} onValueChange={value => updateRow(row.id, { amount: value })} placeholder="0.00" aria-label={`Importe de ${copy[kind].singular} de ${row.collaboratorName}`} aria-invalid={invalid || undefined} />
                 </td>}
                 <td data-label="Vista previa"><div className="payroll-adjustment__preview"><strong>{preview.label}</strong><small>{preview.detail}</small></div></td>
-                <td data-label="Descripción"><Input value={row.description} onChange={event => updateRow(row.id, { description: event.target.value })} placeholder={kind === "commission" ? "Ej. Venta o folio" : "Ej. Motivo o referencia"} aria-label={`Descripción de ${copy[kind].singular} de ${row.collaboratorName}`} /></td>
+                <td data-label="Descripción y motivo"><Input value={row.description} onChange={event => updateRow(row.id, { description: event.target.value })} placeholder={kind === "commission" ? "Ej. Venta o folio" : "Ej. Referencia"} aria-label={`Descripción de ${copy[kind].singular} de ${row.collaboratorName}`} />{row.effectiveOn < period.starts_on && <Input value={row.retroactiveReason} onChange={event => updateRow(row.id, { retroactiveReason: event.target.value })} placeholder="Motivo retroactivo (obligatorio)" aria-label={`Motivo retroactivo de ${copy[kind].singular} de ${row.collaboratorName}`} aria-invalid={!row.retroactiveReason.trim() || undefined} />}</td>
                 <td className="payroll-adjustment__remove">
                   <Button size="icon" variant="ghost" aria-label={`Quitar a ${row.collaboratorName}`} onClick={() => setRows(current => current.filter(item => item.id !== row.id))}><Trash2 size={15} aria-hidden="true" /></Button>
                 </td>

@@ -11,6 +11,8 @@ import {
   Check,
   ClipboardCheck,
   FileSpreadsheet,
+  Eye,
+  EyeOff,
   History,
   Landmark,
   LayoutGrid,
@@ -21,6 +23,7 @@ import {
   RefreshCw,
   ReceiptText,
   ShoppingCart,
+  ShieldAlert,
   Target,
   TrendingUp,
   Truck,
@@ -30,9 +33,10 @@ import {
   WalletCards,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { DataPagination, DataRefreshStatus, DataState, DataToolbar, InteractiveTableRow, PageHeading } from "@/app/components/ui/data";
-import { Badge, Button, Input, Modal, Select, ToastProvider, useToast } from "@/app/components/ui/primitives";
+import { Badge, Button, Drawer, Input, Modal, Select, ToastProvider, useToast } from "@/app/components/ui/primitives";
 import { useDismissiblePopover } from "@/app/components/ui/use-dismissible-popover";
 import { getSupabaseClient } from "@/app/lib/supabase";
 import { classifyAlphaUpload, isPurchasingAlphaUpload } from "@/app/lib/alpha-upload-routing";
@@ -40,9 +44,9 @@ import { OperationIdempotencyKeys } from "@/app/lib/operation-idempotency";
 import { presentImportedSourceText } from "@/app/lib/presentation-text";
 import { purchasingUploadPackageState } from "@/app/lib/purchasing-upload-package";
 import { COMMERCIAL_ASSORTMENTS_PATH, LEGACY_POS_PREPARATION_PATH, MANAGE_ASSORTMENTS_REQUIREMENT, matchesNavigationRequirement, ROLE_PREVIEW_PERMISSIONS, type NavigationRequirement } from "@/app/lib/navigation-access";
-import { useSatrapy } from "@/app/components/SatrapyProvider";
+import { useSatrapy, type SatrapyAccessIssue } from "@/app/components/SatrapyProvider";
 import { roleDisplayName } from "@/app/lib/role-labels";
-import { CashDeskView, CustomerMasterView, CustomersView, NewCustomerMasterView, PosSalesView, ReceivablesView, SalesAuditView, SalesHistoryView, SalesSettingsView } from "@/app/components/SalesModule";
+import { CashDeskView, CustomersView, PosSalesView, ReceivablesView, SalesAuditView, SalesHistoryView, SalesSettingsView } from "@/app/components/SalesModule";
 import { CommercialAssortmentsView } from "@/app/components/CommercialAssortmentsView";
 import { SalesQuotesView } from "@/app/components/SalesQuotesModule";
 import { SalesOrdersView } from "@/app/components/SalesOrdersModule";
@@ -129,14 +133,14 @@ const VIEW_META: Record<ViewName, {
     requirement: { all: ["view_suppliers"] },
   },
   procurement: {
-    label: "Abastecimiento",
+    label: "Solicitudes de compra",
     icon: ShoppingCart,
     href: "/satrapy/compras/abastecimiento",
     area: "purchasing",
     requirement: { all: ["view_procurement"] },
   },
   purchase_orders: {
-    label: "Órdenes de compra",
+    label: "Cotizaciones y órdenes",
     icon: ClipboardCheck,
     href: "/satrapy/compras/ordenes",
     area: "purchasing",
@@ -248,7 +252,7 @@ const VIEW_META: Record<ViewName, {
     requirement: { all: ["view_sales_quotes"] },
   },
   sales_orders: {
-    label: "Órdenes de venta",
+    label: "Pedidos",
     icon: PackageSearch,
     href: "/satrapy/ventas/pedidos",
     area: "sales",
@@ -347,11 +351,12 @@ function getAllowedNavigation(permissions: string[], previewRole: AppRoleCode | 
 export function SatrapyShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { appState, companies, configured, isSuperAdmin, loading, notice, previewRole, setPreviewRole, selectCompany, refreshAccess } = useSatrapy();
+  const { accessIssue, appState, companies, configured, isSuperAdmin, loading, previewRole, setPreviewRole, selectCompany, refreshAccess } = useSatrapy();
 
   if (loading && !appState) return <LoadingScreen />;
   if (!configured) return <AccessUnavailableScreen />;
-  if (!appState) return <LoginScreen notice={notice} onRetry={() => void refreshAccess()} />;
+  if (accessIssue && !appState) return <AccessRecoveryScreen issue={accessIssue} onRetry={() => void refreshAccess()} />;
+  if (!appState) return <LoginScreen />;
 
   const { navigation: allowedNavigation, views: allowedViews } = getAllowedNavigation(appState.membership.permissions, previewRole);
   const requestedView = customerMasterId(pathname) ? "customers" : viewForPath(pathname);
@@ -403,13 +408,7 @@ export function SatrapyShell({ children }: { children: ReactNode }) {
             <strong>{appState.membership.companyName}</strong>
             <span>{activeSection?.label ?? "Operación"}</span>
           </div>
-          <div className="context-nav__links">
-            {contextViews?.map((name) => {
-              const item = VIEW_META[name];
-              const Icon = item.icon;
-              return <button className={`context-nav__item ${activeView === name ? "is-active" : ""}`} aria-current={activeView === name ? "page" : undefined} onClick={() => router.push(activeSection?.id === "bi" ? `${item.href}${window.location.search}` : item.href)} key={name}><Icon size={16} />{item.label}</button>;
-            })}
-          </div>
+          {activeSection?.id === "accounting" ? <div className="context-nav__links accounting-context-nav">{contextViews?.map((name) => { const item = VIEW_META[name]; const Icon = item.icon; return <Link className={`context-nav__item ${activeView === name ? "is-active" : ""}`} aria-current={activeView === name ? "page" : undefined} href={item.href} key={name}><Icon size={16} />{item.label}</Link>; })}</div> : <div className="context-nav__links">{contextViews?.map((name) => { const item = VIEW_META[name]; const Icon = item.icon; return <button className={`context-nav__item ${activeView === name ? "is-active" : ""}`} aria-current={activeView === name ? "page" : undefined} onClick={() => router.push(activeSection?.id === "bi" ? `${item.href}${window.location.search}` : item.href)} key={name}><Icon size={16} />{item.label}</button>; })}</div>}
           <span className="topbar__status">Operación en orden</span>
         </nav>}
         {previewRole && (
@@ -454,7 +453,9 @@ export function SatrapyRouteContent() {
     router.replace(VIEW_META[allowedViews[0]].href);
   }, [allowedViews, appState, loading, pathname, requestedView, router]);
 
-  if (loading || !appState) return null;
+  // La revalidación de acceso no debe desmontar formularios que ya tienen una
+  // identidad válida; sólo la carga inicial o un cierre de sesión ocultan la ruta.
+  if (!appState) return null;
   if (isForbidden) return <AccessDeniedScreen onGoHome={() => router.replace(VIEW_META[allowedViews[0]].href)} />;
   if (!requestedView) return <div className="route-loading" aria-live="polite"><LoaderCircle className="spin" size={18} /> Abriendo tu espacio de trabajo…</div>;
   if (activeView === "migration") return <MigrationCenter companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
@@ -479,10 +480,8 @@ export function SatrapyRouteContent() {
   if (activeView === "sales_history") return <SalesHistoryView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "sales_quotes") return <SalesQuotesView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "sales_orders") return <SalesOrdersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
-  if (activeView === "customers" && creatingCustomer) return <NewCustomerMasterView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
-  if (activeView === "customers" && selectedCustomerId) return <CustomerMasterView companyId={appState.membership.companyId} customerId={selectedCustomerId} permissions={appState.membership.permissions} />;
-  if (activeView === "customers") return <CustomersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
-  if (activeView === "receivables") return <NeutralStartNotice companyId={appState.membership.companyId} module="receivables"><ReceivablesView companyId={appState.membership.companyId} /></NeutralStartNotice>;
+  if (activeView === "customers") return <CustomersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} initialCustomerId={selectedCustomerId} initialCreateOpen={creatingCustomer} />;
+  if (activeView === "receivables") return <ReceivablesView companyId={appState.membership.companyId} />;
   if (activeView === "cash") return <NeutralStartNotice companyId={appState.membership.companyId} module="cash_banks"><CashDeskView companyId={appState.membership.companyId} /></NeutralStartNotice>;
   if (activeView === "sales_settings") return <SalesSettingsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "collaborators_directory") return <CollaboratorsDirectoryView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
@@ -504,19 +503,46 @@ export function SatrapyRouteContent() {
   return <CommercialAssortmentsView key={appState.membership.companyId} companyId={appState.membership.companyId} />;
 }
 
-function LoginScreen({ notice, onRetry }: { notice: string | null; onRetry: () => void }) {
+type AuthFormError = {
+  field: "email" | "password" | "passwordConfirmation" | null;
+  message: string;
+};
+
+function LoginScreen() {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
-  const [error, setError] = useState<string | null>(notice);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordConfirmation, setShowPasswordConfirmation] = useState(false);
+  const [error, setError] = useState<AuthFormError | null>(null);
   const [sending, setSending] = useState(false);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const passwordConfirmationRef = useRef<HTMLInputElement>(null);
+  const errorRef = useRef<HTMLDivElement>(null);
+
+  function presentError(nextError: AuthFormError) {
+    setError(nextError);
+    window.requestAnimationFrame(() => {
+      if (nextError.field === "email") emailRef.current?.focus();
+      else if (nextError.field === "password") passwordRef.current?.focus();
+      else if (nextError.field === "passwordConfirmation") passwordConfirmationRef.current?.focus();
+      else errorRef.current?.focus();
+    });
+  }
+
+  function clearError() {
+    if (error) setError(null);
+  }
 
   function changeMode(nextMode: "login" | "register") {
     setMode(nextMode);
     setPassword("");
     setPasswordConfirmation("");
+    setShowPassword(false);
+    setShowPasswordConfirmation(false);
     setError(null);
   }
 
@@ -524,51 +550,73 @@ function LoginScreen({ notice, onRetry }: { notice: string | null; onRetry: () =
     event.preventDefault();
     setSending(true);
     setError(null);
-    if (mode === "register") {
-      if (password !== passwordConfirmation) {
-        setError("Las contraseñas no coinciden.");
-        setSending(false);
-        return;
+    try {
+      if (mode === "register") {
+        if (password !== passwordConfirmation) {
+          presentError({ field: "passwordConfirmation", message: "Las contraseñas no coinciden." });
+          return;
+        }
+        const response = await fetch("/api/auth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fullName, email, password }) });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          presentError({ field: null, message: result.message ?? "No pudimos crear la cuenta. Revisa los datos e intenta de nuevo." });
+          return;
+        }
       }
-      const response = await fetch("/api/auth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fullName, email, password }) });
-      const result = await response.json();
-      if (!response.ok) {
-        setError(result.message ?? "No pudimos crear la cuenta.");
-        setSending(false);
-        return;
+      const { error: signInError } = await getSupabaseClient().auth.signInWithPassword({ email, password });
+      if (signInError) {
+        const needsEmailConfirmation = signInError.code === "email_not_confirmed" || signInError.message.toLowerCase().includes("email not confirmed");
+        presentError(needsEmailConfirmation
+          ? { field: "email", message: "Confirma tu correo electrónico antes de iniciar sesión." }
+          : { field: "password", message: "El correo o la contraseña no coinciden. Revisa los datos e intenta de nuevo." });
       }
+    } catch {
+      presentError({ field: null, message: "No pudimos conectar con Satrapy. Revisa tu conexión e intenta de nuevo." });
+    } finally {
+      setSending(false);
     }
-    const { error: signInError } = await getSupabaseClient().auth.signInWithPassword({ email, password });
-    if (signInError) {
-      const needsEmailConfirmation = signInError.code === "email_not_confirmed" || signInError.message.toLowerCase().includes("email not confirmed");
-      setError(needsEmailConfirmation
-        ? "Confirma tu correo electrónico antes de iniciar sesión."
-        : "No pudimos iniciar sesión. Verifica tus credenciales o contacta a tu administrador.");
-    }
-    setSending(false);
   }
 
   return (
     <main className="auth-page">
-      <section className="auth-card">
+      <section className="auth-card" aria-labelledby="auth-title">
         <div className="brand-lockup"><span className="brand-mark">S</span><strong>Satrapy</strong></div>
         <div className="auth-heading">
-          <h1>{mode === "login" ? "Iniciar sesión" : "Crear cuenta"}</h1>
-          <p>{mode === "login" ? "Entra con tus credenciales de Satrapy." : "Completa tus datos para comenzar."}</p>
-        </div>
-        <div className="auth-mode-switch" aria-label="Acceso a Satrapy">
-          <button type="button" className={mode === "login" ? "is-active" : ""} onClick={() => changeMode("login")}>Iniciar sesión</button>
-          <button type="button" className={mode === "register" ? "is-active" : ""} onClick={() => changeMode("register")}>Crear cuenta</button>
+          <h1 id="auth-title">{mode === "login" ? "Bienvenido de nuevo" : "Crea tu acceso"}</h1>
+          <p>{mode === "login" ? "Ingresa con el correo autorizado para tu empresa." : "Usa el correo que tu administrador autorizó para Satrapy."}</p>
         </div>
         <form onSubmit={submit} className="auth-form">
-          {mode === "register" && <label>Nombre completo<input required value={fullName} onChange={(event) => setFullName(event.target.value)} autoComplete="name" /></label>}
-          <label>Correo<input type="email" required value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" /></label>
-          <label>Contraseña<input type="password" required minLength={mode === "register" ? 8 : undefined} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} /></label>
-          {mode === "register" && <label>Confirmar contraseña<input type="password" required minLength={8} value={passwordConfirmation} onChange={(event) => setPasswordConfirmation(event.target.value)} autoComplete="new-password" /></label>}
-          {error && <p className="form-error"><AlertCircle size={16} />{error}</p>}
-          {notice && mode === "login" && <Button className="auth-retry" type="button" variant="ghost" size="sm" onClick={onRetry}><RefreshCw size={14} /> Reintentar acceso</Button>}
-          <button className="primary-button" disabled={sending}>{sending ? <LoaderCircle className="spin" size={17} /> : null} {mode === "login" ? "Entrar" : "Crear mi cuenta"} <ArrowRight size={17} /></button>
+          {mode === "register" && <label htmlFor="auth-full-name">Nombre completo<input id="auth-full-name" name="name" required value={fullName} onChange={(event) => { setFullName(event.target.value); clearError(); }} autoComplete="name" /></label>}
+          <label htmlFor="auth-email">Correo<input id="auth-email" name="email" ref={emailRef} type="email" required value={email} onChange={(event) => { setEmail(event.target.value); clearError(); }} autoComplete="email" aria-invalid={error?.field === "email" || undefined} aria-describedby={error?.field === "email" ? "auth-form-error" : undefined} /></label>
+          <label htmlFor="auth-password">Contraseña<span className="auth-password-field"><input id="auth-password" name="password" ref={passwordRef} type={showPassword ? "text" : "password"} required minLength={mode === "register" ? 8 : undefined} value={password} onChange={(event) => { setPassword(event.target.value); clearError(); }} autoComplete={mode === "login" ? "current-password" : "new-password"} aria-invalid={error?.field === "password" || undefined} aria-describedby={error?.field === "password" ? "auth-form-error" : undefined} /><button type="button" className="auth-password-toggle" aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"} aria-pressed={showPassword} onClick={() => setShowPassword((visible) => !visible)}>{showPassword ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}</button></span></label>
+          {mode === "register" && <label htmlFor="auth-password-confirmation">Confirmar contraseña<span className="auth-password-field"><input id="auth-password-confirmation" name="password-confirmation" ref={passwordConfirmationRef} type={showPasswordConfirmation ? "text" : "password"} required minLength={8} value={passwordConfirmation} onChange={(event) => { setPasswordConfirmation(event.target.value); clearError(); }} autoComplete="new-password" aria-invalid={error?.field === "passwordConfirmation" || undefined} aria-describedby={error?.field === "passwordConfirmation" ? "auth-form-error" : undefined} /><button type="button" className="auth-password-toggle" aria-label={showPasswordConfirmation ? "Ocultar confirmación de contraseña" : "Mostrar confirmación de contraseña"} aria-pressed={showPasswordConfirmation} onClick={() => setShowPasswordConfirmation((visible) => !visible)}>{showPasswordConfirmation ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}</button></span></label>}
+          {error && <div id="auth-form-error" className="auth-form-error" role="alert" tabIndex={-1} ref={errorRef}><AlertCircle size={17} aria-hidden="true" /><span>{error.message}</span></div>}
+          <button className="primary-button auth-submit" disabled={sending} aria-busy={sending}>{sending && <LoaderCircle className="spin" size={17} aria-hidden="true" />}<span>{mode === "login" ? "Entrar a Satrapy" : "Crear cuenta"}</span><ArrowRight size={17} aria-hidden="true" /></button>
         </form>
+        <div className="auth-alternate">
+          <span>{mode === "login" ? "¿Aún no tienes cuenta?" : "¿Ya tienes una cuenta?"}</span>
+          <button type="button" onClick={() => changeMode(mode === "login" ? "register" : "login")} disabled={sending}>{mode === "login" ? "Crear cuenta" : "Iniciar sesión"}</button>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function AccessRecoveryScreen({ issue, onRetry }: { issue: SatrapyAccessIssue; onRetry: () => void }) {
+  const missingMembership = issue === "membership_missing";
+  return (
+    <main className="auth-page">
+      <section className="auth-card auth-status-card" aria-labelledby="access-status-title">
+        <div className="brand-lockup"><span className="brand-mark">S</span><strong>Satrapy</strong></div>
+        <div className="auth-status-icon" aria-hidden="true"><ShieldAlert size={24} /></div>
+        <div className="auth-heading">
+          <h1 id="access-status-title">{missingMembership ? "Tu cuenta aún no tiene acceso" : "No pudimos abrir tu espacio"}</h1>
+          <p>{missingMembership ? "Tu sesión es válida, pero no encontramos una empresa asignada. Pide a tu administrador que revise tu acceso." : "Tu sesión sigue activa, pero Satrapy no pudo cargar tus permisos. Puedes intentarlo de nuevo sin volver a escribir tu contraseña."}</p>
+        </div>
+        <div className="auth-status-actions">
+          <button className="primary-button" type="button" onClick={onRetry}><RefreshCw size={17} aria-hidden="true" /> Reintentar acceso</button>
+          <button className="auth-secondary-action" type="button" onClick={() => void getSupabaseClient().auth.signOut()}><LogOut size={16} aria-hidden="true" /> Usar otra cuenta</button>
+        </div>
       </section>
     </main>
   );
@@ -1231,8 +1279,8 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
       <section className="location-review">
         <div><span className="eyebrow">Compras y CxP importados</span><h2>Paquetes de evidencia</h2><p>Satrapy agrupa cata_prv, rpcon2, lfchvenc y pag_det. Los datos quedan en staging y auditoría; no crean recepciones, saldos ni pagos operativos hasta que el flujo correspondiente esté habilitado.</p>{linkedAlphaFolderAvailable && <button className="secondary-button" disabled={busy || !canImportCustomers} onClick={() => void consolidatePurchasingFromLinkedFolder()}>Consolidar archivos detectados</button>}</div>
         <div className="location-review-list">
-          <div className="location-review-note"><FileSpreadsheet size={22} /><span>Flujo confirmado: Proveedor → OC → Aprobación. La recepción vinculada no está en los archivos entregados y permanece como brecha explícita.</span></div>
-          {visiblePurchasingMigrationBatches.map((batch) => <div className="location-review-row" key={batch.id}><span><strong>Corte {dateOnlyFormat(batch.cutoff_date)} · {batch.status === "staged" ? "Evidencia preparada" : batch.status === "validation_failed" ? "Datos por revisar" : batch.status === "failed" ? "Fallida" : "Procesando"}</strong><small>{batch.summary.suppliers ?? 0} proveedores · {batch.summary.purchase_orders ?? 0} OC / {batch.summary.purchase_order_lines ?? 0} partidas · {batch.summary.payable_documents ?? 0} documentos CxP por {numberFormat(Number(batch.summary.payable_outstanding_total ?? 0))} MXN · {batch.summary.supplier_payments ?? 0} aplicaciones de pago como evidencia</small><small>{batch.summary.error_count ?? 0} errores · {batch.summary.warning_count ?? 0} alertas · recepción histórica no disponible</small></span><Badge tone={batch.status === "staged" ? "warning" : batch.status === "validation_failed" || batch.status === "failed" ? "danger" : "neutral"}>{batch.status === "staged" ? "Solo staging" : batch.status === "validation_failed" ? "Revisión requerida" : batch.status === "failed" ? "Fallida" : "Procesando"}</Badge></div>)}
+          <div className="location-review-note"><FileSpreadsheet size={22} /><span>Flujo confirmado: Proveedor → Orden de compra → Aprobación. La recepción vinculada no está en los archivos entregados y permanece como brecha explícita.</span></div>
+          {visiblePurchasingMigrationBatches.map((batch) => <div className="location-review-row" key={batch.id}><span><strong>Corte {dateOnlyFormat(batch.cutoff_date)} · {batch.status === "staged" ? "Evidencia preparada" : batch.status === "validation_failed" ? "Datos por revisar" : batch.status === "failed" ? "Fallida" : "Procesando"}</strong><small>{batch.summary.suppliers ?? 0} proveedores · {batch.summary.purchase_orders ?? 0} órdenes de compra / {batch.summary.purchase_order_lines ?? 0} partidas · {batch.summary.payable_documents ?? 0} documentos CxP por {numberFormat(Number(batch.summary.payable_outstanding_total ?? 0))} MXN · {batch.summary.supplier_payments ?? 0} aplicaciones de pago como evidencia</small><small>{batch.summary.error_count ?? 0} errores · {batch.summary.warning_count ?? 0} alertas · recepción histórica no disponible</small></span><Badge tone={batch.status === "staged" ? "warning" : batch.status === "validation_failed" || batch.status === "failed" ? "danger" : "neutral"}>{batch.status === "staged" ? "Solo staging" : batch.status === "validation_failed" ? "Revisión requerida" : batch.status === "failed" ? "Fallida" : "Procesando"}</Badge></div>)}
         </div>
       </section>
 
@@ -1398,6 +1446,18 @@ function StagingOperationDialog({ operation, companyId, busy, onCancel, onConfir
   </Modal>;
 }
 
+type InventoryMovementRow = {
+  id: string;
+  movement_type: string;
+  quantity_delta: number;
+  balance_after: number;
+  occurred_at: string;
+  actor_name: string | null;
+  reference_type: string;
+  reference_id: string | null;
+  reference_label: string;
+};
+
 function InventoryView({ companyId }: { companyId: string }) {
   const { accessibleLocations, queryCache } = useSatrapy();
   const [rows, setRows] = useState<InventoryProductRow[]>([]);
@@ -1405,6 +1465,12 @@ function InventoryView({ companyId }: { companyId: string }) {
   const [referenceRow, setReferenceRow] = useState<InventoryRow | null>(null);
   const [referenceLoading, setReferenceLoading] = useState(false);
   const [referenceError, setReferenceError] = useState<string | null>(null);
+  const [movementRow, setMovementRow] = useState<InventoryRow | null>(null);
+  const [movementRows, setMovementRows] = useState<InventoryMovementRow[]>([]);
+  const [movementPage, setMovementPage] = useState(1);
+  const [movementTotal, setMovementTotal] = useState(0);
+  const [movementLoading, setMovementLoading] = useState(false);
+  const [movementError, setMovementError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -1413,6 +1479,7 @@ function InventoryView({ companyId }: { companyId: string }) {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const requestId = useRef(0);
+  const movementRequestId = useRef(0);
   useEffect(() => { const timer = window.setTimeout(() => { setDebouncedSearch(search.trim()); setPage(1); }, 280); return () => window.clearTimeout(timer); }, [search]);
   const load = useCallback(async () => {
     const cacheKey = `inventory:${companyId}:${debouncedSearch}:${selectedLocation}:${page}`;
@@ -1464,11 +1531,41 @@ function InventoryView({ companyId }: { companyId: string }) {
     else setReferenceRow((current) => current ? { ...current, snapshot_quantity: Number(reference.snapshot_quantity), snapshot_date: reference.snapshot_date ?? null, snapshot_source_file: reference.snapshot_source_file ?? null, difference_from_snapshot: reference.difference_from_snapshot ?? null } : current);
     setReferenceLoading(false);
   }
-  return <div className="content-frame inventory-product-inquiry"><PageHeading eyebrow="Existencia operativa" title="Inventario por ubicación" description="Consulta cada producto con su existencia total y despliega el saldo de cada sucursal." action={<Button variant="secondary" onClick={refresh}><RefreshCw size={16} /> Actualizar</Button>} /><DataToolbar search={search} onSearchChange={changeSearch} placeholder="Buscar producto o SKU" filters={<Select value={selectedLocation} onValueChange={changeLocation} ariaLabel="Filtrar por ubicación" options={locationOptions} />} activeFilters={(search.trim() ? 1 : 0) + (selectedLocation !== "all" ? 1 : 0)} onClear={clearFilters} results={total} /><DataState loading={loading && rows.length === 0} error={error} errorAction={<Button variant="secondary" size="sm" onClick={refresh}>Reintentar</Button>} hasData={rows.length} empty={empty}><div className="table-wrap surface-table inventory-product-table"><table><thead><tr><th>SKU</th><th>Producto</th><th className="number-cell">Existencia total</th><th>Sucursales</th><th>Actualización</th><th aria-label="Acciones" /></tr></thead><tbody>{rows.map((product) => {
+  async function loadMovementHistory(row = movementRow, page = movementPage) {
+    if (!row) return;
+    const current = ++movementRequestId.current;
+    setMovementLoading(true); setMovementError(null);
+    const { data, error: queryError } = await getSupabaseClient().rpc("list_inventory_location_movements", {
+      p_company_id: companyId,
+      p_location_id: row.location_id,
+      p_product_id: row.product_id,
+      p_page: page,
+      p_page_size: 25,
+    });
+    if (current !== movementRequestId.current) return;
+    const result = data as { items?: InventoryMovementRow[]; total?: number } | null;
+    setMovementRows(result?.items ?? []); setMovementTotal(result?.total ?? 0);
+    setMovementError(queryError ? "No se pudo cargar el historial de movimientos." : null); setMovementLoading(false);
+  }
+  function openMovementHistory(row: InventoryRow) {
+    setMovementRow(row); setMovementRows([]); setMovementTotal(0); setMovementError(null); setMovementPage(1);
+    void loadMovementHistory(row, 1);
+  }
+  function changeMovementPage(page: number) { setMovementPage(page); void loadMovementHistory(movementRow, page); }
+  function closeMovementHistory() {
+    movementRequestId.current += 1;
+    setMovementRow(null); setMovementRows([]); setMovementTotal(0); setMovementError(null); setMovementLoading(false); setMovementPage(1);
+  }
+  const directLocationView = selectedLocation !== "all" || accessibleLocations.length === 1;
+  return <div className="content-frame inventory-product-inquiry"><PageHeading eyebrow="Existencia operativa" title="Inventario por ubicación" description={directLocationView ? "Consulta la existencia y los movimientos de la sucursal seleccionada." : "Consulta cada producto con su existencia total y despliega el saldo de cada sucursal."} action={<Button variant="secondary" onClick={refresh}><RefreshCw size={16} /> Actualizar</Button>} /><DataToolbar search={search} onSearchChange={changeSearch} placeholder="Buscar producto o SKU" filters={<Select value={selectedLocation} onValueChange={changeLocation} ariaLabel="Filtrar por ubicación" options={locationOptions} />} activeFilters={(search.trim() ? 1 : 0) + (selectedLocation !== "all" ? 1 : 0)} onClear={clearFilters} results={total} /><DataState loading={loading && rows.length === 0} error={error} errorAction={<Button variant="secondary" size="sm" onClick={refresh}>Reintentar</Button>} hasData={rows.length} empty={empty}><div className="table-wrap surface-table inventory-product-table"><table><thead><tr><th>SKU</th><th>Producto</th><th className="number-cell">{directLocationView ? "Existencia" : "Existencia total"}</th><th>{directLocationView ? "Movimiento reciente" : "Sucursales"}</th><th>Actualización</th><th aria-label="Acciones" /></tr></thead><tbody>{rows.map((product) => {
     const expanded = expandedProducts.has(product.product_id);
-    return <Fragment key={product.product_id}><tr className="inventory-product-row"><td className="mono">{product.product_code}</td><td><strong>{product.product_name}</strong><small>{product.unit ?? "Sin unidad"}</small></td><td className="number-cell"><strong>{numberFormat(Number(product.total_quantity_on_hand))} {product.unit ?? ""}</strong></td><td><strong>{product.location_count} {product.location_count === 1 ? "sucursal" : "sucursales"}</strong><small>{product.positive_location_count} con existencia</small></td><td>{product.balance_updated_at ? dateTimeFormat(product.balance_updated_at) : "Sin movimientos"}</td><td><Button variant="secondary" size="sm" aria-expanded={expanded} onClick={() => toggleProduct(product.product_id)}>{expanded ? "Ocultar" : "Ver sucursales"}</Button></td></tr>{expanded && <tr className="inventory-location-detail-row"><td colSpan={6}><div className="inventory-location-breakdown" aria-label={`Existencias por sucursal de ${product.product_name}`}>{product.locations.map((location) => <article key={location.location_id}><div><span className="location-chip">{location.location_code}</span><strong>{location.location_name}</strong></div><div className="inventory-location-balance"><strong>{numberFormat(Number(location.quantity_on_hand))} {product.unit ?? ""}</strong><small>{location.balance_updated_at ? `Actualizado ${dateTimeFormat(location.balance_updated_at)}` : "Sin saldo inicializado"}</small></div><div><strong>{location.last_movement_type ? inventoryMovementLabel(location.last_movement_type) : "Sin movimientos"}</strong><small>{location.last_movement_at ? dateTimeFormat(location.last_movement_at) : "—"}</small></div><div>{location.has_snapshot_reference ? <Button variant="secondary" size="sm" onClick={() => void openSnapshotReference(location)}>Ver corte importado</Button> : <span className="inventory-no-reference">Sin referencia</span>}</div></article>)}</div></td></tr>}</Fragment>;
+    const directLocation = directLocationView ? product.locations[0] : null;
+    const displayedQuantity = directLocation ? directLocation.quantity_on_hand : product.total_quantity_on_hand;
+    const displayedUpdatedAt = directLocation ? directLocation.balance_updated_at : product.balance_updated_at;
+    return <Fragment key={product.product_id}><tr className="inventory-product-row"><td className="mono">{product.product_code}</td><td><strong>{product.product_name}</strong><small>{product.unit ?? "Sin unidad"}</small></td><td className="number-cell"><strong>{numberFormat(Number(displayedQuantity))} {product.unit ?? ""}</strong></td><td>{directLocation ? <><strong>{directLocation.last_movement_type ? inventoryMovementLabel(directLocation.last_movement_type) : "Sin movimientos"}</strong><small>{directLocation.last_movement_at ? dateTimeFormat(directLocation.last_movement_at) : "—"}</small></> : <><strong>{product.location_count} {product.location_count === 1 ? "sucursal" : "sucursales"}</strong><small>{product.positive_location_count} con existencia</small></>}</td><td>{displayedUpdatedAt ? dateTimeFormat(displayedUpdatedAt) : "Sin movimientos"}</td><td>{directLocation ? <Button variant="secondary" size="sm" aria-label={`Ver movimientos de ${product.product_name} en ${directLocation.location_name}`} onClick={() => openMovementHistory(directLocation)}>Ver movimientos</Button> : <Button variant="secondary" size="sm" aria-expanded={expanded} onClick={() => toggleProduct(product.product_id)}>{expanded ? "Ocultar" : "Ver sucursales"}</Button>}</td></tr>{!directLocation && expanded && <tr className="inventory-location-detail-row"><td colSpan={6}><div className="inventory-location-breakdown" aria-label={`Existencias por sucursal de ${product.product_name}`}>{product.locations.map((location) => <article key={location.location_id}><div><span className="location-chip">{location.location_code}</span><strong>{location.location_name}</strong></div><div className="inventory-location-balance"><strong>{numberFormat(Number(location.quantity_on_hand))} {product.unit ?? ""}</strong><small>{location.balance_updated_at ? `Actualizado ${dateTimeFormat(location.balance_updated_at)}` : "Sin saldo inicializado"}</small></div><div><strong>{location.last_movement_type ? inventoryMovementLabel(location.last_movement_type) : "Sin movimientos"}</strong><small>{location.last_movement_at ? dateTimeFormat(location.last_movement_at) : "—"}</small></div><div className="inventory-location-actions"><Button variant="secondary" size="sm" onClick={() => openMovementHistory(location)}>Ver movimientos</Button>{location.has_snapshot_reference && <Button variant="secondary" size="sm" onClick={() => void openSnapshotReference(location)}>Ver corte importado</Button>}</div></article>)}</div></td></tr>}</Fragment>;
   })}</tbody></table></div></DataState><DataPagination page={page} total={total} pageSize={DATA_PAGE_SIZE} onChange={setPage} />
     <Modal open={Boolean(referenceRow)} onOpenChange={(open) => { if (!open) { setReferenceRow(null); setReferenceLoading(false); setReferenceError(null); } }} eyebrow="Referencia histórica" title={referenceRow ? referenceRow.product_name : "Corte importado"} description="Este corte fue el punto de referencia importado. No reemplaza la existencia actual ni registra un conteo físico.">{referenceLoading ? <div className="loading-copy" role="status"><LoaderCircle className="spin" size={18} /> Consultando corte importado…</div> : referenceError ? <p className="form-error">{referenceError}</p> : referenceRow && <dl className="inventory-reference-summary"><div><dt>Ubicación</dt><dd>{referenceRow.location_code} · {referenceRow.location_name}</dd></div><div><dt>Cantidad importada</dt><dd>{numberFormat(Number(referenceRow.snapshot_quantity ?? 0))} {referenceRow.unit ?? ""}</dd></div><div><dt>Fecha del corte</dt><dd>{referenceRow.snapshot_date ? dateOnlyFormat(referenceRow.snapshot_date) : "Sin fecha"}</dd></div><div><dt>Archivo de origen</dt><dd>{referenceRow.snapshot_source_file ?? "No disponible"}</dd></div><div><dt>Cambio desde ese corte</dt><dd>{referenceRow.difference_from_snapshot == null ? "No calculable" : `${Number(referenceRow.difference_from_snapshot) > 0 ? "+" : ""}${numberFormat(Number(referenceRow.difference_from_snapshot))} ${referenceRow.unit ?? ""}`}</dd></div><div><dt>Existencia actual</dt><dd>{numberFormat(Number(referenceRow.quantity_on_hand))} {referenceRow.unit ?? ""}</dd></div></dl>}</Modal>
+    <Drawer open={Boolean(movementRow)} onOpenChange={(open) => { if (!open) closeMovementHistory(); }} title={movementRow ? `${movementRow.product_name} · Movimientos` : "Movimientos de inventario"} className="inventory-movement-drawer"><div className="inventory-movement-history">{movementRow && <><p className="settings-note">{movementRow.location_code} · {movementRow.location_name}</p><dl className="inventory-reference-summary"><div><dt>Saldo actual</dt><dd>{numberFormat(Number(movementRow.quantity_on_hand))} {movementRow.unit ?? ""}</dd></div><div><dt>Último movimiento</dt><dd>{movementRow.last_movement_at ? dateTimeFormat(movementRow.last_movement_at) : "Sin movimientos"}</dd></div></dl></>}<DataState loading={movementLoading} error={movementError} errorAction={<Button variant="secondary" size="sm" onClick={() => void loadMovementHistory()}>Reintentar</Button>} hasData={movementRows.length} emptyTitle="Aún no hay movimientos" empty="Esta existencia no tiene movimientos registrados en el ledger."><div className="table-wrap inventory-movement-table"><table><thead><tr><th>Fecha</th><th>Movimiento</th><th className="number-cell">Variación</th><th className="number-cell">Saldo</th><th>Referencia</th><th>Registró</th></tr></thead><tbody>{movementRows.map((movement) => <tr key={movement.id}><td>{dateTimeFormat(movement.occurred_at)}</td><td>{inventoryMovementLabel(movement.movement_type)}</td><td className="number-cell">{Number(movement.quantity_delta) > 0 ? "+" : ""}{numberFormat(Number(movement.quantity_delta))} {movementRow?.unit ?? ""}</td><td className="number-cell">{numberFormat(Number(movement.balance_after))} {movementRow?.unit ?? ""}</td><td>{movement.reference_label}</td><td>{movement.actor_name ?? "Sin usuario"}</td></tr>)}</tbody></table></div></DataState><DataPagination page={movementPage} total={movementTotal} pageSize={25} label="movimientos" onChange={changeMovementPage} /></div></Drawer>
   </div>;
 }
 
@@ -1488,7 +1585,13 @@ type InventoryReplenishmentRow = {
   shortage_quantity: number;
   suggested_quantity: number;
   updated_at: string;
+  work_status: "unattended" | "in_progress" | "in_transit" | "in_range";
+  work_status_label: string;
+  requisition_id: string | null;
+  requisition_folio: string | null;
 };
+type InventoryReplenishmentWorkStatus = "unattended" | "in_progress" | "in_transit" | "all";
+type InventoryReplenishmentStatusCounts = Record<InventoryReplenishmentWorkStatus, number>;
 type InventoryReplenishmentProduct = {
   product_id: string;
   product_code: string;
@@ -1529,6 +1632,7 @@ function parseReplenishmentBatch(value: string): { lines?: Array<{ product_code:
 function InventoryReplenishmentView({ companyId, permissions }: { companyId: string; permissions: string[] }) {
   const { accessibleLocations } = useSatrapy();
   const { toast } = useToast();
+  const router = useRouter();
   const idempotency = useRef(new OperationIdempotencyKeys()).current;
   const [rows, setRows] = useState<InventoryReplenishmentRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -1537,6 +1641,8 @@ function InventoryReplenishmentView({ companyId, permissions }: { companyId: str
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [locationFilter, setLocationFilter] = useState("all");
   const [belowMinimumOnly, setBelowMinimumOnly] = useState(true);
+  const [workStatus, setWorkStatus] = useState<InventoryReplenishmentWorkStatus>("unattended");
+  const [statusCounts, setStatusCounts] = useState<InventoryReplenishmentStatusCounts>({ unattended: 0, in_progress: 0, in_transit: 0, all: 0 });
   const [policyLocationId, setPolicyLocationId] = useState("");
   const [draftLines, setDraftLines] = useState<InventoryReplenishmentDraftLine[]>([]);
   const [productQuery, setProductQuery] = useState("");
@@ -1547,6 +1653,9 @@ function InventoryReplenishmentView({ companyId, permissions }: { companyId: str
   const [bulkMinimum, setBulkMinimum] = useState("");
   const [bulkMaximum, setBulkMaximum] = useState("");
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
+  const [policyEditorOpen, setPolicyEditorOpen] = useState(false);
+  const [requisitionConfirmationOpen, setRequisitionConfirmationOpen] = useState(false);
+  const [createdRequisition, setCreatedRequisition] = useState<{ id: string; folio: string; lineCount: number } | null>(null);
   const [batch, setBatch] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -1554,24 +1663,30 @@ function InventoryReplenishmentView({ companyId, permissions }: { companyId: str
   const productRequestId = useRef(0);
   const productPickerRef = useRef<HTMLLabelElement>(null);
   const canManage = permissions.includes("manage_inventory_replenishment");
+  const canPrepareRequisition = permissions.includes("create_procurement_requisitions");
+  const canViewProcurement = permissions.includes("view_procurement");
   const locationOptions = [{ value: "all", label: "Todas las ubicaciones" }, ...accessibleLocations.map((location) => ({ value: location.id, label: `${location.external_code} · ${location.name}` }))];
 
   useEffect(() => { const timer = window.setTimeout(() => { setDebouncedSearch(search.trim()); setPage(1); }, 280); return () => window.clearTimeout(timer); }, [search]);
   const load = useCallback(async () => {
     setLoading(true); setError(null);
-    const { data, error: queryError } = await getSupabaseClient().rpc("list_inventory_replenishment_suggestions", {
+    const { data, error: queryError } = await getSupabaseClient().rpc("list_inventory_replenishment_work_queue", {
       p_company_id: companyId,
       p_location_id: locationFilter === "all" ? null : locationFilter,
       p_query: debouncedSearch || null,
       p_below_minimum_only: belowMinimumOnly,
+      p_work_status: workStatus,
       p_page: page,
       p_page_size: DATA_PAGE_SIZE,
     });
-    const result = data as { items?: InventoryReplenishmentRow[]; total?: number } | null;
-    if (!queryError) { setRows(result?.items ?? []); setTotal(result?.total ?? 0); }
+    const result = data as { items?: InventoryReplenishmentRow[]; total?: number; status_counts?: Partial<InventoryReplenishmentStatusCounts> } | null;
+    if (!queryError) {
+      setRows(result?.items ?? []); setTotal(result?.total ?? 0);
+      setStatusCounts({ unattended: result?.status_counts?.unattended ?? 0, in_progress: result?.status_counts?.in_progress ?? 0, in_transit: result?.status_counts?.in_transit ?? 0, all: result?.status_counts?.all ?? 0 });
+    }
     if (queryError) setError("No se pudieron cargar las sugerencias de reabastecimiento.");
     setLoading(false);
-  }, [belowMinimumOnly, companyId, debouncedSearch, locationFilter, page]);
+  }, [belowMinimumOnly, companyId, debouncedSearch, locationFilter, page, workStatus]);
   useEffect(() => { void Promise.resolve().then(load); }, [load]);
   useDismissiblePopover(productPickerRef, productPickerOpen, () => setProductPickerOpen(false));
 
@@ -1663,6 +1778,7 @@ function InventoryReplenishmentView({ companyId, permissions }: { companyId: str
       const result = data as { line_count: number };
       idempotency.clear("inventory-replenishment-configure-items");
       setDraftLines([]); setProductQuery(""); setProductResults([]); setBulkMinimum(""); setBulkMaximum("");
+      setPolicyEditorOpen(false);
       setLocationFilter(policyLocationId); setBelowMinimumOnly(false); setPage(1);
       await load();
       toast({ title: "Políticas configuradas", description: `${result.line_count} políticas actualizadas. No se movió inventario ni se crearon órdenes.`, tone: "success" });
@@ -1686,7 +1802,7 @@ function InventoryReplenishmentView({ companyId, permissions }: { companyId: str
     else {
       const result = data as { line_count: number };
       idempotency.clear("inventory-replenishment-configure");
-      setBatch(""); setBulkImportOpen(false); setLocationFilter(policyLocationId); setBelowMinimumOnly(false); setPage(1);
+      setBatch(""); setBulkImportOpen(false); setPolicyEditorOpen(false); setLocationFilter(policyLocationId); setBelowMinimumOnly(false); setPage(1);
       await load();
       toast({ title: "Políticas configuradas", description: `${result.line_count} políticas actualizadas. No se crearon órdenes ni se movió inventario.`, tone: "success" });
     }
@@ -1694,28 +1810,38 @@ function InventoryReplenishmentView({ companyId, permissions }: { companyId: str
   }
 
   async function prepareRequisition() {
-    if (locationFilter === "all") { toast({ title: "Selecciona una ubicación", description: "Las requisiciones se preparan para una ubicación destino.", tone: "info" }); return; }
+    if (locationFilter === "all") { toast({ title: "Selecciona una ubicación", description: "Las solicitudes de compra se preparan para una ubicación destino.", tone: "info" }); return; }
     setBusy(true);
     const { data, error: rpcError } = await getSupabaseClient().rpc("generate_procurement_requisition_from_replenishment", { p_company_id: companyId, p_location_id: locationFilter, p_target_date: null, p_product_ids: null });
     setBusy(false);
-    if (rpcError) { toast({ title: "No se preparó la requisición", description: inventoryRpcMessage(rpcError, "Revisa los faltantes disponibles."), tone: "error" }); return; }
-    const result = data as { folio?: string; lines?: unknown[] };
-    toast({ title: "Requisición preparada", description: `${result.folio ?? "La requisición"} reúne ${result.lines?.length ?? 0} faltantes y está lista para cotizar.`, tone: "success" });
+    if (rpcError) { toast({ title: "No se preparó la solicitud", description: inventoryRpcMessage(rpcError, "Revisa los faltantes disponibles."), tone: "error" }); return; }
+    const result = data as { id?: string; folio?: string; lines?: unknown[] };
+    setRequisitionConfirmationOpen(false);
+    if (result.id && result.folio) setCreatedRequisition({ id: result.id, folio: result.folio, lineCount: result.lines?.length ?? 0 });
+    toast({ title: "Solicitud creada", description: `${result.folio ?? "La solicitud"} reúne ${result.lines?.length ?? 0} faltantes y está lista para cotizar.`, tone: "success" });
     await load();
   }
 
-  function clearFilters() { setSearch(""); setDebouncedSearch(""); setLocationFilter("all"); setBelowMinimumOnly(true); setPage(1); }
+  function clearFilters() { setSearch(""); setDebouncedSearch(""); setLocationFilter("all"); setBelowMinimumOnly(true); setWorkStatus("unattended"); setPage(1); }
+  function selectWorkStatus(value: InventoryReplenishmentWorkStatus) { setWorkStatus(value); setPage(1); }
+  function openCreatedRequisition(id: string | null) { if (id) router.push(`/satrapy/compras/abastecimiento?solicitud=${id}`); }
+  function createForLocation(locationId: string) { setLocationFilter(locationId); setPage(1); setRequisitionConfirmationOpen(true); }
   const empty = belowMinimumOnly ? "No hay productos bajo su mínimo con los filtros actuales." : "No hay políticas de mínimos y máximos configuradas con los filtros actuales.";
-  return <div className="content-frame inventory-replenishment"><PageHeading eyebrow="Planeación de inventario" title="Reabastecimiento" description="Las sugerencias se calculan sobre la existencia vigente y solo indican cuánto recuperar hasta el máximo. No crean órdenes de compra." action={<><Button variant="secondary" disabled={locationFilter === "all" || !rows.some((row) => row.is_below_minimum)} loading={busy} onClick={() => void prepareRequisition()}>Preparar requisición</Button><Button variant="secondary" loading={loading} onClick={() => void load()}><RefreshCw size={16} /> Actualizar</Button></>} />
-    {canManage && <section className="inventory-transfer-builder inventory-replenishment-builder"><header><div><span className="eyebrow">Políticas de inventario</span><h2>Configurar mínimos y máximos</h2></div><Button variant="secondary" size="sm" disabled={!policyLocationId} onClick={() => setBulkImportOpen(true)}>Importar políticas</Button></header>
+  const selectedReplenishmentLocation = accessibleLocations.find((location) => location.id === locationFilter) ?? null;
+  const workStatusOptions: Array<{ value: InventoryReplenishmentWorkStatus; label: string }> = [{ value: "unattended", label: "Sin atender" }, { value: "in_progress", label: "En proceso" }, { value: "in_transit", label: "En tránsito" }, { value: "all", label: "Todos" }];
+  return <div className="content-frame inventory-replenishment"><PageHeading eyebrow="Planeación de inventario" title="Reabastecimiento" description="Consulta faltantes por ubicación y prepara una solicitud de compra cuando corresponda. No crea órdenes automáticamente." action={<>{canManage && <Button variant="secondary" onClick={() => setPolicyEditorOpen(true)}>Configurar mínimos y máximos</Button>}{canPrepareRequisition && <Button variant="secondary" disabled={locationFilter === "all" || statusCounts.unattended === 0} loading={busy} onClick={() => setRequisitionConfirmationOpen(true)}>Crear solicitud</Button>}<Button variant="secondary" loading={loading} onClick={() => void load()}><RefreshCw size={16} /> Actualizar</Button></>} />
+    {canManage && <Drawer open={policyEditorOpen} onOpenChange={(open) => { if (!busy) setPolicyEditorOpen(open); }} title="Configurar mínimos y máximos" className="inventory-replenishment-drawer"><div className="inventory-replenishment-policy-editor"><p className="settings-note">Define mínimos y máximos por ubicación. Esta configuración no mueve inventario ni crea órdenes de compra.</p><section className="inventory-transfer-builder inventory-replenishment-builder"><header><div><span className="eyebrow">Políticas de inventario</span><h2>Selecciona los productos</h2></div><Button variant="secondary" size="sm" disabled={!policyLocationId} onClick={() => setBulkImportOpen(true)}>Importar políticas</Button></header>
       <div className="inventory-transfer-route"><label>Ubicación<Select ariaLabel="Ubicación para configurar políticas" value={policyLocationId || "unselected"} onValueChange={selectPolicyLocation} options={[{ value: "unselected", label: "Selecciona ubicación", disabled: true }, ...accessibleLocations.map((location) => ({ value: location.id, label: `${location.external_code} · ${location.name}` }))]} disabled={draftLines.length > 0} /></label></div>
       <label ref={productPickerRef} className="inventory-transfer-product-search">Agregar productos<Input role="combobox" aria-expanded={productPickerOpen} aria-controls="inventory-replenishment-product-options" aria-label="Buscar productos para reabastecimiento" value={productQuery} disabled={!policyLocationId || draftLines.length >= 500} onFocus={() => setProductPickerOpen(true)} onClick={() => setProductPickerOpen(true)} onChange={(event) => { setProductQuery(event.target.value); setProductPickerOpen(true); }} placeholder={policyLocationId ? "Buscar por producto, SKU, código o grupo" : "Selecciona primero la ubicación"} />{policyLocationId && productPickerOpen && <div id="inventory-replenishment-product-options" className="inventory-transfer-product-results inventory-replenishment-product-results" role="listbox">{productSearching ? <p>Buscando productos…</p> : productResults.length ? <><div className="inventory-replenishment-result-actions"><Button variant="ghost" size="sm" onClick={() => setProductPickerOpen(false)}>Cerrar</Button><Button variant="ghost" size="sm" onClick={selectVisibleProducts}>Seleccionar resultados</Button><Button variant="primary" size="sm" disabled={!selectedProductIds.size} onClick={addSelectedProducts}>Agregar seleccionados ({selectedProductIds.size})</Button></div>{productResults.map((product) => { const alreadyAdded = draftLines.some((line) => line.product_id === product.product_id); const selected = selectedProductIds.has(product.product_id); return <label className={alreadyAdded ? "is-disabled" : ""} key={product.product_id}><input type="checkbox" checked={selected || alreadyAdded} disabled={alreadyAdded} onChange={() => toggleProduct(product.product_id)} /><span><strong>{product.product_name}</strong><small>{product.product_code} · {product.unit ?? "Sin unidad"}{product.product_group ? ` · ${product.product_group}` : ""}</small></span><span><b>{numberFormat(Number(product.quantity_on_hand))}</b><small>{product.has_policy ? `Min ${numberFormat(Number(product.minimum_quantity))} · Max ${numberFormat(Number(product.maximum_quantity))}` : "Sin política"}</small></span></label>; })}</> : <p>No hay productos para esta búsqueda.</p>}</div>}</label>
       {draftLines.length ? <><div className="inventory-replenishment-bulk-limits"><label>Mínimo para todas<Input type="number" min="0.000001" step="0.000001" value={bulkMinimum} onChange={(event) => setBulkMinimum(event.target.value)} /></label><label>Máximo para todas<Input type="number" min="0.000001" step="0.000001" value={bulkMaximum} onChange={(event) => setBulkMaximum(event.target.value)} /></label><Button variant="secondary" disabled={!bulkMinimum || !bulkMaximum} onClick={applyBulkLimits}>Aplicar a todas</Button></div><div className="table-wrap inventory-transfer-draft-lines inventory-replenishment-draft-lines"><table><thead><tr><th>Producto</th><th className="number-cell">Existencia</th><th className="number-cell">Mínimo</th><th className="number-cell">Máximo</th><th aria-label="Acciones" /></tr></thead><tbody>{draftLines.map((line) => { const minimum = Number(line.minimum); const maximum = Number(line.maximum); const invalid = !Number.isFinite(minimum) || minimum <= 0 || !Number.isFinite(maximum) || maximum < minimum; return <tr key={line.product_id}><td><strong>{line.product_name}</strong><small>{line.product_code} · {line.unit ?? "Sin unidad"}</small></td><td className="number-cell">{numberFormat(Number(line.quantity_on_hand))}</td><td className="number-cell"><Input aria-label={`Mínimo de ${line.product_name}`} aria-invalid={invalid} type="number" min="0.000001" step="0.000001" value={line.minimum} onChange={(event) => updateDraftPolicy(line.product_id, "minimum", event.target.value)} /></td><td className="number-cell"><Input aria-label={`Máximo de ${line.product_name}`} aria-invalid={invalid} type="number" min="0.000001" step="0.000001" value={line.maximum} onChange={(event) => updateDraftPolicy(line.product_id, "maximum", event.target.value)} />{invalid && <small className="inventory-transfer-line-error">Revisa mínimo y máximo</small>}</td><td><Button variant="ghost" size="sm" onClick={() => setDraftLines((current) => current.filter((item) => item.product_id !== line.product_id))}>Quitar</Button></td></tr>; })}</tbody></table></div></> : <div className="inventory-transfer-builder-empty"><strong>Aún no hay productos</strong><span>Busca y selecciona varios productos para configurar sus políticas.</span></div>}
       <footer><span><strong>{draftLines.length}</strong> de 500 políticas{(!policyLocationId || !draftLines.length || invalidDraftLines.length > 0) && <small id="replenishment-policy-requirement" className="inventory-replenishment-requirement">{!policyLocationId ? "Selecciona una ubicación para habilitar el guardado." : !draftLines.length ? "Agrega al menos un producto para habilitar el guardado." : "Corrige los mínimos y máximos marcados antes de guardar."}</small>}</span><div>{draftLines.length > 0 && <Button variant="secondary" disabled={busy} onClick={() => { setDraftLines([]); setProductQuery(""); setSelectedProductIds(new Set()); }}>Limpiar</Button>}<Button variant="primary" loading={busy} aria-describedby={!policyLocationId || !draftLines.length || invalidDraftLines.length > 0 ? "replenishment-policy-requirement" : undefined} disabled={!policyLocationId || !draftLines.length || invalidDraftLines.length > 0} onClick={() => void savePolicyItems()}>Guardar políticas</Button></div></footer>
-    </section>}
-    <DataToolbar search={search} onSearchChange={setSearch} placeholder="Buscar producto o SKU" filters={<><Select value={locationFilter} onValueChange={(value) => { setLocationFilter(value); setPage(1); }} ariaLabel="Filtrar reabastecimiento por ubicación" options={locationOptions} /><Select value={belowMinimumOnly ? "below" : "all"} onValueChange={(value) => { setBelowMinimumOnly(value === "below"); setPage(1); }} ariaLabel="Mostrar políticas" options={[{ value: "below", label: "Solo bajo mínimo" }, { value: "all", label: "Todas las políticas" }]} /></>} activeFilters={(search.trim() ? 1 : 0) + (locationFilter !== "all" ? 1 : 0) + (belowMinimumOnly ? 0 : 1)} onClear={clearFilters} results={total} />
-    <DataRefreshStatus loading={loading} hasData={rows.length} /><DataState loading={loading && rows.length === 0} error={error} errorAction={<Button size="sm" onClick={() => void load()}>Reintentar</Button>} hasData={rows.length} emptyTitle="No hay sugerencias de reabastecimiento." empty={empty}><div className="table-wrap surface-table"><table><thead><tr><th>Producto</th><th>Ubicación</th><th className="number-cell">Existencia</th><th className="number-cell">Mínimo</th><th className="number-cell">Máximo</th><th className="number-cell">Sugerido</th><th>Estado</th></tr></thead><tbody>{rows.map((row) => <tr key={row.policy_id}><td><strong>{row.product_name}</strong><small>{row.product_code} · {row.unit ?? "Sin unidad"}</small></td><td><span className="location-chip">{row.location_code}</span> {row.location_name}</td><td className="number-cell">{numberFormat(Number(row.quantity_on_hand))}</td><td className="number-cell">{numberFormat(Number(row.minimum_quantity))}</td><td className="number-cell">{numberFormat(Number(row.maximum_quantity))}</td><td className="number-cell"><strong>{row.is_below_minimum ? numberFormat(Number(row.suggested_quantity)) : "—"}</strong>{row.is_below_minimum && <small>Faltan {numberFormat(Number(row.shortage_quantity))} al mínimo</small>}</td><td><Badge tone={row.is_below_minimum ? "warning" : "success"}>{row.is_below_minimum ? "Reabastecer" : "En rango"}</Badge></td></tr>)}</tbody></table></div></DataState><DataPagination page={page} total={total} pageSize={DATA_PAGE_SIZE} onChange={setPage} />
+    </section></div></Drawer>}
+    {createdRequisition && <section className="inventory-replenishment-created" role="status"><div><strong>Solicitud {createdRequisition.folio} creada</strong><span>{createdRequisition.lineCount} faltantes quedaron listos para cotizar.</span></div><div>{canViewProcurement && <Button variant="primary" size="sm" onClick={() => openCreatedRequisition(createdRequisition.id)}>Ver solicitud</Button>}<Button variant="secondary" size="sm" onClick={() => setCreatedRequisition(null)}>Seguir revisando</Button></div></section>}
+    <section className="inventory-replenishment-work-status" aria-label="Seguimiento de faltantes"><span className="eyebrow">Seguimiento de faltantes</span><div className="bi-segmented inventory-replenishment-status-tabs" role="group" aria-label="Filtrar faltantes por seguimiento">{workStatusOptions.map((option) => <button type="button" key={option.value} className={workStatus === option.value ? "is-active" : ""} aria-pressed={workStatus === option.value} onClick={() => selectWorkStatus(option.value)}><span>{option.label}</span><b>{numberFormat(statusCounts[option.value])}</b></button>)}</div></section>
+    <DataToolbar search={search} onSearchChange={setSearch} placeholder="Buscar producto o SKU" filters={<><Select value={locationFilter} onValueChange={(value) => { setLocationFilter(value); setPage(1); }} ariaLabel="Filtrar reabastecimiento por ubicación" options={locationOptions} /><Select value={belowMinimumOnly ? "below" : "all"} onValueChange={(value) => { setBelowMinimumOnly(value === "below"); setPage(1); }} ariaLabel="Mostrar políticas" options={[{ value: "below", label: "Solo bajo mínimo" }, { value: "all", label: "Todas las políticas" }]} /></>} activeFilters={(search.trim() ? 1 : 0) + (locationFilter !== "all" ? 1 : 0) + (belowMinimumOnly ? 0 : 1) + (workStatus !== "unattended" ? 1 : 0)} onClear={clearFilters} results={total} />
+    <DataRefreshStatus loading={loading} hasData={rows.length} /><DataState loading={loading && rows.length === 0} error={error} errorAction={<Button size="sm" onClick={() => void load()}>Reintentar</Button>} hasData={rows.length} emptyTitle={workStatus === "unattended" ? "No hay faltantes sin atender." : "No hay resultados en este seguimiento."} empty={empty}><div className="table-wrap surface-table"><table><thead><tr><th>Producto</th><th>Ubicación</th><th className="number-cell">Existencia</th><th className="number-cell">Mínimo</th><th className="number-cell">Máximo</th><th className="number-cell">Sugerido</th><th>Seguimiento</th><th aria-label="Acciones" /></tr></thead><tbody>{rows.map((row) => <tr key={row.policy_id}><td><strong>{row.product_name}</strong><small>{row.product_code} · {row.unit ?? "Sin unidad"}</small></td><td><span className="location-chip">{row.location_code}</span> {row.location_name}</td><td className="number-cell">{numberFormat(Number(row.quantity_on_hand))}</td><td className="number-cell">{numberFormat(Number(row.minimum_quantity))}</td><td className="number-cell">{numberFormat(Number(row.maximum_quantity))}</td><td className="number-cell"><strong>{row.is_below_minimum ? numberFormat(Number(row.suggested_quantity)) : "—"}</strong>{row.is_below_minimum && <small>Faltan {numberFormat(Number(row.shortage_quantity))} al mínimo</small>}</td><td><Badge tone={row.work_status === "unattended" ? "warning" : row.work_status === "in_transit" ? "success" : "neutral"}>{row.work_status_label}</Badge>{row.requisition_folio && <small className="inventory-replenishment-reference">{row.requisition_folio}</small>}</td><td>{row.work_status === "unattended" && canPrepareRequisition ? <Button variant="secondary" size="sm" onClick={() => createForLocation(row.location_id)}>Crear solicitud</Button> : row.requisition_id && canViewProcurement ? <Button variant="secondary" size="sm" onClick={() => openCreatedRequisition(row.requisition_id)}>Ver solicitud</Button> : <span className="table-muted">—</span>}</td></tr>)}</tbody></table></div></DataState><DataPagination page={page} total={total} pageSize={DATA_PAGE_SIZE} onChange={setPage} />
     <Modal open={bulkImportOpen} onOpenChange={(open) => !busy && setBulkImportOpen(open)} eyebrow="Carga secundaria" title="Importar políticas por SKU" description="Úsalo para pegar datos preparados en Excel. Para operación diaria utiliza la selección visual." footer={<><Button variant="secondary" disabled={busy} onClick={() => setBulkImportOpen(false)}>Cancelar</Button><Button variant="primary" loading={busy} disabled={!policyLocationId || !batch.trim()} onClick={() => void importPolicies()}>Importar y guardar</Button></>}><label className="operation-reason">Una política por renglón: SKU,mínimo,máximo<textarea value={batch} onChange={(event) => setBatch(event.target.value)} rows={7} placeholder={"FERT-001,10,30\nRIEGO-020,5,15"} /></label><small>Se validarán entre 1 y 500 SKU distintos antes de guardar.</small></Modal>
+    <Modal open={requisitionConfirmationOpen} onOpenChange={(open) => !busy && setRequisitionConfirmationOpen(open)} eyebrow="Solicitud de compra" title="Crear solicitud de compra" description={`Se creará una solicitud para todos los faltantes elegibles de ${selectedReplenishmentLocation ? `${selectedReplenishmentLocation.external_code} · ${selectedReplenishmentLocation.name}` : "la ubicación seleccionada"}. La búsqueda y los filtros de productos no limitan esta solicitud.`} footer={<><Button variant="secondary" disabled={busy} onClick={() => setRequisitionConfirmationOpen(false)}>Volver</Button><Button variant="primary" loading={busy} disabled={locationFilter === "all"} onClick={() => void prepareRequisition()}>Crear solicitud</Button></>}><p className="settings-note">Podrás abrir la solicitud en Compras para cotizar y decidir la compra después; no se creará una orden de compra.</p></Modal>
   </div>;
 }
 
@@ -1790,6 +1916,7 @@ function InventoryTransfersView({ companyId, permissions }: { companyId: string;
   const [productSearching, setProductSearching] = useState(false);
   const [productPickerOpen, setProductPickerOpen] = useState(false);
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
+  const [transferConfirmation, setTransferConfirmation] = useState<"dispatch" | "receive" | null>(null);
   const [batch, setBatch] = useState("");
   const [selectedTransferId, setSelectedTransferId] = useState<string | null>(null);
   const [lines, setLines] = useState<InventoryTransferLine[]>([]);
@@ -1973,7 +2100,7 @@ function InventoryTransfersView({ companyId, permissions }: { companyId: string;
       p_client_request_id: idempotency.get("inventory-transfer-transit", fingerprint),
     });
     if (rpcError) toast({ title: "No pasó a tránsito", description: inventoryRpcMessage(rpcError, "Verifica la existencia vigente del origen."), tone: "error" });
-    else { idempotency.clear("inventory-transfer-transit"); await Promise.all([loadTransfers(), loadLines()]); toast({ title: "Transferencia en tránsito", description: "El origen fue descontado y el movimiento quedó en el ledger.", tone: "success" }); }
+    else { idempotency.clear("inventory-transfer-transit"); setTransferConfirmation(null); await Promise.all([loadTransfers(), loadLines()]); toast({ title: "Transferencia en tránsito", description: "El origen fue descontado y el movimiento quedó en el ledger.", tone: "success" }); }
     setBusy(false);
   }
 
@@ -1986,7 +2113,7 @@ function InventoryTransfersView({ companyId, permissions }: { companyId: string;
       p_client_request_id: idempotency.get("inventory-transfer-receive", fingerprint),
     });
     if (rpcError) toast({ title: "No se recibió la transferencia", description: inventoryRpcMessage(rpcError, "Intenta nuevamente."), tone: "error" });
-    else { idempotency.clear("inventory-transfer-receive"); await Promise.all([loadTransfers(), loadLines()]); toast({ title: "Transferencia recibida", description: "El destino fue abonado y el movimiento quedó en el ledger.", tone: "success" }); }
+    else { idempotency.clear("inventory-transfer-receive"); setTransferConfirmation(null); await Promise.all([loadTransfers(), loadLines()]); toast({ title: "Transferencia recibida", description: "El destino fue abonado y el movimiento quedó en el ledger.", tone: "success" }); }
     setBusy(false);
   }
 
@@ -1999,8 +2126,9 @@ function InventoryTransfersView({ companyId, permissions }: { companyId: string;
     </section>}
     <DataToolbar filters={<Select value={statusFilter} onValueChange={(value) => { setStatusFilter(value); setPage(1); setSelectedTransferId(null); }} ariaLabel="Filtrar transferencias por estado" options={[{ value: "all", label: "Todos los estados" }, { value: "sent", label: "Preparadas" }, { value: "in_transit", label: "En tránsito" }, { value: "received", label: "Recibidas" }]} />} activeFilters={statusFilter !== "all" ? 1 : 0} onClear={() => { setStatusFilter("all"); setPage(1); }} results={total} />
     <div className="inventory-transfer-layout"><section><DataState loading={loading} error={error} errorAction={<Button size="sm" onClick={() => void loadTransfers()}>Reintentar</Button>} hasData={transfers.length} empty="Aún no hay transferencias entre ubicaciones."><div className="table-wrap surface-table"><table><thead><tr><th>Origen</th><th>Destino</th><th>Estado</th><th>Partidas</th><th>Envío</th></tr></thead><tbody>{transfers.map((transfer) => <InteractiveTableRow className={selectedTransferId === transfer.id ? "is-selected" : ""} selected={selectedTransferId === transfer.id} label={`Abrir transferencia de ${transfer.source_location_name} a ${transfer.destination_location_name}`} key={transfer.id} onActivate={() => { setSelectedTransferId(transfer.id); setLinePage(1); }}><td><strong>{transfer.source_location_name}</strong><small>{transfer.source_location_code}</small></td><td><strong>{transfer.destination_location_name}</strong><small>{transfer.destination_location_code}</small></td><td><Badge tone={inventoryTransferTone(transfer.status)}>{inventoryTransferStatusLabel(transfer.status)}</Badge></td><td>{transfer.line_count}</td><td>{dateTimeFormat(transfer.sent_at)}</td></InteractiveTableRow>)}</tbody></table></div></DataState><DataPagination page={page} total={total} pageSize={25} onChange={setPage} /></section>
-      <section className="inventory-transfer-detail">{!selectedTransfer ? <div className="customer-master-empty">Selecciona una transferencia para consultar sus partidas o avanzar su estado.</div> : <><header><div><span className="eyebrow">{selectedTransfer.source_location_code} → {selectedTransfer.destination_location_code}</span><h2>{selectedTransfer.source_location_name} a {selectedTransfer.destination_location_name}</h2></div><Badge tone={inventoryTransferTone(selectedTransfer.status)}>{inventoryTransferStatusLabel(selectedTransfer.status)}</Badge></header><p className="settings-note">{selectedTransfer.line_count} partidas · Preparada por {selectedTransfer.sent_by_name ?? "Usuario"} el {dateTimeFormat(selectedTransfer.sent_at)}.</p><DataState loading={lineLoading} error={null} hasData={lines.length} empty="La transferencia no contiene partidas."><div className="table-wrap"><table><thead><tr><th>Producto</th><th className="number-cell">Cantidad</th><th>Salida</th><th>Recepción</th></tr></thead><tbody>{lines.map((line) => <tr key={line.id}><td><strong>{line.product_name}</strong><small>{line.product_code} · {line.unit ?? "Sin unidad"}</small></td><td className="number-cell">{numberFormat(Number(line.quantity))}</td><td>{line.dispatched ? "Registrada" : "Pendiente"}</td><td>{line.received ? "Registrada" : "Pendiente"}</td></tr>)}</tbody></table></div></DataState><DataPagination page={linePage} total={lineTotal} pageSize={DATA_PAGE_SIZE} onChange={setLinePage} /><div className="inventory-transfer-actions">{selectedTransfer.status === "sent" && sourceAccessible && <Button variant="primary" loading={busy} onClick={() => void markInTransit()}>Despachar transferencia</Button>}{selectedTransfer.status === "in_transit" && destinationAccessible && <Button variant="primary" loading={busy} onClick={() => void receiveTransfer()}>Confirmar recepción completa</Button>}{selectedTransfer.status === "sent" && <small>Al despachar se descuenta el inventario del origen.</small>}{selectedTransfer.status === "in_transit" && <small>Confirma únicamente después de verificar todas las partidas en el destino.</small>}{selectedTransfer.status === "received" && <small>Transferencia terminada y conciliada en el ledger.</small>}</div></>}</section></div>
+      <section className="inventory-transfer-detail">{!selectedTransfer ? <div className="customer-master-empty">Selecciona una transferencia para consultar sus partidas o avanzar su estado.</div> : <><header><div><span className="eyebrow">{selectedTransfer.source_location_code} → {selectedTransfer.destination_location_code}</span><h2>{selectedTransfer.source_location_name} a {selectedTransfer.destination_location_name}</h2></div><Badge tone={inventoryTransferTone(selectedTransfer.status)}>{inventoryTransferStatusLabel(selectedTransfer.status)}</Badge></header><p className="settings-note">{selectedTransfer.line_count} partidas · Preparada por {selectedTransfer.sent_by_name ?? "Usuario"} el {dateTimeFormat(selectedTransfer.sent_at)}.</p><DataState loading={lineLoading} error={null} hasData={lines.length} empty="La transferencia no contiene partidas."><div className="table-wrap"><table><thead><tr><th>Producto</th><th className="number-cell">Cantidad</th><th>Salida</th><th>Recepción</th></tr></thead><tbody>{lines.map((line) => <tr key={line.id}><td><strong>{line.product_name}</strong><small>{line.product_code} · {line.unit ?? "Sin unidad"}</small></td><td className="number-cell">{numberFormat(Number(line.quantity))}</td><td>{line.dispatched ? "Registrada" : "Pendiente"}</td><td>{line.received ? "Registrada" : "Pendiente"}</td></tr>)}</tbody></table></div></DataState><DataPagination page={linePage} total={lineTotal} pageSize={DATA_PAGE_SIZE} onChange={setLinePage} /><div className="inventory-transfer-actions">{canOperate && selectedTransfer.status === "sent" && sourceAccessible && <Button variant="primary" loading={busy} onClick={() => setTransferConfirmation("dispatch")}>Despachar transferencia</Button>}{canOperate && selectedTransfer.status === "in_transit" && destinationAccessible && <Button variant="primary" loading={busy} onClick={() => setTransferConfirmation("receive")}>Confirmar recepción completa</Button>}{selectedTransfer.status === "sent" && <small>Al despachar se descuenta el inventario del origen.</small>}{selectedTransfer.status === "in_transit" && <small>Confirma únicamente después de verificar todas las partidas en el destino.</small>}{selectedTransfer.status === "received" && <small>Transferencia terminada y conciliada en el ledger.</small>}</div></>}</section></div>
     <Modal open={bulkImportOpen} onOpenChange={(open) => !busy && setBulkImportOpen(open)} eyebrow="Carga secundaria" title="Importar partidas por SKU" description="Úsalo para datos preparados por otro sistema. Para operación diaria utiliza el buscador visual." footer={<><Button variant="secondary" disabled={busy} onClick={() => setBulkImportOpen(false)}>Cancelar</Button><Button variant="primary" loading={busy} disabled={!sourceLocationId || !destinationLocationId || !batch.trim()} onClick={() => void createTransferFromBatch()}>Importar y preparar</Button></>}><label className="operation-reason">Una partida por renglón: SKU,cantidad<textarea value={batch} onChange={(event) => setBatch(event.target.value)} rows={7} placeholder={"FERT-001,12\nRIEGO-020,4"} /></label><small>Se validarán entre 1 y 500 SKU distintos antes de crear la transferencia.</small></Modal>
+    <Modal open={transferConfirmation !== null} onOpenChange={(open) => !busy && !open && setTransferConfirmation(null)} eyebrow="Movimiento de inventario" title={transferConfirmation === "dispatch" ? "Despachar transferencia" : "Confirmar recepción completa"} description={transferConfirmation === "dispatch" ? `Se descontarán ${selectedTransfer?.line_count ?? 0} partidas de ${selectedTransfer?.source_location_name ?? "la ubicación de origen"} y la transferencia quedará en tránsito.` : `Se abonarán ${selectedTransfer?.line_count ?? 0} partidas en ${selectedTransfer?.destination_location_name ?? "la ubicación de destino"} y la transferencia quedará recibida.`} footer={<><Button variant="secondary" disabled={busy} onClick={() => setTransferConfirmation(null)}>Volver</Button><Button variant="primary" loading={busy} onClick={() => void (transferConfirmation === "dispatch" ? markInTransit() : receiveTransfer())}>{transferConfirmation === "dispatch" ? "Despachar transferencia" : "Confirmar recepción"}</Button></>}><p className="settings-note">{selectedTransfer ? `${selectedTransfer.source_location_code} · ${selectedTransfer.source_location_name} → ${selectedTransfer.destination_location_code} · ${selectedTransfer.destination_location_name}` : "Verifica las ubicaciones antes de confirmar."}</p></Modal>
   </div>;
 }
 
@@ -2366,7 +2494,7 @@ function SupplierPromotionAudit({ companyId }: { companyId: string }) {
   const [rows,setRows]=useState<Row[]>([]); const [loading,setLoading]=useState(true); const [error,setError]=useState<string|null>(null);
   const load=useCallback(async()=>{setLoading(true);const {data,error:rpcError}=await getSupabaseClient().rpc("list_alpha_purchasing_import_batches",{p_company_id:companyId,p_page:1,p_page_size:20});setRows(((data as {items?:Row[]}|null)?.items??[]));setError(rpcError?.message?presentImportedSourceText(rpcError.message):null);setLoading(false);},[companyId]);
   useEffect(()=>{void Promise.resolve().then(load);},[load]);
-  return <section className="import-audit-panel supplier-audit-frame"><div className="import-audit-panel-heading"><div><h2>Promoción de proveedores</h2><p>Resultado auditable del maestro de proveedores; las demás etapas permanecen como evidencia.</p></div><Button variant="secondary" onClick={()=>void load()}><RefreshCw size={16}/> Actualizar</Button></div><DataState loading={loading} error={error} hasData={rows.length} empty="Aún no hay paquetes de importación de compras."><div className="table-wrap surface-table"><table><thead><tr><th>Corte</th><th>Staging</th><th>Promoción</th><th>Excepciones</th><th>Etapas no creadas</th></tr></thead><tbody>{rows.map(row=><tr key={row.id}><td><strong>{dateOnlyFormat(row.cutoff_date)}</strong><small>{row.summary.suppliers??0} proveedores · {row.summary.error_count??0} errores · {row.summary.warning_count??0} alertas</small></td><td><Badge tone={row.status==="staged"?"info":row.status==="validation_failed"?"danger":"neutral"}>{statusLabel(row.status)}</Badge></td><td>{row.supplier_promotion_completed_at?<><Badge tone={(row.supplier_promotion_summary.pending_exceptions??0)>0?"warning":"success"}>{row.supplier_promotion_summary.promoted??0}/{row.supplier_promotion_summary.source_suppliers??row.summary.suppliers??0}</Badge><small>{dateTimeFormat(row.supplier_promotion_completed_at)}</small></>:<span>Sin promover</span>}</td><td>{row.supplier_promotion_summary.pending_exceptions??0}</td><td><small>{row.supplier_promotion_summary.purchase_orders_created??0} OC · {row.supplier_promotion_summary.payables_created??0} CxP · {row.supplier_promotion_summary.payments_created??0} pagos</small></td></tr>)}</tbody></table></div></DataState></section>;
+  return <section className="import-audit-panel supplier-audit-frame"><div className="import-audit-panel-heading"><div><h2>Promoción de proveedores</h2><p>Resultado auditable del maestro de proveedores; las demás etapas permanecen como evidencia.</p></div><Button variant="secondary" onClick={()=>void load()}><RefreshCw size={16}/> Actualizar</Button></div><DataState loading={loading} error={error} hasData={rows.length} empty="Aún no hay paquetes de importación de compras."><div className="table-wrap surface-table"><table><thead><tr><th>Corte</th><th>Staging</th><th>Promoción</th><th>Excepciones</th><th>Etapas no creadas</th></tr></thead><tbody>{rows.map(row=><tr key={row.id}><td><strong>{dateOnlyFormat(row.cutoff_date)}</strong><small>{row.summary.suppliers??0} proveedores · {row.summary.error_count??0} errores · {row.summary.warning_count??0} alertas</small></td><td><Badge tone={row.status==="staged"?"info":row.status==="validation_failed"?"danger":"neutral"}>{statusLabel(row.status)}</Badge></td><td>{row.supplier_promotion_completed_at?<><Badge tone={(row.supplier_promotion_summary.pending_exceptions??0)>0?"warning":"success"}>{row.supplier_promotion_summary.promoted??0}/{row.supplier_promotion_summary.source_suppliers??row.summary.suppliers??0}</Badge><small>{dateTimeFormat(row.supplier_promotion_completed_at)}</small></>:<span>Sin promover</span>}</td><td>{row.supplier_promotion_summary.pending_exceptions??0}</td><td><small>{row.supplier_promotion_summary.purchase_orders_created??0} órdenes de compra · {row.supplier_promotion_summary.payables_created??0} CxP · {row.supplier_promotion_summary.payments_created??0} pagos</small></td></tr>)}</tbody></table></div></DataState></section>;
 }
 
 
@@ -2389,7 +2517,7 @@ function dateOnlyFormat(value: string) { return new Intl.DateTimeFormat("es-MX",
 function dateTimeFormat(value: string) { return new Intl.DateTimeFormat("es-MX", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)); }
 function statusLabel(status: string) { return status === "completed" ? "Completado" : status === "failed" ? "Fallido" : status === "discarded" ? "Descartado" : status === "expired" ? "Vencido" : status === "validation_failed" ? "Validación fallida" : status === "staged" ? "En staging" : "Procesando"; }
 function importTypeLabel(type: string) { return type === "products" ? "Productos" : type === "inventory" ? "Inventario" : type === "prices" ? "Precios" : type === "costs" ? "Costos" : type === "collaborators" ? "Colaboradores" : type; }
-function inventoryMovementLabel(type: string) { return type === "opening_snapshot" ? "Saldo inicial" : type === "sale" ? "Venta" : type === "controlled_adjustment" ? "Ajuste controlado" : type === "physical_count_adjustment" ? "Conteo físico" : type === "transfer_out" ? "Salida por transferencia" : type === "transfer_in" ? "Entrada por transferencia" : type; }
+function inventoryMovementLabel(type: string) { return type === "opening_snapshot" ? "Saldo inicial" : type === "sale" ? "Venta" : type === "sale_reversal" ? "Cancelación de venta" : type === "sale_return" ? "Devolución de venta" : type === "controlled_adjustment" ? "Ajuste controlado" : type === "physical_count_adjustment" ? "Conteo físico" : type === "transfer_out" ? "Salida por transferencia" : type === "transfer_in" ? "Entrada por transferencia" : type === "purchase_receipt" ? "Recepción de compra" : type === "purchase_receipt_reversal" ? "Reversa de recepción" : type; }
 function inventoryTransferStatusLabel(status: InventoryTransferStatus) { return status === "sent" ? "Preparada" : status === "in_transit" ? "En tránsito" : "Recibida"; }
 function inventoryTransferTone(status: InventoryTransferStatus): "primary" | "warning" | "success" { return status === "sent" ? "primary" : status === "in_transit" ? "warning" : "success"; }
 function inventoryCountStatusLabel(status: InventoryCountStatus) { return status === "open" ? "En captura" : status === "review" ? "En revisión" : status === "pending_approval" ? "Por aprobar" : status === "posted" ? "Aplicado" : status === "cancelled" ? "Cancelado" : "Rechazado"; }

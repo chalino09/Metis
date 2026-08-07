@@ -21,7 +21,7 @@ test("Compras expone tres vistas principales y conserva los flujos dentro de ell
 
 test("excepciones, comprobantes y REP permanecen en el detalle de su origen", () => {
   assert.match(purchasing, /Excepciones \(\{exceptionTotal\}\)/);
-  assert.match(purchasing, /Comprobantes y REP/);
+  assert.match(purchasing, /Comprobantes y recibo de pago/);
   assert.match(purchasing, /paymentDetail\.documents/);
 });
 

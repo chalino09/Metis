@@ -7,8 +7,11 @@ declare
   v_supplier uuid;
   v_invoice uuid:='72400000-0000-4000-8000-000000000010';
   v_payable uuid:='72400000-0000-4000-8000-000000000011';
+  v_cents_invoice uuid:='72400000-0000-4000-8000-000000000012';
+  v_cents_payable uuid:='72400000-0000-4000-8000-000000000013';
   v_account uuid:=gen_random_uuid();
   v_proposal uuid:=gen_random_uuid();
+  v_cents_proposal uuid:=gen_random_uuid();
   v_payment uuid;
   v_result jsonb;
   v_rejected boolean:=false;
@@ -106,6 +109,42 @@ begin
   perform public.reverse_supplier_payment(v_company,v_payment,'Prueba de reversa','72400000-0000-4000-8000-000000000100');
   if (select outstanding_amount from public.accounts_payable where id=v_payable)<>100 then
     raise exception 'La reversa no restauró la CxP completa.';
+  end if;
+
+  insert into public.supplier_invoices(
+    id,company_id,supplier_id,source_kind,document_type,status,folio,issued_date,due_date,
+    currency_code,exchange_rate,base_currency_code,subtotal,total,base_total,confirmed_at,
+    supplier_payable_term_days_snapshot,due_date_source
+  ) values(
+    v_cents_invoice,v_company,v_supplier,'expense','invoice','confirmed','PP-CENTS',
+    current_date,current_date+30,'MXN',1,'MXN',29,29,29,now(),30,'supplier_terms'
+  );
+  perform public.snapshot_supplier_prompt_payment_terms(v_company,v_supplier,v_cents_invoice);
+  insert into public.accounts_payable(
+    id,company_id,supplier_id,supplier_invoice_id,currency_code,exchange_rate,
+    base_currency_code,original_amount,outstanding_amount,original_base_amount,
+    outstanding_base_amount,issued_date,due_date
+  ) values(
+    v_cents_payable,v_company,v_supplier,v_cents_invoice,'MXN',1,'MXN',29,29,29,29,
+    current_date,current_date+30
+  );
+  v_result:=public.search_supplier_payment_calendar(v_company,'PP-CENTS',null,null,current_date,current_date+60,1,25);
+  if (v_result#>>'{items,0,eligible_prompt_payment,estimated_total}')::numeric<>24.8
+    or (v_result#>>'{items,0,eligible_prompt_payment,estimated_savings}')::numeric<>4.2 then
+    raise exception 'El pronto pago no redondeó pago y descuento a centavos: %',v_result;
+  end if;
+  insert into public.supplier_payment_proposals(id,company_id,supplier_id,currency_code,status,total_proposed)
+  values(v_cents_proposal,v_company,v_supplier,'MXN','draft',24.8);
+  insert into public.supplier_payment_proposal_lines(company_id,proposal_id,accounts_payable_id,proposed_amount,balance_snapshot,due_date_snapshot)
+  values(v_company,v_cents_proposal,v_cents_payable,24.8,29,current_date+30);
+  update public.supplier_payment_proposals set status='approved',submitted_at=now(),approved_at=now() where id=v_cents_proposal;
+  v_result:=public.confirm_supplier_payment(v_company,v_cents_proposal,v_account,current_date,'03','PP-CENTS-001',gen_random_uuid());
+  v_payment:=(v_result->>'id')::uuid;
+  if (select outstanding_amount from public.accounts_payable where id=v_cents_payable)<>0
+    or (select amount from public.supplier_payment_applications where payment_id=v_payment)<>29
+    or (select prompt_payment_discount_amount from public.supplier_payment_applications where payment_id=v_payment)<>4.2
+    or (select total_amount from public.supplier_payments where id=v_payment)<>24.8 then
+    raise exception 'El redondeo a centavos no concilió pago, descuento y saldo.';
   end if;
 
   raise notice 'Días de crédito, descuentos encadenados, liquidación y reversa aprobados.';

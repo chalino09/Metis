@@ -12,6 +12,8 @@ export type SatrapyAppState = {
   membership: CompanyMembership;
 };
 
+export type SatrapyAccessIssue = "membership_missing" | "access_unavailable";
+
 export type QueryCache = {
   get: <T>(key: string) => T | undefined;
   set: <T>(key: string, value: T) => void;
@@ -23,7 +25,7 @@ export type QueryCache = {
 type SatrapyContextValue = {
   configured: boolean;
   loading: boolean;
-  notice: string | null;
+  accessIssue: SatrapyAccessIssue | null;
   appState: SatrapyAppState | null;
   isSuperAdmin: boolean;
   companies: Array<{ id: string; display_name: string }>;
@@ -45,8 +47,13 @@ export function SatrapyProvider({ children }: { children: ReactNode }) {
   const [accessibleLocations, setAccessibleLocations] = useState<LocationRow[]>([]);
   const [previewRole, setPreviewRole] = useState<AppRoleCode | null>(null);
   const [loading, setLoading] = useState(configured);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [accessIssue, setAccessIssue] = useState<SatrapyAccessIssue | null>(null);
   const cacheRef = useRef(new Map<string, unknown>());
+  const appStateRef = useRef<SatrapyAppState | null>(null);
+
+  useEffect(() => {
+    appStateRef.current = appState;
+  }, [appState]);
 
   const queryCache = useMemo<QueryCache>(() => ({
     get: <T,>(key: string) => cacheRef.current.get(key) as T | undefined,
@@ -74,15 +81,17 @@ export function SatrapyProvider({ children }: { children: ReactNode }) {
       return;
     }
     if (showLoading) setLoading(true);
-    setNotice(null);
+    setAccessIssue(null);
+    let hasAuthenticatedUser = false;
     try {
       const supabase = getSupabaseClient();
       const { data: authData, error: authError } = await withAccessTimeout(supabase.auth.getUser());
-      if (authError) throw authError;
       if (!authData.user) {
         clearIdentity();
         return;
       }
+      if (authError) throw authError;
+      hasAuthenticatedUser = true;
       let { data: assignments, error: assignmentsError } = await withAccessTimeout(supabase
         .from("user_roles")
         .select("company_id, role_id, roles(code, display_name)")
@@ -121,7 +130,7 @@ export function SatrapyProvider({ children }: { children: ReactNode }) {
       const selectedCompany = availableCompanies.find((company) => company.id === profile?.default_company_id) ?? availableCompanies[0];
       if (!selectedCompany) {
         clearIdentity();
-        setNotice("No fue posible completar el acceso. Contacta a tu administrador.");
+        setAccessIssue("membership_missing");
         return;
       }
 
@@ -158,10 +167,13 @@ export function SatrapyProvider({ children }: { children: ReactNode }) {
           permissions: [...new Set(permissions)],
         },
       });
-      setNotice(null);
+      setAccessIssue(null);
     } catch {
       clearIdentity();
-      setNotice("No fue posible validar tu acceso. Intenta de nuevo o contacta a tu administrador.");
+      // Sin una identidad confirmada, la ausencia normal de sesión conduce al
+      // formulario limpio. Sólo una sesión válida con un fallo posterior de
+      // acceso merece una pantalla de recuperación.
+      setAccessIssue(hasAuthenticatedUser ? "access_unavailable" : null);
     } finally {
       setLoading(false);
     }
@@ -170,15 +182,24 @@ export function SatrapyProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void Promise.resolve().then(() => loadSession(true));
     if (!configured) return;
-    const { data } = getSupabaseClient().auth.onAuthStateChange((event) => {
-      // La sesión inicial ya se resuelve arriba. Repetirla aquí duplica todas las
-      // consultas de acceso y provoca un segundo montaje visible de la aplicación.
+    const { data } = getSupabaseClient().auth.onAuthStateChange((event, session) => {
+      // Supabase recupera la sesión al volver una pestaña a primer plano y emite
+      // SIGNED_IN otra vez. Si la identidad no cambió, no se debe desmontar el
+      // espacio de trabajo ni desechar las capturas aún no guardadas.
       if (event === "INITIAL_SESSION" || event === "TOKEN_REFRESHED") return;
-      queryCache.clear();
-      void loadSession(event === "SIGNED_IN" || event === "SIGNED_OUT");
+      if (event === "SIGNED_IN" && session?.user.id === appStateRef.current?.userId) return;
+      if (event === "SIGNED_OUT") {
+        clearIdentity();
+        setAccessIssue(null);
+        setLoading(false);
+        return;
+      }
+      if (event !== "SIGNED_IN") return;
+      clearIdentity();
+      void loadSession(true);
     });
     return () => data.subscription.unsubscribe();
-  }, [configured, loadSession, queryCache]);
+  }, [clearIdentity, configured, loadSession]);
 
   const selectCompany = useCallback(async (companyId: string) => {
     if (!appState || !companies.some((company) => company.id === companyId) || companyId === appState.membership.companyId) return;
@@ -186,7 +207,6 @@ export function SatrapyProvider({ children }: { children: ReactNode }) {
       const { error } = await withAccessTimeout(getSupabaseClient().from("profiles").update({ default_company_id: companyId }).eq("id", appState.userId));
       if (error) throw error;
     } catch {
-      setNotice("No se pudo cambiar de empresa. Un administrador debe actualizar tu empresa predeterminada.");
       return;
     }
     queryCache.clear();
@@ -208,7 +228,7 @@ export function SatrapyProvider({ children }: { children: ReactNode }) {
   const value = useMemo<SatrapyContextValue>(() => ({
     configured,
     loading,
-    notice,
+    accessIssue,
     appState: effectiveAppState,
     isSuperAdmin,
     companies,
@@ -218,7 +238,7 @@ export function SatrapyProvider({ children }: { children: ReactNode }) {
     selectCompany,
     refreshAccess: async () => { queryCache.clear(); await loadSession(true); },
     queryCache,
-  }), [accessibleLocations, companies, configured, effectiveAppState, isSuperAdmin, loading, notice, previewRole, queryCache, selectCompany, loadSession]);
+  }), [accessIssue, accessibleLocations, companies, configured, effectiveAppState, isSuperAdmin, loading, previewRole, queryCache, selectCompany, loadSession]);
 
   return <SatrapyContext.Provider value={value}>{children}</SatrapyContext.Provider>;
 }
