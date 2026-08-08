@@ -301,10 +301,21 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .pos-change-summary span { font-size:11px; font-weight:650; }
 .pos-change-summary strong { font-size:17px; font-variant-numeric:tabular-nums; }
 .pos-change-summary.is-insufficient { border-color:#ecd79f; background:var(--warning-soft); color:var(--warning); }
+.pos-connection-status,.pos-sync-conflict { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; column-gap:12px; margin:0 0 14px; border:1px solid #e7cf91; border-radius:var(--radius-lg); background:var(--warning-soft); padding:12px 14px; color:var(--warning); }
+.pos-connection-status { position:fixed; z-index:60; inset-inline-end:24px; inset-block-end:24px; width:min(580px,calc(100vw - 48px)); margin:0; box-shadow:var(--shadow-md); }
+.pos-connection-status__content { display:grid; gap:3px; min-width:0; }
+.pos-connection-status .ui-button,.pos-sync-conflict .ui-button { justify-self:end; white-space:nowrap; }
+.pos-connection-status strong,.pos-sync-conflict strong { color:var(--ink); font-size:12px; }
+.pos-connection-status small,.pos-sync-conflict small { color:var(--muted); font-size:10px; line-height:1.4; }
+.pos-sync-conflict { border-color:#e7b4ae; background:var(--danger-soft); color:var(--danger); }
+.pos-performance-note { color:var(--muted); font-size:9px; line-height:1.4; text-align:center; }
 .ticket-preview__payment { margin-top:4px !important; border-top:1px dashed var(--line); padding-top:8px; }
 .ticket-preview__change { color:var(--ink) !important; font-size:13px !important; font-weight:650; }
 
 @media (max-width:520px) {
+  .pos-connection-status,.pos-sync-conflict { grid-template-columns:auto minmax(0,1fr); align-items:start; }
+  .pos-connection-status { inset-inline:16px; inset-block-end:16px; width:auto; }
+  .pos-connection-status .ui-button,.pos-sync-conflict .ui-button { grid-column:2; justify-self:start; margin-top:5px; }
   .pos-cart { max-height:none; overflow:visible; }
   .pos-cart-lines article { grid-template-columns:1fr; }
   .pos-line-controls { grid-template-columns:30px 64px 30px 1fr; }

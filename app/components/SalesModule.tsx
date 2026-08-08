@@ -7,6 +7,7 @@ import {
   ClipboardList,
   CircleHelp,
   CreditCard,
+  CloudOff,
   Printer,
   ExternalLink,
   Minus,
@@ -32,6 +33,18 @@ import { PriceCatalogManagement } from "@/app/components/PriceCatalogManagement"
 import { printTicketPdf, type TicketBranding } from "@/app/lib/ticket-pdf";
 import { TicketBrandingSettings } from "@/app/components/TicketBrandingSettings";
 import { QuoteBrandingSettings } from "@/app/components/QuoteBrandingSettings";
+import {
+  appendPosQueue,
+  getPosMetricP95,
+  groupConsecutiveCartChanges,
+  readPosCachedValue,
+  readPosQueue,
+  recordPosMetric,
+  removePosQueueItems,
+  writePosCache,
+  type PosMetricName,
+  type PosQueuedCartChange,
+} from "@/app/lib/pos-resilience";
 
 type PosLocation = { id: string; name: string; code: string };
 type PosRegister = { id: string; location_id: string; name: string; code: string; currency_code: string };
@@ -56,7 +69,7 @@ type ReceivablesSummary = { document_count: number; outstanding_amount: number; 
 type ReceivablesPage = { items?: ReceivableDocument[]; summary?: ReceivablesSummary; pagination?: { page: number; page_size: number; total: number } };
 type ReceivableCustomerContext = { customer: { id: string; code: string; display_name: string; tax_id: string | null; payment_manager: string | null; credit_term_days: number | null }; contact: CustomerContact | null; address: CustomerAddress | null; summary: ReceivablesSummary };
 type CustomerMaster = { id: string; code: string; display_name: string; tax_id: string | null; customer_type: "persona_fisica" | "persona_moral" | null; notes: string | null; is_active: boolean; is_imported: boolean; source_reference: string | null; migration_status: string; addresses: CustomerAddress[]; contacts: CustomerContact[]; commercial: { price_list_id: string | null; price_list_name: string | null; payment_manager: string | null; sales_agent: string | null; credit_enabled: boolean | null; credit_limit: number | null; credit_term_days: number | null; outstanding_amount: number | null; available_credit: number | null }; receivables_summary: ReceivablesSummary | null; open_receivables: CustomerReceivable[] };
-type CartItem = { cart_item_id: string; product_id: string; code: string | null; name: string; unit: string | null; quantity: number; quantity_on_hand: number; inventory_tracked: boolean; unit_price_amount: number; discount_percent: number; total_amount: number };
+type CartItem = { cart_item_id: string; product_id: string; code: string | null; name: string; unit: string | null; quantity: number; quantity_on_hand: number; inventory_tracked: boolean; unit_price_amount: number; discount_percent: number; gross_amount: number; discount_amount: number; tax_amount: number; total_amount: number };
 type CartQuote = { cart_id: string; revision: number; customer_id: string | null; currency_code: string | null; items: CartItem[]; subtotal_amount: number; discount_amount: number; tax_amount: number; total_amount: number; can_checkout: boolean; pending_discount_approval: boolean };
 type SaleRow = { sale_id: string; folio: string; location_id: string; sale_type: "cash" | "credit"; customer_name: string | null; currency_code: string; total_amount: number; returned_amount: number; cancelled: boolean; completed_at: string };
 type SaleTicketState = { saleId: string; payload: Record<string, unknown>; cancellation: { id: string; reason: string; cancelled_at: string } | null };
@@ -126,29 +139,92 @@ function adjustmentFieldLabel(field: string) {
   return ({ display_name: "Nombre", tax_id: "RFC", phone: "Teléfono principal", address_line: "Dirección principal", contact_name: "Contacto principal", credit_limit: "Límite de crédito", credit_term_days: "Días de crédito", outstanding_amount: "Saldo" } as Record<string, string>)[field] ?? field;
 }
 
+async function getPosStorageScope(companyId: string) {
+  const { data } = await getSupabaseClient().auth.getSession();
+  const userId = data.session?.user.id;
+  return userId ? `pos:${companyId}:${userId}` : null;
+}
+
+function mergeCachedProducts(current: ProductSearchItem[], incoming: ProductSearchItem[]) {
+  const merged = new Map(current.map((product) => [product.product_id, product]));
+  for (const product of incoming) merged.set(product.product_id, product);
+  return [...merged.values()].slice(-2000);
+}
+
+function searchCachedProducts(products: ProductSearchItem[], query: string) {
+  const normalized = query.trim().toLocaleLowerCase("es-MX");
+  if (!normalized) return products.slice(0, 30);
+  return products.filter((product) => [product.code, product.name, product.unit].some((value) => value?.toLocaleLowerCase("es-MX").includes(normalized))).slice(0, 30);
+}
+
+function optimisticCartChange(current: CartQuote, product: ProductSearchItem, delta: number): CartQuote {
+  const existing = current.items.find((item) => item.product_id === product.product_id);
+  const nextQuantity = Math.max(0, Number(existing?.quantity ?? 0) + delta);
+  let items = current.items.filter((item) => item.product_id !== product.product_id);
+  if (nextQuantity > 0) {
+    const originalQuantity = Number(existing?.quantity ?? 0);
+    const grossUnit = existing && originalQuantity > 0 ? existing.gross_amount / originalQuantity : Number(product.base_price_amount ?? Math.max(0, product.price_amount - Number(product.tax_amount ?? 0)));
+    const discountUnit = existing && originalQuantity > 0 ? existing.discount_amount / originalQuantity : 0;
+    const taxUnit = existing && originalQuantity > 0 ? existing.tax_amount / originalQuantity : Number(product.tax_amount ?? Math.max(0, product.price_amount - grossUnit));
+    const totalUnit = existing && originalQuantity > 0 ? existing.total_amount / originalQuantity : Number(product.price_amount);
+    items = [...items, {
+      cart_item_id: existing?.cart_item_id ?? `pending:${product.product_id}`,
+      product_id: product.product_id,
+      code: existing?.code ?? product.code,
+      name: existing?.name ?? product.name,
+      unit: existing?.unit ?? product.unit,
+      quantity: nextQuantity,
+      quantity_on_hand: product.quantity_on_hand,
+      inventory_tracked: product.inventory_tracked,
+      unit_price_amount: existing?.unit_price_amount ?? Number(product.base_price_amount ?? product.price_amount),
+      discount_percent: existing?.discount_percent ?? 0,
+      gross_amount: grossUnit * nextQuantity,
+      discount_amount: discountUnit * nextQuantity,
+      tax_amount: taxUnit * nextQuantity,
+      total_amount: totalUnit * nextQuantity,
+    }];
+  }
+  const subtotal = items.reduce((total, item) => total + Number(item.gross_amount ?? 0), 0);
+  const discount = items.reduce((total, item) => total + Number(item.discount_amount ?? 0), 0);
+  const tax = items.reduce((total, item) => total + Number(item.tax_amount ?? 0), 0);
+  const total = items.reduce((sum, item) => sum + Number(item.total_amount ?? 0), 0);
+  return { ...current, items, subtotal_amount: subtotal, discount_amount: discount, tax_amount: tax, total_amount: total };
+}
+
 function usePosContext(companyId: string) {
   const [context, setContext] = useState<PosContext | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [stale, setStale] = useState(false);
   const load = useCallback(async () => {
     setLoading(true);
+    const scope = await getPosStorageScope(companyId);
+    if (typeof navigator !== "undefined" && !navigator.onLine && scope) {
+      const cached = await readPosCachedValue<PosContext>(scope, "context");
+      if (cached) {
+        setContext(cached); setError(null); setStale(true); setLoading(false); return;
+      }
+    }
     const { data, error: loadError } = await getSupabaseClient().rpc("get_pos_context", { p_company_id: companyId });
     if (loadError) {
-      setError(rpcError(loadError, "No se pudo cargar el contexto POS."));
-      setContext(null);
+      const cached = scope ? await readPosCachedValue<PosContext>(scope, "context") : null;
+      if (cached) { setContext(cached); setError(null); setStale(true); }
+      else { setError(rpcError(loadError, "No se pudo cargar el contexto POS.")); setContext(null); setStale(false); }
     } else {
       setContext(data as PosContext);
       setError(null);
+      setStale(false);
+      if (scope) await writePosCache(scope, "context", data as PosContext);
     }
     setLoading(false);
   }, [companyId]);
   useEffect(() => { void Promise.resolve().then(load); }, [load]);
-  return { context, loading, error, reload: load };
+  return { context, loading, error, stale, reload: load };
 }
 
 export function PosSalesView({ companyId, companyName, cashierName, permissions }: { companyId: string; companyName: string; cashierName: string; permissions: string[] }) {
   const { toast } = useToast();
-  const { context, loading: contextLoading, error: contextError, reload: reloadContext } = usePosContext(companyId);
+  const { context, loading: contextLoading, error: contextError, stale: contextStale, reload: reloadContext } = usePosContext(companyId);
   const [cartId, setCartId] = useState<string | null>(null);
   const [quote, setQuote] = useState<CartQuote | null>(null);
   const [search, setSearch] = useState("");
@@ -183,6 +259,14 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
   const [discountOpen, setDiscountOpen] = useState(false);
   const [discountPercent, setDiscountPercent] = useState("");
   const [discountReason, setDiscountReason] = useState("");
+  const [online, setOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine);
+  const [storageScope, setStorageScope] = useState<string | null>(null);
+  const [pendingChanges, setPendingChanges] = useState(0);
+  const [queueVersion, setQueueVersion] = useState(0);
+  const [syncing, setSyncing] = useState(false);
+  const [showSlowSyncStatus, setShowSlowSyncStatus] = useState(false);
+  const [syncConflict, setSyncConflict] = useState<{ message: string; discardIds?: string[] } | null>(null);
+  const [metricP95, setMetricP95] = useState<Record<PosMetricName, number | null>>({ search: null, add_item: null, checkout: null });
   const searchRef = useRef<HTMLInputElement>(null);
   const customerRef = useRef<HTMLInputElement>(null);
   const customerPickerRef = useRef<HTMLDivElement>(null);
@@ -191,6 +275,11 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
   const completeRef = useRef<() => void>(() => undefined);
   const productRequestRef = useRef(0);
   const blockedRequestRef = useRef(0);
+  const quoteRef = useRef<CartQuote | null>(null);
+  const authoritativeQuoteRef = useRef<CartQuote | null>(null);
+  const syncInFlightRef = useRef(false);
+  const restoredQueueCartRef = useRef<string | null>(null);
+  const scannerBatchRef = useRef<{ cartId: string; productId: string; requestId: string; lastAt: number } | null>(null);
 
   const ownSession = context?.own_open_session?.status === "open" ? context.own_open_session : null;
   const selectedRegister = context?.registers.find((item) => item.id === ownSession?.cash_register_id) ?? null;
@@ -218,6 +307,40 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
     if (aHasStock && bHasStock && aQuantity !== bQuantity) return bQuantity - aQuantity;
     return a.location_name.localeCompare(b.location_name, "es-MX");
   }), [locationStock]);
+  const connectionDegraded = !online || contextStale;
+  const checkoutReady = online && !contextStale && pendingChanges === 0 && !syncing && !syncConflict;
+
+  useEffect(() => {
+    if (connectionDegraded || (!pendingChanges && !syncing)) {
+      const timer = window.setTimeout(() => setShowSlowSyncStatus(false), 0);
+      return () => window.clearTimeout(timer);
+    }
+    const timer = window.setTimeout(() => setShowSlowSyncStatus(true), 1500);
+    return () => window.clearTimeout(timer);
+  }, [connectionDegraded, pendingChanges, syncing]);
+
+  useEffect(() => { quoteRef.current = quote; }, [quote]);
+
+  useEffect(() => {
+    const onOnline = () => setOnline(true);
+    const onOffline = () => setOnline(false);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => { window.removeEventListener("online", onOnline); window.removeEventListener("offline", onOffline); };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void getPosStorageScope(companyId).then(async (scope) => {
+      if (!active || !scope) return;
+      setStorageScope(scope);
+      const [queue, metrics] = await Promise.all([readPosQueue<ProductSearchItem>(scope), getPosMetricP95(scope)]);
+      if (!active) return;
+      setPendingChanges(queue.length);
+      setMetricP95(metrics);
+    });
+    return () => { active = false; };
+  }, [companyId]);
 
   useEffect(() => {
     if (!context) return;
@@ -227,28 +350,47 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
   }, [context]);
 
   const loadQuote = useCallback(async (id: string) => {
+    if (!online && storageScope) {
+      const cached = await readPosCachedValue<CartQuote>(storageScope, `cart:${id}`);
+      if (cached) { setQuote(cached); quoteRef.current = cached; authoritativeQuoteRef.current = cached; return; }
+    }
     const { data, error } = await getSupabaseClient().rpc("quote_sale_cart", { p_cart_id: id });
     if (error) {
+      const cached = storageScope ? await readPosCachedValue<CartQuote>(storageScope, `cart:${id}`) : null;
+      if (cached) { setQuote(cached); quoteRef.current = cached; authoritativeQuoteRef.current = cached; return; }
       toast({ title: "No pudimos cotizar el carrito", description: rpcError(error, "Intenta nuevamente."), tone: "error" });
       return;
     }
     setQuote(data as CartQuote);
-  }, [toast]);
+    quoteRef.current = data as CartQuote;
+    authoritativeQuoteRef.current = data as CartQuote;
+    if (storageScope) await writePosCache(storageScope, `cart:${id}`, data as CartQuote);
+  }, [online, storageScope, toast]);
 
   const ensureCart = useCallback(async () => {
     if (cartRecoveryInFlight.current) return;
     cartRecoveryInFlight.current = true;
     try {
       if (!ownSession) { setCartId(null); setQuote(null); return; }
+      if (!online && storageScope) {
+        const cached = await readPosCachedValue<{ cartId: string; quote: CartQuote }>(storageScope, "active-cart");
+        if (cached) { setCartId(cached.cartId); setQuote(cached.quote); quoteRef.current = cached.quote; authoritativeQuoteRef.current = cached.quote; }
+        return;
+      }
       const { data, error } = await getSupabaseClient().rpc("get_or_create_sale_cart", { p_company_id: companyId, p_cash_session_id: ownSession.id });
-      if (error) { setCartId(null); setQuote(null); toast({ title: "No se pudo recuperar tu sesión", description: rpcError(error, "Abre una caja propia antes de vender."), tone: "error" }); return; }
+      if (error) {
+        const cached = storageScope ? await readPosCachedValue<{ cartId: string; quote: CartQuote }>(storageScope, "active-cart") : null;
+        if (cached) { setCartId(cached.cartId); setQuote(cached.quote); quoteRef.current = cached.quote; authoritativeQuoteRef.current = cached.quote; return; }
+        setCartId(null); setQuote(null); toast({ title: "No se pudo recuperar tu sesión", description: rpcError(error, "Abre una caja propia antes de vender."), tone: "error" }); return;
+      }
       const nextCartId = (data as { cart_id: string }).cart_id;
       setCartId(nextCartId);
       await loadQuote(nextCartId);
+      if (storageScope && quoteRef.current) await writePosCache(storageScope, "active-cart", { cartId: nextCartId, quote: quoteRef.current });
     } finally {
       cartRecoveryInFlight.current = false;
     }
-  }, [companyId, loadQuote, ownSession, toast]);
+  }, [companyId, loadQuote, online, ownSession, storageScope, toast]);
 
   useEffect(() => { void Promise.resolve().then(ensureCart); }, [ensureCart]);
 
@@ -262,6 +404,15 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
     const timer = window.setTimeout(async () => {
       setProductLoading(true);
       setProductLoadingMore(false);
+      const startedAt = performance.now();
+      const catalogKey = `catalog:${selectedRegister.location_id}:${customer?.id ?? "default"}`;
+      if (!online && storageScope) {
+        const cached = (await readPosCachedValue<ProductSearchItem[]>(storageScope, catalogKey)) ?? [];
+        if (request !== productRequestRef.current) return;
+        const matches = searchCachedProducts(cached, search);
+        setProducts(matches); setProductTotal(matches.length); setProductPage(1); setProductLoading(false);
+        return;
+      }
       const { data, error } = await getSupabaseClient().rpc("search_pos_sale_products", {
         p_company_id: companyId,
         p_location_id: selectedRegister.location_id,
@@ -273,20 +424,28 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
       if (request !== productRequestRef.current) return;
       const result = data as { items?: ProductSearchItem[]; total?: number; page?: number } | null;
       if (!error) {
-        setProducts(result?.items ?? []);
+        const items = result?.items ?? [];
+        setProducts(items);
         setProductTotal(result?.total ?? 0);
         setProductPage(result?.page ?? 1);
+        if (storageScope) {
+          const cached = (await readPosCachedValue<ProductSearchItem[]>(storageScope, catalogKey)) ?? [];
+          await writePosCache(storageScope, catalogKey, mergeCachedProducts(cached, items));
+          setMetricP95(await recordPosMetric(storageScope, { name: "search", durationMs: performance.now() - startedAt, recordedAt: new Date().toISOString(), network: "online" }));
+        }
       } else {
-        setProducts([]); setProductTotal(0); setProductPage(1);
-        toast({ title: "No se pudo buscar productos", description: rpcError(error, "Revisa acceso, precios y readiness de la ubicación."), tone: "error" });
+        const cached = storageScope ? (await readPosCachedValue<ProductSearchItem[]>(storageScope, catalogKey)) ?? [] : [];
+        const matches = searchCachedProducts(cached, search);
+        setProducts(matches); setProductTotal(matches.length); setProductPage(1);
+        if (!matches.length) toast({ title: "No se pudo buscar productos", description: "Revisa la conexión e intenta nuevamente.", tone: "error" });
       }
       setProductLoading(false);
     }, search.trim() ? 120 : 0);
     return () => window.clearTimeout(timer);
-  }, [cartId, companyId, customer?.id, search, selectedRegister, toast]);
+  }, [cartId, companyId, customer?.id, online, search, selectedRegister, storageScope, toast]);
 
   async function loadMoreProducts() {
-    if (!cartId || !selectedRegister || productLoading || productLoadingMore || products.length >= productTotal) return;
+    if (!online || !cartId || !selectedRegister || productLoading || productLoadingMore || products.length >= productTotal) return;
     const request = ++productRequestRef.current;
     const nextPage = productPage + 1;
     setProductLoadingMore(true);
@@ -315,7 +474,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
   }
 
   useEffect(() => {
-    if (!selectedRegister || !search.trim()) {
+    if (!online || !selectedRegister || !search.trim()) {
       blockedRequestRef.current += 1;
       void Promise.resolve().then(() => { setBlockedOpen(false); setBlockedProducts([]); setBlockedTotal(0); setBlockedLoading(false); });
       return;
@@ -335,10 +494,10 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
       setBlockedLoading(false);
     }, 120);
     return () => window.clearTimeout(timer);
-  }, [companyId, customer?.id, search, selectedRegister, toast]);
+  }, [companyId, customer?.id, online, search, selectedRegister, toast]);
 
   useEffect(() => {
-    if (!customerQuery.trim()) { void Promise.resolve().then(() => { setCustomerResults([]); setCustomerPickerOpen(false); }); return; }
+    if (!online || !customerQuery.trim()) { void Promise.resolve().then(() => { setCustomerResults([]); setCustomerPickerOpen(false); }); return; }
     const timer = window.setTimeout(async () => {
       const customerRpc = saleType === "credit" ? "search_sale_customers_credit" : "search_sale_customers";
       const { data, error } = await getSupabaseClient().rpc(customerRpc, { p_company_id: companyId, p_query: customerQuery, p_page: 1, p_page_size: 8 });
@@ -346,7 +505,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
       else { const items = ((data as { items?: Customer[] })?.items ?? []); setCustomerResults(items); setCustomerPickerOpen(items.length > 0); }
     }, 150);
     return () => window.clearTimeout(timer);
-  }, [companyId, customerQuery, saleType, toast]);
+  }, [companyId, customerQuery, online, saleType, toast]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -367,19 +526,137 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
   }, [busy, permissions, quote?.items.length]);
   useDismissiblePopover(customerPickerRef, customerPickerOpen, () => setCustomerPickerOpen(false));
 
-  async function changeItem(productId: string, delta: number, clearProductSearch = false) {
-    if (!cartId || !quote) return;
-    setBusy(true);
-    const { error } = await getSupabaseClient().rpc("change_sale_cart_item", { p_cart_id: cartId, p_product_id: productId, p_quantity_delta: delta, p_expected_revision: quote.revision });
-    if (error) toast({ title: "No se pudo modificar el carrito", description: rpcError(error, "Actualiza la vista e intenta nuevamente."), tone: "error" });
-    else {
-      await loadQuote(cartId);
-      if (clearProductSearch) {
-        setSearch("");
-        searchRef.current?.focus();
+  const syncQueuedChanges = useCallback(async () => {
+    if (!online || !storageScope || syncInFlightRef.current) return;
+    syncInFlightRef.current = true;
+    setSyncing(true);
+    try {
+      const queued = await readPosQueue<ProductSearchItem>(storageScope);
+      setPendingChanges(queued.length);
+      let authoritative = authoritativeQuoteRef.current;
+      for (const group of groupConsecutiveCartChanges(queued)) {
+        if (!authoritative || authoritative.cart_id !== group.cartId) {
+          setSyncConflict({ message: "El carrito pendiente pertenece a otra sesión. Revisa la caja activa antes de continuar.", discardIds: group.ids });
+          break;
+        }
+        if (group.quantityDelta === 0) {
+          const remaining = await removePosQueueItems<ProductSearchItem>(storageScope, group.ids);
+          setPendingChanges(remaining.length);
+          continue;
+        }
+        const startedAt = performance.now();
+        const { data, error } = await getSupabaseClient().rpc("change_sale_cart_item_and_quote", {
+          p_cart_id: group.cartId,
+          p_product_id: group.productId,
+          p_quantity_delta: group.quantityDelta,
+          p_expected_revision: authoritative.revision,
+          p_client_request_id: group.requestId,
+        });
+        if (error || !data) {
+          const message = rpcError(error, "El cambio sigue pendiente de sincronizar.");
+          if (/fetch|network|conexi[oó]n/i.test(message)) setOnline(false);
+          else setSyncConflict({ message: `${group.product.name}: ${message}`, discardIds: group.ids });
+          break;
+        }
+        authoritative = data as CartQuote;
+        authoritativeQuoteRef.current = authoritative;
+        const serverItem = authoritative.items.find((item) => item.product_id === group.productId);
+        const serverUnitTotal = serverItem && serverItem.quantity > 0 ? serverItem.total_amount / serverItem.quantity : null;
+        if (serverUnitTotal !== null && Math.abs(serverUnitTotal - group.expectedUnitTotal) > 0.01) {
+          setSyncConflict({ message: `${group.product.name} cambió de ${money(group.expectedUnitTotal, authoritative.currency_code)} a ${money(serverUnitTotal, authoritative.currency_code)}. Revisa el carrito antes de cobrar.` });
+        }
+        const remaining = await removePosQueueItems<ProductSearchItem>(storageScope, group.ids);
+        setPendingChanges(remaining.length);
+        let displayed = authoritative;
+        for (const pending of remaining.filter((item) => item.cartId === authoritative?.cart_id)) displayed = optimisticCartChange(displayed, pending.product, pending.quantityDelta);
+        setQuote(displayed);
+        quoteRef.current = displayed;
+        await Promise.all([
+          writePosCache(storageScope, `cart:${group.cartId}`, authoritative),
+          writePosCache(storageScope, "active-cart", { cartId: group.cartId, quote: authoritative }),
+          recordPosMetric(storageScope, { name: "add_item", durationMs: performance.now() - startedAt, recordedAt: new Date().toISOString(), network: "online" }).then(setMetricP95),
+        ]);
+      }
+    } finally {
+      syncInFlightRef.current = false;
+      setSyncing(false);
+    }
+  }, [online, storageScope]);
+
+  async function resolveSyncConflict() {
+    if (syncConflict?.discardIds?.length && storageScope) {
+      const remaining = await removePosQueueItems<ProductSearchItem>(storageScope, syncConflict.discardIds);
+      setPendingChanges(remaining.length);
+      const authoritative = authoritativeQuoteRef.current;
+      if (authoritative) {
+        let displayed = authoritative;
+        for (const pending of remaining.filter((item) => item.cartId === authoritative.cart_id)) displayed = optimisticCartChange(displayed, pending.product, pending.quantityDelta);
+        setQuote(displayed);
+        quoteRef.current = displayed;
       }
     }
-    setBusy(false);
+    setSyncConflict(null);
+    setQueueVersion((current) => current + 1);
+  }
+
+  useEffect(() => {
+    if (!online || !storageScope || !pendingChanges) return;
+    const timer = window.setTimeout(() => { void syncQueuedChanges(); }, 110);
+    return () => window.clearTimeout(timer);
+  }, [online, pendingChanges, queueVersion, storageScope, syncQueuedChanges]);
+
+  useEffect(() => {
+    if (!storageScope || !cartId || !quote || restoredQueueCartRef.current === cartId) return;
+    restoredQueueCartRef.current = cartId;
+    void readPosQueue<ProductSearchItem>(storageScope).then((queue) => {
+      let restored = quote;
+      for (const change of queue.filter((item) => item.cartId === cartId)) restored = optimisticCartChange(restored, change.product, change.quantityDelta);
+      if (queue.length) { setQuote(restored); quoteRef.current = restored; setPendingChanges(queue.length); }
+    });
+  }, [cartId, quote, storageScope]);
+
+  async function changeItem(productId: string, delta: number, clearProductSearch = false) {
+    const currentQuote = quoteRef.current;
+    if (!cartId || !currentQuote || !storageScope || delta === 0) return;
+    const existing = currentQuote.items.find((item) => item.product_id === productId);
+    const product = products.find((item) => item.product_id === productId) ?? (existing ? {
+      product_id: existing.product_id,
+      code: existing.code,
+      name: existing.name,
+      unit: existing.unit,
+      inventory_tracked: existing.inventory_tracked,
+      quantity_on_hand: existing.quantity_on_hand,
+      base_price_amount: existing.unit_price_amount,
+      tax_amount: existing.quantity > 0 ? existing.tax_amount / existing.quantity : 0,
+      price_amount: existing.quantity > 0 ? existing.total_amount / existing.quantity : existing.unit_price_amount,
+      currency_code: currentQuote.currency_code ?? "MXN",
+    } satisfies ProductSearchItem : null);
+    if (!product) return;
+    const nextQuantity = Number(existing?.quantity ?? 0) + delta;
+    if (nextQuantity < 0 || (product.inventory_tracked && nextQuantity > product.quantity_on_hand)) {
+      toast({ title: "Cantidad no disponible", description: "Ajusta la cantidad a la existencia reciente mostrada.", tone: "error" });
+      return;
+    }
+    const now = performance.now();
+    const currentBatch = scannerBatchRef.current;
+    const requestId = currentBatch && currentBatch.cartId === cartId && currentBatch.productId === productId && now - currentBatch.lastAt <= 110 ? currentBatch.requestId : crypto.randomUUID();
+    scannerBatchRef.current = { cartId, productId, requestId, lastAt: now };
+    const change: PosQueuedCartChange<ProductSearchItem> = {
+      id: crypto.randomUUID(), requestId, companyId, cartId, productId, quantityDelta: delta, product,
+      expectedUnitTotal: existing && existing.quantity > 0 ? existing.total_amount / existing.quantity : product.price_amount,
+      createdAt: new Date().toISOString(),
+    };
+    const optimistic = optimisticCartChange(currentQuote, product, delta);
+    setQuote(optimistic);
+    quoteRef.current = optimistic;
+    await appendPosQueue(storageScope, change);
+    const queue = await readPosQueue<ProductSearchItem>(storageScope);
+    setPendingChanges(queue.length);
+    setQueueVersion((current) => current + 1);
+    if (clearProductSearch) {
+      setSearch("");
+      searchRef.current?.focus();
+    }
   }
 
   function setItemQuantity(productId: string, currentQuantity: number, input: HTMLInputElement) {
@@ -454,6 +731,10 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
 
   async function complete() {
     if (!cartId || !quote || !quote.can_checkout) return;
+    if (!checkoutReady) {
+      toast({ title: "Venta pendiente de sincronizar", description: "Recupera la conexión y resuelve los cambios del carrito antes de cobrar.", tone: "info" });
+      return;
+    }
     if (saleType === "deferred") {
       if (!customer) {
         toast({ title: "Selecciona un cliente", description: "La orden necesita un cliente para conservar pagos, saldo y entrega.", tone: "error" });
@@ -469,6 +750,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
         return;
       }
       setBusy(true);
+      const checkoutStartedAt = performance.now();
       const orderFingerprint = JSON.stringify({ cartId, revision: quote.revision, customerId: customer.id, expectedDeliveryDate: expectedDeliveryDate || null, paymentMethodId: receivedAmount > 0 ? paymentMethodId : null, amount: receivedAmount || 0, paymentReference });
       const { data, error } = await getSupabaseClient().rpc("create_sales_order_from_cart", {
         p_company_id: companyId,
@@ -480,6 +762,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
         p_payment_reference: paymentReference.trim() || null,
         p_client_request_id: idempotency.get("create-sales-order", orderFingerprint),
       });
+      if (storageScope) setMetricP95(await recordPosMetric(storageScope, { name: "checkout", durationMs: performance.now() - checkoutStartedAt, recordedAt: new Date().toISOString(), network: "online" }));
       if (error || !data) {
         toast({ title: "No se creó la orden", description: rpcError(error, "No se hicieron cambios parciales."), tone: "error" });
       } else {
@@ -507,6 +790,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
       return;
     }
     setBusy(true);
+    const checkoutStartedAt = performance.now();
     const operationFingerprint = JSON.stringify({ cartId, revision: quote.revision, saleType, paymentMethodId: saleType === "cash" ? paymentMethodId : null, received: saleType === "cash" ? received : null, paymentReference: paymentReference.trim() || null, total: quote.total_amount });
     const { data, error } = await getSupabaseClient().rpc("complete_pos_sale", {
       p_cart_id: cartId,
@@ -517,6 +801,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
       p_client_request_id: idempotency.get("complete-sale", operationFingerprint),
       p_payment_reference: saleType === "cash" && selectedPayment?.settlement_kind === "external" ? paymentReference.trim() : null,
     });
+    if (storageScope) setMetricP95(await recordPosMetric(storageScope, { name: "checkout", durationMs: performance.now() - checkoutStartedAt, recordedAt: new Date().toISOString(), network: "online" }));
     if (error) {
       toast({ title: "La venta no se confirmó", description: rpcError(error, "No se hicieron cambios parciales."), tone: "error" });
     } else {
@@ -528,7 +813,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
     }
     setBusy(false);
   }
-  useEffect(() => { completeRef.current = () => { if (!busy && quote?.can_checkout && (saleType !== "cash" || Boolean(paymentMethodId))) void complete(); }; });
+  useEffect(() => { completeRef.current = () => { if (!busy && checkoutReady && quote?.can_checkout && (saleType !== "cash" || Boolean(paymentMethodId))) void complete(); }; });
 
   function finishTicket() {
     setTicket(null);
@@ -577,11 +862,13 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
   return <div className="content-frame pos-page">
     <div className="pos-page__heading"><div><span className="eyebrow">Venta transaccional</span><h1>Punto de venta</h1><p>Precios, impuestos y existencias se validan al cobrar.</p></div><Link className="pos-exit-link" href="/satrapy/ventas/historial">Salir del POS</Link></div>
     {ownSession && selectedRegister && <div className="pos-context-strip"><span><small>Empresa</small><strong>{companyName}</strong></span><span><small>Sucursal</small><strong>{selectedLocation?.name ?? selectedRegister.code}</strong></span><span><small>Caja</small><strong>{selectedRegister.name}</strong></span><span><small>Cajero</small><strong>{cashierName}</strong></span><span><small>Sesión</small><strong>{ownSession.opened_at ? `Desde ${new Date(ownSession.opened_at).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}` : "Abierta"}</strong></span></div>}
+    {(connectionDegraded || showSlowSyncStatus) && <div className="pos-connection-status" role="status" aria-live="polite"><CloudOff size={18} aria-hidden="true" /><div className="pos-connection-status__content"><strong>{connectionDegraded ? "Sin conexión: venta pendiente de sincronizar" : syncing ? "Sincronizando cambios pendientes" : "Venta pendiente de sincronizar"}</strong><small>{connectionDegraded ? "Puedes buscar en caché y preparar el carrito. El cobro, inventario y ticket se habilitan al recuperar la conexión." : `${pendingChanges} cambio${pendingChanges === 1 ? "" : "s"} en cola; el cobro se habilitará al terminar.`}</small></div>{connectionDegraded && <Button size="sm" variant="secondary" onClick={() => { setOnline(navigator.onLine); void reloadContext(); setQueueVersion((current) => current + 1); }}>Reintentar conexión</Button>}</div>}
+    {syncConflict && <div className="pos-sync-conflict" role="alert"><AlertCircle size={18} aria-hidden="true" /><div className="pos-connection-status__content"><strong>Revisa el carrito</strong><small>{syncConflict.message}</small></div><Button size="sm" variant="secondary" onClick={() => void resolveSyncConflict()}>{syncConflict.discardIds?.length ? "Descartar cambio pendiente" : "Confirmar revisión"}</Button></div>}
     {!ownSession ? <section className="pos-start-card"><Banknote size={22} /><div><strong>Abre tu caja para iniciar.</strong><span>La apertura requiere un conteo formal por denominación. Si hay varias cajas, la selección se hace explícitamente en Caja.</span></div><Link href="/satrapy/ventas/caja" className="button button--primary">Ir a Caja</Link></section> : <>
       <div className="pos-shell">
         <section className="pos-catalog">
           <label className="pos-search-field"><span>Buscar productos</span><div className="pos-search"><Search size={20} aria-hidden="true" /><Input ref={searchRef} value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && productTotal === 1 && products.length === 1) { event.preventDefault(); void changeItem(products[0].product_id, 1, true); } }} placeholder="Escanea o busca por nombre, SKU o código" aria-label="Buscar productos" autoFocus /><kbd>F2 cliente</kbd></div></label>
-          <div className="pos-search-meta" role="status" aria-live="polite"><span>{productLoading ? "Buscando…" : `${products.length} de ${productTotal} resultados`}</span><span>Enter agrega la coincidencia única</span></div>
+          <div className="pos-search-meta" role="status" aria-live="polite"><span>{productLoading ? "Buscando…" : `${products.length} de ${productTotal} resultados${!online ? " en caché" : ""}`}</span><span>Enter agrega la coincidencia única · p95 búsqueda {metricP95.search === null ? "—" : `${Math.round(metricP95.search)} ms`} · agregar {metricP95.add_item === null ? "—" : `${Math.round(metricP95.add_item)} ms`}</span></div>
           <div className="pos-shortcuts" aria-label="Atajos de teclado disponibles"><span><kbd>F2</kbd> Cliente</span>{permissions.includes("apply_discount") && quote?.items.length ? <span><kbd>F4</kbd> Descuento</span> : null}{quote?.items.length ? <><span><kbd>F8</kbd> Cobrar</span><span><kbd>Esc</kbd> Cerrar</span><span><kbd>+</kbd><kbd>−</kbd> Partida enfocada</span></> : null}</div>
           <div className="pos-product-list">
             {products.map((product) => <div className="pos-product-row" key={product.product_id}><button className="pos-product" disabled={busy} onClick={() => void changeItem(product.product_id, 1, true)}><span><strong>{highlightSearchMatch(product.name, search)}</strong><small>{highlightSearchMatch(product.code ?? "Sin código", search)} · {product.unit ?? "Unidad"}</small></span><span className="pos-product__right"><b>{money(product.price_amount, product.currency_code)}</b><small>Precio total</small>{product.inventory_tracked && <em className={product.quantity_on_hand <= 3 ? "is-low" : ""}>{product.quantity_on_hand} disp.</em>}</span></button>{product.inventory_tracked && permissions.includes("view_inventory") && <Button className="pos-product-stock" size="sm" variant="ghost" disabled={busy} onClick={() => openLocationStock(product)}><ClipboardList size={14} /> Otras sucursales</Button>}</div>)}
@@ -592,8 +879,8 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
           </div>
         </section>
         <aside className="pos-cart" id="pos-checkout">
-          <div className="pos-cart__top"><div><span className="eyebrow">Venta actual</span><h2>{quote?.items.length ?? 0} {(quote?.items.length ?? 0) === 1 ? "partida" : "partidas"}</h2></div><span className="pos-cart__actions">{permissions.includes("apply_discount") && <Button variant="ghost" size="sm" disabled={!quote?.items.length} onClick={() => setDiscountOpen(true)}>Aplicar descuento</Button>}<Badge tone="success">Caja abierta</Badge></span></div>
-          <div ref={customerPickerRef} className="pos-customer-picker"><div className="pos-customer-picker__heading"><span>Cliente</span>{permissions.includes("manage_customers") && <button type="button" onClick={() => setQuickCustomerOpen(true)}><UserPlus size={13} aria-hidden="true" /> Crear cliente</button>}</div><Input ref={customerRef} value={customerQuery} onFocus={() => setCustomerPickerOpen(customerResults.length > 0)} onClick={() => setCustomerPickerOpen(customerResults.length > 0)} onChange={(event) => setCustomerQuery(event.target.value)} placeholder={customer ? customer.display_name : "Buscar cliente (F2)"} aria-label="Buscar cliente" aria-controls="pos-customer-options" aria-describedby="pos-customer-status" /><span id="pos-customer-status" className="sr-only" role="status" aria-live="polite">{customerQuery && customerResults.length ? `${customerResults.length} clientes disponibles.` : ""}</span>{customer && <button className="pos-customer-chip" aria-label={`Quitar cliente ${customer.display_name}`} onClick={() => void selectCustomer(null)}><span>{customer.display_name}</span><X size={14} aria-hidden="true" /></button>}{customerPickerOpen && customerResults.length > 0 && <div id="pos-customer-options" className="pos-customer-results">{customerResults.map((item) => <button key={item.id} disabled={saleType === "credit" && (!item.credit_enabled || Boolean(item.alpha_external_code && item.migration_status !== "promoted"))} onClick={() => void selectCustomer(item)}><strong>{item.display_name}</strong><small>{item.code}{saleType === "credit" && item.available_credit !== undefined ? ` · crédito disponible ${money(item.available_credit)}` : ""}{item.alpha_external_code && item.migration_status !== "promoted" ? " · migración pendiente" : ""}</small></button>)}</div>}</div>
+          <div className="pos-cart__top"><div><span className="eyebrow">Venta actual</span><h2>{quote?.items.length ?? 0} {(quote?.items.length ?? 0) === 1 ? "partida" : "partidas"}</h2></div><span className="pos-cart__actions">{permissions.includes("apply_discount") && <Button variant="ghost" size="sm" disabled={!online || !quote?.items.length} onClick={() => setDiscountOpen(true)}>Aplicar descuento</Button>}<Badge tone={pendingChanges ? "warning" : "success"}>{pendingChanges ? `${pendingChanges} pendiente${pendingChanges === 1 ? "" : "s"}` : "Caja abierta"}</Badge></span></div>
+          <div ref={customerPickerRef} className="pos-customer-picker"><div className="pos-customer-picker__heading"><span>Cliente</span>{permissions.includes("manage_customers") && <button type="button" onClick={() => setQuickCustomerOpen(true)}><UserPlus size={13} aria-hidden="true" /> Crear cliente</button>}</div><Input ref={customerRef} role="combobox" aria-expanded={customerPickerOpen && customerResults.length > 0} value={customerQuery} onFocus={() => setCustomerPickerOpen(customerResults.length > 0)} onClick={() => setCustomerPickerOpen(customerResults.length > 0)} onChange={(event) => setCustomerQuery(event.target.value)} placeholder={customer ? customer.display_name : "Buscar cliente (F2)"} aria-label="Buscar cliente" aria-controls="pos-customer-options" aria-describedby="pos-customer-status" /><span id="pos-customer-status" className="sr-only" role="status" aria-live="polite">{customerQuery && customerResults.length ? `${customerResults.length} clientes disponibles.` : ""}</span>{customer && <button className="pos-customer-chip" aria-label={`Quitar cliente ${customer.display_name}`} onClick={() => void selectCustomer(null)}><span>{customer.display_name}</span><X size={14} aria-hidden="true" /></button>}{customerPickerOpen && customerResults.length > 0 && <div id="pos-customer-options" className="pos-customer-results" role="listbox">{customerResults.map((item) => <button role="option" aria-selected={customer?.id === item.id} key={item.id} disabled={saleType === "credit" && (!item.credit_enabled || Boolean(item.alpha_external_code && item.migration_status !== "promoted"))} onClick={() => void selectCustomer(item)}><strong>{item.display_name}</strong><small>{item.code}{saleType === "credit" && item.available_credit !== undefined ? ` · crédito disponible ${money(item.available_credit)}` : ""}{item.alpha_external_code && item.migration_status !== "promoted" ? " · migración pendiente" : ""}</small></button>)}</div>}</div>
           {customer && saleType === "credit" && customer.available_credit !== undefined && <div className="pos-credit-alert"><CircleDollarSign size={18} /><div><strong>Crédito disponible</strong><span>{money(customer.available_credit)} · plazo {customer.credit_term_days} días</span></div></div>}
           <div className="pos-cart-lines" role="region" aria-label="Productos en la venta" tabIndex={(quote?.items.length ?? 0) > 2 ? 0 : undefined}>{quote?.items.length ? quote.items.map((item) => <article key={item.cart_item_id} tabIndex={0} aria-label={`${item.name}, cantidad ${item.quantity}. Usa más o menos para ajustar la partida.`} onKeyDown={(event) => { if (busy || event.target !== event.currentTarget) return; if (event.key === "+") { event.preventDefault(); void changeItem(item.product_id, 1); } if (event.key === "-") { event.preventDefault(); void changeItem(item.product_id, -1); } }}><div><strong>{item.name}</strong><small>{item.code ?? ""} · {money(item.total_amount / item.quantity, quote.currency_code ?? "MXN")} por unidad</small></div><div className="pos-line-controls"><button aria-label={`Restar ${item.name}`} disabled={busy} onClick={() => void changeItem(item.product_id, -1)}><Minus size={14} aria-hidden="true" /></button><Input key={`${item.cart_item_id}:${quote.revision}`} className="pos-quantity-input" type="number" min="0" max={item.inventory_tracked ? item.quantity_on_hand : undefined} step="any" inputMode="decimal" defaultValue={item.quantity} aria-label={`Cantidad de ${item.name}`} disabled={busy} onBlur={(event) => setItemQuantity(item.product_id, item.quantity, event.currentTarget)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); if (event.key === "Escape") { event.currentTarget.value = String(item.quantity); event.currentTarget.blur(); } }} /><button aria-label={`Sumar ${item.name}`} disabled={busy} onClick={() => void changeItem(item.product_id, 1)}><Plus size={14} aria-hidden="true" /></button><strong>{money(item.total_amount, quote.currency_code ?? "MXN")}</strong></div></article>) : <div className="pos-cart-empty"><ShoppingCart size={22} aria-hidden="true" /><strong>Carrito vacío</strong><span>Busca o escanea un producto para comenzar.</span></div>}</div>
           <div className="pos-settlement">
@@ -625,14 +912,15 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions 
               {Number(received || 0) > 0 && <><Select ariaLabel="Forma del pago inicial" value={paymentMethodId} onValueChange={(value) => { setPaymentMethodId(value); setPaymentReference(""); }} options={paymentMethods.map((method) => ({ value: method.id, label: method.name }))} />{selectedPayment?.settlement_kind === "external" && <label>Referencia<Input required value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} placeholder="Transferencia, depósito o terminal" /></label>}</>}
               <div className="pos-deferred-balance"><span>Saldo después del pago</span><strong>{money(Math.max(0, saleTotal - Number(received || 0)), quote?.currency_code ?? "MXN")}</strong></div>
             </section>}
-            <Button variant="primary" size="lg" loading={busy} disabled={!quote?.can_checkout || (saleType === "cash" && (!paymentMethodId || (isCashPayment && !validReceivedAmount) || (selectedPayment?.settlement_kind === "external" && !paymentReference.trim()))) || (saleType === "credit" && (!customer?.credit_enabled || Boolean(customer.alpha_external_code && customer.migration_status !== "promoted"))) || (saleType === "deferred" && (!customer || !validOrderPayment))} onClick={() => void complete()}>{saleType === "cash" ? "Cobrar" : saleType === "credit" ? "Confirmar crédito" : "Crear orden"} <kbd>F8</kbd></Button>
-            </div>
+            <Button variant="primary" size="lg" loading={busy} disabled={!checkoutReady || !quote?.can_checkout || (saleType === "cash" && (!paymentMethodId || (isCashPayment && !validReceivedAmount) || (selectedPayment?.settlement_kind === "external" && !paymentReference.trim()))) || (saleType === "credit" && (!customer?.credit_enabled || Boolean(customer.alpha_external_code && customer.migration_status !== "promoted"))) || (saleType === "deferred" && (!customer || !validOrderPayment))} onClick={() => void complete()}>{saleType === "cash" ? "Cobrar" : saleType === "credit" ? "Confirmar crédito" : "Crear orden"} <kbd>F8</kbd></Button>
+            <small className="pos-performance-note">p95 cobro {metricP95.checkout === null ? "—" : `${Math.round(metricP95.checkout)} ms`} · meta agregar &lt;300 ms con red normal</small>
+          </div>
           </div>
         </aside>
       </div>
     </>}
     <Modal open={Boolean(ticket)} onOpenChange={(open) => { if (!open) finishTicket(); }} eyebrow="Venta confirmada" title={`Ticket ${ticket?.folio ?? ""}`} description="El cliente ve precios totales; el desglose fiscal permanece disponible internamente." footer={<><Button variant="secondary" loading={ticketDownloading} onClick={() => void printCompletedTicket()}><Printer size={15} /> Imprimir ticket</Button><Button variant="primary" onClick={finishTicket}>Nueva venta</Button></>}><TicketPreview ticket={ticket?.ticket} /></Modal>
-    <Modal className="pos-location-stock-dialog" open={Boolean(stockProduct)} onOpenChange={(open) => { if (!open) { setStockProduct(null); setLocationStock(null); } }} eyebrow="Inventario por sucursal" title={stockProduct?.name ?? "Otras sucursales"} description={`Producto ${stockProduct?.code ?? "sin código"} · Sucursal activa: ${selectedLocation?.name ?? selectedRegister?.name ?? "sin seleccionar"}. Solo lectura.`} footer={<Button onClick={() => { setStockProduct(null); setLocationStock(null); }}>Cerrar <kbd>Esc</kbd></Button>}>{locationStockLoading ? <DataState loading error={null} hasData={0} empty="">{null}</DataState> : locationStock ? <section className="pos-location-stock"><header><span>Disponibilidad en otras sucursales</span><strong>{locationStock.total} {locationStock.total === 1 ? "sucursal" : "sucursales"}</strong></header>{otherLocationStockItems.length ? <div className="pos-location-stock__rows">{otherLocationStockItems.map((item) => { const quantity = Number(item.quantity_on_hand); const status = otherLocationStockStatus(quantity); return <article className={`is-${status.tone}`} key={item.location_id}><span className="pos-location-stock__location"><strong>{item.location_name}</strong><small>{item.location_code}</small></span><span className="pos-location-stock__quantity"><small>{status.label}</small><b>{quantity.toLocaleString("es-MX", { maximumFractionDigits: 3 })} <em>{locationStock.unit ?? stockProduct?.unit ?? ""}</em></b></span></article>; })}</div> : <p>No hay otras sucursales autorizadas para consultar.</p>}{locationStock.total > locationStock.page_size && <DataPagination page={locationStock.page} total={locationStock.total} pageSize={locationStock.page_size} label="sucursales" onChange={(page) => { if (stockProduct) void loadLocationStock(stockProduct, page); }} />}</section> : null}</Modal>
+    <Modal className="pos-location-stock-dialog" open={Boolean(stockProduct)} onOpenChange={(open) => { if (!open) { setStockProduct(null); setLocationStock(null); } }} eyebrow="Inventario por sucursal" title={stockProduct?.name ?? "Otras sucursales"} description={`Producto ${stockProduct?.code ?? "sin código"} · Sucursal activa: ${selectedLocation?.name ?? selectedRegister?.name ?? "sin seleccionar"}. Solo lectura. La venta sigue usando la existencia de la sucursal activa.`} footer={<Button onClick={() => { setStockProduct(null); setLocationStock(null); }}>Cerrar <kbd>Esc</kbd></Button>}>{locationStockLoading ? <DataState loading error={null} hasData={0} empty="">{null}</DataState> : locationStock ? <section className="pos-location-stock"><header><span>Disponibilidad en otras sucursales</span><strong>{locationStock.total} {locationStock.total === 1 ? "sucursal" : "sucursales"}</strong></header>{otherLocationStockItems.length ? <div className="pos-location-stock__rows">{otherLocationStockItems.map((item) => { const quantity = Number(item.quantity_on_hand); const status = otherLocationStockStatus(quantity); return <article className={`is-${status.tone}`} key={item.location_id}><span className="pos-location-stock__location"><strong>{item.location_name}</strong><small>{item.location_code}</small></span><span className="pos-location-stock__quantity"><small>{status.label}</small><b>{quantity.toLocaleString("es-MX", { maximumFractionDigits: 3 })} <em>{locationStock.unit ?? stockProduct?.unit ?? ""}</em></b></span></article>; })}</div> : <p>No hay otras sucursales autorizadas para consultar.</p>}{locationStock.total > locationStock.page_size && <DataPagination page={locationStock.page} total={locationStock.total} pageSize={locationStock.page_size} label="sucursales" onChange={(page) => { if (stockProduct) void loadLocationStock(stockProduct, page); }} />}</section> : null}</Modal>
     <Drawer open={quickCustomerOpen} onOpenChange={setQuickCustomerOpen} title="Alta rápida de cliente"><form className="sales-form" onSubmit={createQuickCustomer}><p className="settings-note">Solo lo necesario para continuar la venta. Se crea de contado y hereda la lista de precios de esta ubicación.</p><label>Nombre<Input required autoFocus value={quickCustomerName} onChange={(event) => setQuickCustomerName(event.target.value)} /></label><label>Teléfono opcional<Input inputMode="tel" value={quickCustomerPhone} onChange={(event) => setQuickCustomerPhone(event.target.value)} /></label><label>RFC opcional<Input value={quickCustomerTaxId} onChange={(event) => setQuickCustomerTaxId(event.target.value.toUpperCase())} /></label><Button type="submit" variant="primary" loading={busy}>Crear y seleccionar</Button></form></Drawer>
     <Modal open={discountOpen} onOpenChange={setDiscountOpen} title="Solicitar descuento" description="El límite de tu rol se aplica automáticamente; si lo superas, el carrito queda pendiente de aprobación." footer={<Button type="submit" form="sale-discount-form" variant="primary" loading={busy}>Solicitar</Button>}><form id="sale-discount-form" className="sales-form" onSubmit={requestDiscount}><label>Porcentaje<Input required inputMode="decimal" min="0.01" max="100" value={discountPercent} onChange={(event) => setDiscountPercent(event.target.value)} /></label><label>Motivo<Input required value={discountReason} onChange={(event) => setDiscountReason(event.target.value)} placeholder="Motivo comercial" /></label></form></Modal>
   </div>;

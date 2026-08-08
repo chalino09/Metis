@@ -68,6 +68,7 @@ declare
   v_session jsonb;
   v_cart jsonb;
   v_quote jsonb;
+  v_change_retry jsonb;
   v_sale jsonb;
   v_retry jsonb;
   v_close jsonb;
@@ -92,8 +93,25 @@ begin
     '14000000-0000-4000-8000-000000000016'
   );
   v_cart := public.get_or_create_sale_cart('14000000-0000-4000-8000-000000000001', (v_session ->> 'cash_session_id')::uuid);
-  perform public.change_sale_cart_item((v_cart ->> 'cart_id')::uuid, '14000000-0000-4000-8000-000000000007', 1, (v_cart ->> 'revision')::integer);
-  v_quote := public.quote_sale_cart((v_cart ->> 'cart_id')::uuid);
+  v_quote := public.change_sale_cart_item_and_quote(
+    (v_cart ->> 'cart_id')::uuid,
+    '14000000-0000-4000-8000-000000000007',
+    1,
+    (v_cart ->> 'revision')::integer,
+    '14000000-0000-4000-8000-000000000022'
+  );
+  v_change_retry := public.change_sale_cart_item_and_quote(
+    (v_cart ->> 'cart_id')::uuid,
+    '14000000-0000-4000-8000-000000000007',
+    1,
+    (v_cart ->> 'revision')::integer,
+    '14000000-0000-4000-8000-000000000022'
+  );
+  if not coalesce((v_change_retry ->> 'idempotent')::boolean, false)
+    or v_change_retry ->> 'revision' <> v_quote ->> 'revision'
+    or (select quantity from public.sale_cart_items where cart_id=(v_cart->>'cart_id')::uuid and product_id='14000000-0000-4000-8000-000000000007') <> 1 then
+    raise exception 'El reintento del cambio de partida no fue idempotente: %', v_change_retry;
+  end if;
   if (v_quote ->> 'total_amount')::numeric <> 116 then raise exception 'Total con impuesto inesperado: %', v_quote; end if;
 
   v_sale := public.complete_pos_sale(
