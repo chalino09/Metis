@@ -483,7 +483,7 @@ export function SatrapyRouteContent() {
   if (activeView === "inventory_replenishment") return <InventoryReplenishmentView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "settings_home") return <ConfigurationHome companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "initial_migration") return <InitialMigrationView companyId={appState.membership.companyId} />;
-  if (activeView === "locations") return <CompanyLocationsView companyId={appState.membership.companyId} />;
+  if (activeView === "locations") return <CompanyLocationsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "users_access") return <CompanyUsersView companyId={appState.membership.companyId} />;
   if (activeView === "audit") return <ImportAuditWorkspace companyId={appState.membership.companyId} canPromotePurchaseOrders={appState.membership.permissions.includes("promote_purchase_orders")} />;
   if (activeView === "sales_audit") return <SalesAuditView companyId={appState.membership.companyId} />;
