@@ -48,7 +48,7 @@ No se usa `service_role` en el cliente. La llave configurada en el navegador deb
 - Cada venta crea un ticket canónico inmutable con hash y un evento `ticket.ready` en outbox. La impresión física no está conectada aún; el futuro agente local consumirá ese contrato, sin reconstruir importes desde tablas de trabajo.
 - Contado usa una sola forma de pago configurable; solo las de tipo `cash_drawer` afectan el arqueo. Crédito exige cliente, límite, plazo y genera cuentas por cobrar; los abonos son FIFO y de una sola forma de pago.
 - Precios: lista del cliente, luego de la ubicación y finalmente la predeterminada de la empresa. Descuentos fuera del límite del rol bloquean el cobro hasta aprobación auditada por otra persona.
-- No se incluyen todavía modo offline, pagos mixtos, devoluciones ni cobranza avanzada. M4A incorpora la base contable y la póliza de apertura; la contabilización automática de operaciones pertenece a M4B y no está iniciada.
+- El POS incluye degradación segura: conserva catálogo reciente y un borrador cifrado, pero no confirma inventario, pago ni ticket sin conexión. Una venta realmente confirmable offline sigue fuera de alcance hasta definir reglas de inventario, caja y auditoría por sucursal.
 
 ## Base contable y apertura (M4A)
 
