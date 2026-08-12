@@ -269,9 +269,9 @@ de Fase 0 son propuestas de diseño, no configuración vigente.
 ### Fase 1 — Fundación durable de automatización
 
 **Estado verificado el 2026-08-12:** implementación completada, migración aplicada
-al entorno conectado y frontend autenticado validado en escritorio. Publicación
-de Fases 0–1 preparada para `main`. No se inició la Fase 2 ni se modificaron
-saldos, clientes, contactos o pagos de Teza.
+al entorno conectado y frontend autenticado validado en escritorio. El código de
+Fases 0–1 quedó consolidado para producción en `a5cead5`. No se inició la Fase 2
+ni se modificaron saldos, clientes, contactos o pagos de Teza.
 
 **Backend**
 
@@ -315,7 +315,7 @@ saldos, clientes, contactos o pagos de Teza.
 - `scripts/collection-worker.ts` es un proceso Node.js/TypeScript separado. En
   esta fase solo admite `internal_healthcheck`; no importa ni invoca OpenAI,
   Twilio, correo o WhatsApp.
-- La bandeja `Ventas → Automatización de cobranza` usa RPC paginada y muestra
+- La bandeja interna `CxC → Gestiones` usa RPC paginada y muestra
   pendientes, programadas/en proceso, completadas, fallidas y canceladas. Solo
   `super_admin` y `direccion_admin` reciben los permisos; estados dinámicos usan
   regiones anunciables y controles nativos.
@@ -324,7 +324,7 @@ saldos, clientes, contactos o pagos de Teza.
   política bloqueada; encolado idempotente; primer worker reclama una tarea;
   segundo worker obtiene cero; el lease expirado permite reclamarla; la
   finalización produce una sola acción. La prueba terminó con `DO` y `ROLLBACK`.
-- Verificaciones ejecutadas: 256 pruebas TypeScript aprobadas, ESLint aprobado,
+- Verificaciones ejecutadas: 282 pruebas TypeScript aprobadas, ESLint aprobado,
   build de producción aprobado y `git diff --check` sin errores.
 - La validación autenticada comprobó la navegación interna de CxC en escritorio:
   `Cartera | Gestiones`. La ruta dejó de aparecer como sección independiente de
@@ -341,8 +341,11 @@ llamadas ni otros canales.
 
 - Alcance: diagnóstico reproducible, política propuesta, fundación durable,
   worker determinista y vista interna `Gestiones` dentro de CxC.
-- Validación previa: 256 pruebas generales, 5 pruebas específicas, prueba SQL
+- Validación previa: 282 pruebas generales (incluidas 5 específicas), prueba SQL
   transaccional, ESLint, build de producción y `git diff --check` aprobados.
+- Publicación: implementación funcional consolidada en el commit `a5cead5` de
+  `main`; este apartado documental registra la evidencia de su liberación a
+  `origin/main`.
 - Base de datos: la migración de Fase 1 fue ejecutada por el usuario en el
   Supabase conectado; se verificaron por lectura los permisos
   `view_collection_automation` y `manage_collection_automation` y sus asignaciones
