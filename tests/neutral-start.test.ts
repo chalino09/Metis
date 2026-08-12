@@ -4,7 +4,6 @@ import test from "node:test";
 import { neutralMetricValue } from "../app/lib/neutral-start.ts";
 
 const migration = readFileSync("supabase/migrations/202607280004_company_neutral_start.sql", "utf8");
-const notice = readFileSync("app/components/NeutralStartNotice.tsx", "utf8");
 const app = readFileSync("app/components/SatrapyApp.tsx", "utf8");
 const bi = readFileSync("app/components/BiModule.tsx", "utf8");
 const accounting = readFileSync("app/components/AccountingModule.tsx", "utf8");
@@ -35,18 +34,9 @@ test("BI diferencia cero operativo de indisponibilidad histórica", () => {
   assert.match(bi, /neutralMetricValue/);
 });
 
-test("la UI explica el estado sin presentar la migración como requisito operativo", () => {
-  assert.match(notice, /Arranque neutral/);
-  assert.match(notice, /Puedes comenzar con operaciones reales/);
-  assert.match(notice, /saldos históricos por conjunto/);
-  assert.doesNotMatch(notice, /Revisar puesta en marcha/);
-  assert.match(notice, /get_company_neutral_start/);
-  assert.match(app, /module="inventory"/);
-  assert.match(app, /module="cash_banks"/);
-  assert.doesNotMatch(app, /module="receivables"/);
-  assert.match(app, /module="payables"/);
-  assert.match(app, /module="accounting"/);
-  assert.match(app, /module="bi"/);
+test("la UI no muestra avisos de arranque neutral", () => {
+  assert.doesNotMatch(app, /NeutralStartNotice/);
+  assert.doesNotMatch(app, /module="(?:inventory|cash_banks|payables|accounting|bi)"/);
   assert.match(accounting, /importa archivos por conjunto/);
   assert.match(accounting, /Estado neutral, sin póliza de apertura/);
   assert.doesNotMatch(accounting, /Elige captura manual o importación/);

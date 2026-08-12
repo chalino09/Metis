@@ -1,0 +1,64 @@
+export type ProductExperience = "core" | "restaurant";
+
+const RESTAURANT_VIEWS = new Set([
+  "bi_summary",
+  "pos",
+  "sales_history",
+  "cash",
+  "products",
+  "inventory",
+  "inventory_counts",
+  "collaborators_directory",
+  "settings_home",
+  "locations",
+  "users_access",
+  "assortments",
+  "sales_settings",
+  "sales_audit",
+]);
+
+export function normalizeProductExperience(value: unknown): ProductExperience {
+  return value === "restaurant" ? "restaurant" : "core";
+}
+
+export function isViewAvailableForExperience(view: string, experience: ProductExperience) {
+  return experience === "core" || RESTAURANT_VIEWS.has(view);
+}
+
+export function productVocabulary(experience: ProductExperience) {
+  return experience === "restaurant"
+    ? { singular: "platillo", singularTitle: "Platillo", plural: "platillos", pluralTitle: "Platillos" }
+    : { singular: "producto", singularTitle: "Producto", plural: "productos", pluralTitle: "Productos" };
+}
+
+export function experienceViewLabel(view: string, defaultLabel: string, experience: ProductExperience) {
+  if (experience !== "restaurant") return defaultLabel;
+  const labels: Record<string, string> = {
+    bi_summary: "Indicadores",
+    sales_history: "Tickets y ventas",
+    products: "Platillos",
+    inventory: "Existencias",
+    inventory_counts: "Conteos y ajustes",
+    collaborators_directory: "Directorio",
+    users_access: "Roles y accesos",
+    assortments: "Disponibilidad de platillos",
+    sales_settings: "Caja, pagos y ticket",
+    sales_audit: "Cancelaciones y descuentos",
+  };
+  return labels[view] ?? defaultLabel;
+}
+
+export function experienceSectionLabel(section: string, defaultLabel: string, experience: ProductExperience) {
+  if (experience !== "restaurant") return defaultLabel;
+  if (section === "bi") return "Indicadores";
+  if (section === "collaborators") return "Colaboradores";
+  return defaultLabel;
+}
+
+export function experienceRoleLabel(code: string, defaultLabel: string, experience: ProductExperience) {
+  if (experience !== "restaurant") return defaultLabel;
+  if (code === "punto_venta") return "Cajero";
+  if (code === "sucursal") return "Encargado";
+  if (code === "direccion_admin") return "Administrador";
+  return defaultLabel;
+}

@@ -4,6 +4,7 @@ import { Store } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, Modal, useToast } from "@/app/components/ui/primitives";
 import { productReadinessSummary } from "@/app/lib/product-readiness";
+import { productVocabulary, type ProductExperience } from "@/app/lib/product-experience";
 import { getSupabaseClient } from "@/app/lib/supabase";
 
 type AssortmentLocation = { id: string; code: string; name: string };
@@ -32,6 +33,7 @@ export function ProductCommercializationModal({
   product,
   open,
   initialReason,
+  experience="core",
   onOpenChange,
   onSaved,
 }: {
@@ -39,9 +41,11 @@ export function ProductCommercializationModal({
   product: { id: string; name: string } | null;
   open: boolean;
   initialReason: string;
+  experience?: ProductExperience;
   onOpenChange: (open: boolean) => void;
   onSaved?: () => Promise<void> | void;
 }) {
+  const words = productVocabulary(experience);
   const { toast } = useToast();
   const [context, setContext] = useState<CommercialContext | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -60,14 +64,14 @@ export function ProductCommercializationModal({
     });
     if (contextError || !data) {
       setContext(null);
-      setError("No se pudo cargar la comercialización del producto. Verifica la actualización de la base e intenta nuevamente.");
+      setError(`No se pudo cargar la comercialización del ${words.singular}. Verifica la actualización de la base e intenta nuevamente.`);
     } else {
       const next = data as CommercialContext;
       setContext(next);
       setSelectedIds(next.assortments.filter((assortment) => assortment.included).map((assortment) => assortment.id));
     }
     setLoading(false);
-  }, [companyId, open, product]);
+  }, [companyId, open, product, words.singular]);
 
   useEffect(() => {
     void Promise.resolve().then(() => {
@@ -96,10 +100,10 @@ export function ProductCommercializationModal({
     }
     const result = data as { assortments?: number } | null;
     toast({
-      title: "Comercialización actualizada",
+      title: "Disponibilidad actualizada",
       description: result?.assortments
-        ? `El producto quedó incluido en ${result.assortments} surtido${result.assortments === 1 ? "" : "s"}.`
-        : "El producto se mantendrá fuera de los surtidos.",
+        ? `El ${words.singular} quedó disponible en ${result.assortments} catálogo${result.assortments === 1 ? "" : "s"} de sucursal.`
+        : `El ${words.singular} no estará disponible en ninguna sucursal.`,
       tone: "success",
     });
     await onSaved?.();
@@ -116,29 +120,29 @@ export function ProductCommercializationModal({
       open={open}
       onOpenChange={(nextOpen) => !saving && onOpenChange(nextOpen)}
       eyebrow="Disponibilidad comercial"
-      title={product?.name ?? "Producto"}
-      description="Define en qué surtidos se ofrecerá. Esta decisión no modifica precios ni existencias."
+      title={product?.name ?? words.singularTitle}
+      description="Elige en qué sucursales se ofrecerá. Esta decisión no modifica precios ni existencias."
       footer={<>
         <Button variant="secondary" disabled={saving} onClick={() => onOpenChange(false)}>Cerrar</Button>
-        <Button variant="primary" loading={saving} disabled={loading || !context || !reason.trim()} onClick={() => void save()}>Guardar comercialización</Button>
+        <Button variant="primary" loading={saving} disabled={loading || !context || !reason.trim()} onClick={() => void save()}>Guardar disponibilidad</Button>
       </>}
     >
-      {loading && <p className="product-commercialization__state">Cargando surtidos…</p>}
+      {loading && <p className="product-commercialization__state">Cargando sucursales…</p>}
       {error && <div className="product-commercialization__error"><p>{error}</p><Button size="sm" onClick={() => void load()}>Reintentar</Button></div>}
       {!loading && context && <>
         <div className="product-commercialization__summary">
           <article><span>Configuración</span><strong>{readinessText}</strong></article>
-          <article><span>Surtidos</span><strong>{selectedIds.length}</strong></article>
+          <article><span>Catálogos</span><strong>{selectedIds.length}</strong></article>
           <article><span>Sucursales activas</span><strong>{context.offered_location_count}</strong></article>
         </div>
         {!context.assortments.length ? (
           <div className="product-commercialization__empty">
             <Store size={20} />
-            <div><strong>Aún no existen surtidos comerciales</strong><p>Crea el surtido desde Configuración → Ventas → Surtidos comerciales y después regresa a este producto.</p></div>
+            <div><strong>Aún no hay productos configurados por sucursal</strong><p>Abre Configuración → Productos por sucursal, crea el primer catálogo y después regresa a este {words.singular}.</p></div>
           </div>
         ) : (
           <fieldset className="product-commercialization__options">
-            <legend>Surtidos disponibles</legend>
+            <legend>Catálogos por sucursal</legend>
             {context.assortments.map((assortment) => (
               <label key={assortment.id}>
                 <input type="checkbox" checked={selectedIds.includes(assortment.id)} onChange={() => toggle(assortment.id)} />
@@ -157,9 +161,9 @@ export function ProductCommercializationModal({
         )}
         <label className="operation-reason product-commercialization__reason">
           Motivo obligatorio
-          <textarea required rows={2} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Ej. Alta del producto en el surtido general" />
+          <textarea required rows={2} value={reason} onChange={(event) => setReason(event.target.value)} placeholder={`Ej. Habilitar ${words.singular} en la sucursal`} />
         </label>
-        <p className="product-commercialization__note">El POS sólo lo ofrecerá en las sucursales de un surtido activo y seguirá validando configuración comercial y existencia por separado.</p>
+        <p className="product-commercialization__note">El POS sólo lo ofrecerá en las sucursales de un catálogo activo y seguirá validando precio, impuesto y existencia.</p>
       </>}
     </Modal>
   );

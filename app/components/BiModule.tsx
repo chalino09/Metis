@@ -474,6 +474,7 @@ function DashboardChart({rows,visualization}:{rows:ExplorerRow[];visualization:s
 
 function BiExecutiveSummary({ companyId }: { companyId: string }) {
   const { accessibleLocations,appState } = useSatrapy();
+  const isRestaurant=appState?.membership.productExperience==="restaurant";
   const router=useRouter();
   const searchParams=useSearchParams();
   const [filters, setFilters] = useState<BiFilters>(()=>initialFilters(searchParams));
@@ -490,7 +491,7 @@ function BiExecutiveSummary({ companyId }: { companyId: string }) {
   const [activeChart,setActiveChart]=useState<BiChart["code"]>("sales");
   const [periodPreset,setPeriodPreset]=useState<ExecutivePeriodPreset>(()=>inferExecutivePeriod(filters));
   const [advancedFiltersOpen,setAdvancedFiltersOpen]=useState(false);
-  const canViewBudgets=Boolean(appState?.membership.permissions.includes("*")||appState?.membership.permissions.includes("view_bi_budgets"));
+  const canViewBudgets=!isRestaurant&&Boolean(appState?.membership.permissions.includes("*")||appState?.membership.permissions.includes("view_bi_budgets"));
 
   const load = useCallback(async (next: BiFilters) => {
     setLoading(true);setError(null);
@@ -527,8 +528,8 @@ function BiExecutiveSummary({ companyId }: { companyId: string }) {
   const activeFilterCount = [applied.locationId, applied.product, applied.customer, applied.supplier].filter(Boolean).length;
   const advancedFilterCount = [applied.product, applied.customer, applied.supplier].filter(Boolean).length;
   const dirty = JSON.stringify(filters) !== JSON.stringify(applied);
-  const metrics=useMemo(()=>summary?.metrics.map(metric=>({...metric,...(analytics?.comparisons?.[metric.code]??{})}))??[],[analytics,summary]);
-  const charts=useMemo(()=>analytics?.charts??(summary?fallbackCharts({...summary,metrics}):[]),[analytics,metrics,summary]);
+  const metrics=useMemo(()=>{const all=summary?.metrics.map(metric=>({...metric,...(analytics?.comparisons?.[metric.code]??{})}))??[];return isRestaurant?all.filter(metric=>["net_sales","tickets","average_ticket","gross_margin"].includes(metric.code)):all;},[analytics,isRestaurant,summary]);
+  const charts=useMemo(()=>{const all=analytics?.charts??(summary?fallbackCharts({...summary,metrics}):[]);return isRestaurant?all.filter(chart=>chart.code==="sales"||chart.code==="gross_margin"):all;},[analytics,isRestaurant,metrics,summary]);
 
   function applyFilters(next:BiFilters){
     setFilters(next);setApplied(next);
@@ -557,12 +558,12 @@ function BiExecutiveSummary({ companyId }: { companyId: string }) {
   }
 
   return <section className="content-frame module-page bi-module">
-    <PageHeading eyebrow="Business Intelligence" title="Resumen ejecutivo" description="Lectura transversal con distinción entre devengado, efectivo y operación. Cada cifra conserva fórmula, fuente y acceso al origen." action={<Button variant="secondary" size="sm" onClick={() => void load(applied)} disabled={loading}><RefreshCw size={14} /> Actualizar</Button>} />
+    <PageHeading eyebrow={isRestaurant?"Operación del restaurante":"Business Intelligence"} title={isRestaurant?"Indicadores":"Resumen ejecutivo"} description={isRestaurant?"Ventas, tickets, ticket promedio y margen para dar seguimiento al piloto.":"Lectura transversal con distinción entre devengado, efectivo y operación. Cada cifra conserva fórmula, fuente y acceso al origen."} action={<Button variant="secondary" size="sm" onClick={() => void load(applied)} disabled={loading}><RefreshCw size={14} /> Actualizar</Button>} />
     <section className={`bi-executive-filterbar${dirty?" has-pending":""}`} aria-label="Filtros del Resumen ejecutivo">
       <div className="bi-executive-filterbar__primary">
         <label><span>Periodo</span><Select ariaLabel="Periodo del resumen" value={periodPreset} onValueChange={changePeriod} options={EXECUTIVE_PERIOD_OPTIONS} /></label>
         <label><span>Ubicación</span><Select ariaLabel="Filtrar por ubicación" value={filters.locationId || "__all__"} onValueChange={value => setFilters(current => ({ ...current, locationId: value === "__all__" ? "" : value }))} options={[{ value: "__all__", label: "Todas las ubicaciones" }, ...accessibleLocations.filter(location => location.is_active).map(location => ({ value: location.id, label: location.name }))]} /></label>
-        <Button className="bi-executive-filterbar__more" variant="secondary" size="sm" aria-expanded={advancedFiltersOpen} aria-controls="bi-executive-advanced-filters" onClick={()=>setAdvancedFiltersOpen(current=>!current)}><Plus size={14}/><span>Más filtros{advancedFilterCount>0?` · ${advancedFilterCount}`:""}</span></Button>
+        {!isRestaurant&&<Button className="bi-executive-filterbar__more" variant="secondary" size="sm" aria-expanded={advancedFiltersOpen} aria-controls="bi-executive-advanced-filters" onClick={()=>setAdvancedFiltersOpen(current=>!current)}><Plus size={14}/><span>Más filtros{advancedFilterCount>0?` · ${advancedFilterCount}`:""}</span></Button>}
         <div className="bi-executive-filterbar__actions">
           {(activeFilterCount>0||dirty)&&<Button variant="ghost" size="sm" onClick={resetFilters}>Restablecer</Button>}
           <Button variant={dirty?"primary":"secondary"} size="sm" disabled={!dirty||!filters.dateFrom||!filters.dateTo} onClick={()=>applyFilters(filters)}>Aplicar cambios</Button>
@@ -573,7 +574,7 @@ function BiExecutiveSummary({ companyId }: { companyId: string }) {
         <label><span>Desde</span><Input type="date" value={filters.dateFrom} max={filters.dateTo} onChange={event=>setFilters(current=>({...current,dateFrom:event.target.value}))} aria-label="Periodo desde"/></label>
         <label><span>Hasta</span><Input type="date" value={filters.dateTo} min={filters.dateFrom} max={isoDate(new Date())} onChange={event=>setFilters(current=>({...current,dateTo:event.target.value}))} aria-label="Periodo hasta"/></label>
       </div>}
-      {advancedFiltersOpen&&<div id="bi-executive-advanced-filters" className="bi-executive-filterbar__advanced">
+      {!isRestaurant&&advancedFiltersOpen&&<div id="bi-executive-advanced-filters" className="bi-executive-filterbar__advanced">
         <header><div><strong>Filtros de detalle</strong><span>Las opciones se consultan conforme escribes; no se cargan catálogos completos.</span></div><button type="button" aria-label="Cerrar filtros de detalle" onClick={()=>setAdvancedFiltersOpen(false)}><X size={15}/></button></header>
         <div>
           <BiEntityFilter companyId={companyId} dimension="product" label="Producto" value={filters.product} onChange={value=>setFilters(current=>({...current,product:value}))}/>
@@ -607,8 +608,8 @@ function BiExecutiveSummary({ companyId }: { companyId: string }) {
           </div>
         </div>
         <BiLocationChart locations={summary.locations} currencyCode={summary.currency_code} onInspect={() => setSelectedMetric({code:"net_sales"})} />
-        <article className="bi-accrual-note"><AlertCircle size={18} /><div><strong>Devengado no es efectivo</strong><p>Ventas reconoce la operación cuando se completa; cobranza, pagos y bancos reconocen movimientos efectivos. El margen usa sólo el costo reconocido congelado por partida; una comparación sin base histórica queda “No disponible” y nunca se sustituye con una estimación.</p></div></article>
-        <div className="bi-trace"><Database size={15} /><span><strong>Trazabilidad de consulta</strong>{summary.trace.query}{analytics?` + ${analytics.trace.query}`:""} · {[...summary.trace.sources,...(analytics?.trace.sources??[])].filter((source,index,all)=>all.indexOf(source)===index).join(", ")}</span></div>
+        {!isRestaurant&&<article className="bi-accrual-note"><AlertCircle size={18} /><div><strong>Devengado no es efectivo</strong><p>Ventas reconoce la operación cuando se completa; cobranza, pagos y bancos reconocen movimientos efectivos. El margen usa sólo el costo reconocido congelado por partida; una comparación sin base histórica queda “No disponible” y nunca se sustituye con una estimación.</p></div></article>}
+        {!isRestaurant&&<div className="bi-trace"><Database size={15} /><span><strong>Trazabilidad de consulta</strong>{summary.trace.query}{analytics?` + ${analytics.trace.query}`:""} · {[...summary.trace.sources,...(analytics?.trace.sources??[])].filter((source,index,all)=>all.indexOf(source)===index).join(", ")}</span></div>}
       </>}
     </DataState>
     <MetricDefinition code={definitionMetric} summary={summary} onClose={() => setDefinitionMetric(null)} />

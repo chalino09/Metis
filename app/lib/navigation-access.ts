@@ -19,7 +19,15 @@ export const ROLE_PREVIEW_PERMISSIONS: Record<AppRoleCode, string[]> = {
   punto_venta: ["view_products", "view_inventory", "view_prices", "use_pos", "view_sales", "view_sales_quotes", "manage_sales_quotes", "view_sales_orders", "manage_sales_orders", "sell_cash", "manage_customers", "view_customer_credit", "apply_discount", "open_cash_session", "close_own_cash_session", "record_cash_movement", "view_cash_reports", "record_receivable_payment"],
 };
 
-ROLE_PREVIEW_PERMISSIONS.direccion_admin.push("view_banking", "import_bank_statements", "reconcile_banking", "unreconcile_banking");
+ROLE_PREVIEW_PERMISSIONS.direccion_admin.push(
+  "view_banking",
+  "import_bank_statements",
+  "reconcile_banking",
+  "unreconcile_banking",
+  "manage_location_operating_profiles",
+  "manage_location_responsibilities",
+  "view_location_profitability",
+);
 
 export function matchesNavigationRequirement(permissions: string[], requirement?: NavigationRequirement) {
   const hasPermission = (permission: string) => permissions.includes("*") || permissions.includes(permission);

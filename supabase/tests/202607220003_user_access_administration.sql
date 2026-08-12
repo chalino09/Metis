@@ -14,7 +14,7 @@ begin
  insert into public.user_roles(user_id,role_id,company_id) select admin_user,id,c from public.roles where code='direccion_admin';
  perform set_config('request.jwt.claim.role','authenticated',true);perform set_config('request.jwt.claim.sub',admin_user::text,true);
  r:=public.get_company_user_access_options(c);
- if jsonb_array_length(r->'roles')<>4 or (r->'roles') @> '[{"code":"punto_venta"}]'::jsonb or (r->'roles') @> '[{"code":"supervisor_sucursal"}]'::jsonb then raise exception 'Los roles asignables no corresponden al modelo aprobado: %',r;end if;
+ if not (r->'roles') @> '[{"code":"direccion_admin"},{"code":"sucursal"},{"code":"almacen"},{"code":"ingeniero_campo"}]'::jsonb or (r->'roles') @> '[{"code":"punto_venta"}]'::jsonb or (r->'roles') @> '[{"code":"supervisor_sucursal"}]'::jsonb then raise exception 'Los roles asignables no corresponden al modelo aprobado: %',r;end if;
  r:=public.save_company_user_access(c,target_user,'sucursal',array[l1],'active','Alta de operador',null,'cf030000-0000-4000-8000-000000000021');
  if r->>'role_code'<>'sucursal' or r->>'status'<>'active' then raise exception 'No se creó el acceso de operador: %',r;end if;stamp:=(r->>'updated_at')::timestamptz;
  r2:=public.save_company_user_access(c,target_user,'sucursal',array[l1],'active','Alta de operador',null,'cf030000-0000-4000-8000-000000000021');

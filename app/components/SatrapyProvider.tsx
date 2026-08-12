@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { getSupabaseClient, isSupabaseConfigured } from "@/app/lib/supabase";
 import { withAccessTimeout } from "@/app/lib/access-loading";
 import { ROLE_PREVIEW_PERMISSIONS } from "@/app/lib/navigation-access";
+import { normalizeProductExperience, type ProductExperience } from "@/app/lib/product-experience";
 import type { AppRoleCode, CompanyMembership, LocationRow, RoleOption } from "@/app/lib/types";
 
 export type SatrapyAppState = {
@@ -13,6 +14,7 @@ export type SatrapyAppState = {
 };
 
 export type SatrapyAccessIssue = "membership_missing" | "access_unavailable";
+type CompanyAccessRow = { id: string; display_name: string; updated_at: string; product_experience_code?: unknown };
 
 export type QueryCache = {
   get: <T>(key: string) => T | undefined;
@@ -28,7 +30,7 @@ type SatrapyContextValue = {
   accessIssue: SatrapyAccessIssue | null;
   appState: SatrapyAppState | null;
   isSuperAdmin: boolean;
-  companies: Array<{ id: string; display_name: string }>;
+  companies: Array<{ id: string; display_name: string; product_experience_code: ProductExperience; updated_at: string }>;
   accessibleLocations: LocationRow[];
   previewRole: AppRoleCode | null;
   setPreviewRole: (role: AppRoleCode | null) => void;
@@ -43,7 +45,7 @@ export function SatrapyProvider({ children }: { children: ReactNode }) {
   const configured = isSupabaseConfigured();
   const [appState, setAppState] = useState<SatrapyAppState | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
-  const [companies, setCompanies] = useState<Array<{ id: string; display_name: string }>>([]);
+  const [companies, setCompanies] = useState<Array<{ id: string; display_name: string; product_experience_code: ProductExperience; updated_at: string }>>([]);
   const [accessibleLocations, setAccessibleLocations] = useState<LocationRow[]>([]);
   const [previewRole, setPreviewRole] = useState<AppRoleCode | null>(null);
   const [loading, setLoading] = useState(configured);
@@ -121,9 +123,20 @@ export function SatrapyProvider({ children }: { children: ReactNode }) {
 
       const isSuperAdmin = allAssignedRoles.some((role) => role.code === "super_admin");
       const companyIds = assignmentRows.map((row) => row.company_id).filter((id): id is string => Boolean(id));
-      const { data: companyRows, error: companyError } = await withAccessTimeout(supabase.from("companies").select("id, display_name").order("display_name"));
+      const companyResult = await withAccessTimeout(supabase.from("companies").select("id, display_name, product_experience_code, updated_at").order("display_name"));
+      let companyRows = companyResult.data as CompanyAccessRow[] | null;
+      let companyError = companyResult.error;
+      if (companyError?.message.includes("product_experience_code")) {
+        const fallbackCompanyResult = await withAccessTimeout(supabase.from("companies").select("id, display_name, updated_at").order("display_name"));
+        companyRows = fallbackCompanyResult.data as CompanyAccessRow[] | null;
+        companyError = fallbackCompanyResult.error;
+      }
       if (companyError) throw companyError;
-      const availableCompanies = isSuperAdmin ? companyRows ?? [] : (companyRows ?? []).filter((company) => companyIds.includes(company.id));
+      const normalizedCompanies = (companyRows ?? []).map((company) => ({
+        ...company,
+        product_experience_code: normalizeProductExperience(company.product_experience_code),
+      }));
+      const availableCompanies = isSuperAdmin ? normalizedCompanies : normalizedCompanies.filter((company) => companyIds.includes(company.id));
 
       const { data: profile, error: profileError } = await withAccessTimeout(supabase.from("profiles").select("default_company_id").eq("id", authData.user.id).maybeSingle());
       if (profileError) throw profileError;
@@ -139,13 +152,20 @@ export function SatrapyProvider({ children }: { children: ReactNode }) {
         .map((row) => Array.isArray(row.roles) ? row.roles[0] : row.roles)
         .filter((role): role is RoleOption => Boolean(role));
       const roleIdSet = new Set(assignmentRows.filter((row) => row.company_id === selectedCompany.id || row.company_id === null).map((row) => row.role_id));
-      const permissions = ((permissionRows ?? []) as Array<{
+      let permissions = ((permissionRows ?? []) as Array<{
         role_id: string;
         permissions: { code: string } | Array<{ code: string }> | null;
       }>)
         .filter((row) => roleIdSet.has(row.role_id))
         .map((row) => Array.isArray(row.permissions) ? row.permissions[0]?.code : row.permissions?.code)
         .filter((code): code is string => Boolean(code));
+      if (isSuperAdmin) {
+        const { data: permissionCatalog, error: permissionCatalogError } = await withAccessTimeout(supabase
+          .from("permissions")
+          .select("code"));
+        if (permissionCatalogError) throw permissionCatalogError;
+        permissions = (permissionCatalog ?? []).map((permission) => permission.code);
+      }
 
       const { data: locationRows, error: locationsError } = await withAccessTimeout(supabase
         .from("locations")
@@ -163,6 +183,8 @@ export function SatrapyProvider({ children }: { children: ReactNode }) {
         membership: {
           companyId: selectedCompany.id,
           companyName: selectedCompany.display_name,
+          companyUpdatedAt: selectedCompany.updated_at,
+          productExperience: selectedCompany.product_experience_code,
           roles: companyRoles,
           permissions: [...new Set(permissions)],
         },

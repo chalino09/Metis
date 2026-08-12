@@ -133,6 +133,8 @@ export type ParsedAlphaFile = {
 export type CompanyMembership = {
   companyId: string;
   companyName: string;
+  companyUpdatedAt: string;
+  productExperience: import("@/app/lib/product-experience").ProductExperience;
   roles: RoleOption[];
   permissions: string[];
 };
