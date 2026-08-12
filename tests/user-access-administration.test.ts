@@ -34,6 +34,11 @@ test("la administración reutiliza identidad y membresías con seguridad server-
   assert.match(provider,/\.eq\("is_active", true\)/);
 });
 
+test("Superadmin recibe el catálogo real de permisos para operar cualquier empresa",()=>{
+  assert.match(provider,/if \(isSuperAdmin\) \{[\s\S]*\.from\("permissions"\)[\s\S]*\.select\("code"\)/);
+  assert.match(provider,/permissions = \(permissionCatalog \?\? \[\]\)\.map/);
+});
+
 test("el admin autoriza el correo sin enviar invitación ni crear credenciales",()=>{
   assert.match(route,/save_company_user_invitation/);
   assert.doesNotMatch(route,/inviteUserByEmail|createUser/);

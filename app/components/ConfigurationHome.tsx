@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { Badge } from "@/app/components/ui/primitives";
+import { useSatrapy } from "@/app/components/SatrapyProvider";
 import { getSupabaseClient } from "@/app/lib/supabase";
 
 type ConfigurationMode = "all" | "setup" | "manage" | "audit";
@@ -68,9 +69,11 @@ function normalize(value: string) {
 }
 
 export function ConfigurationHome({ companyId, permissions }: { companyId: string; permissions: string[] }) {
-  const has = useCallback((...codes: string[]) => codes.some((code) => permissions.includes(code) || permissions.includes("*")), [permissions]);
-  const canReviewMigration = has("import_data", "import_prices", "import_costs", "import_accounting_opening");
-  const canUseImportCenter = canReviewMigration || has("import_bi_budgets");
+  const { appState, isSuperAdmin } = useSatrapy();
+  const isRestaurant = appState?.membership.productExperience === "restaurant";
+  const has = useCallback((...codes: string[]) => isSuperAdmin || codes.some((code) => permissions.includes(code) || permissions.includes("*")), [isSuperAdmin, permissions]);
+  const canReviewMigration = !isRestaurant && has("import_data", "import_prices", "import_costs", "import_accounting_opening");
+  const canUseImportCenter = !isRestaurant && (canReviewMigration || has("import_bi_budgets"));
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<ConfigurationMode>("all");
   const [readiness, setReadiness] = useState<Readiness | null>(null);
@@ -117,6 +120,17 @@ export function ConfigurationHome({ companyId, permissions }: { companyId: strin
   const destinations = useMemo<Destination[]>(() => {
     const entries: Destination[] = [
     {
+      id: "first-sale",
+      label: "Preparar primera venta",
+      description: "Completa sucursal, caja, pagos, precios y productos disponibles en un solo recorrido.",
+      href: "/satrapy/configuracion/ventas",
+      icon: CheckCircle2,
+      group: "setup",
+      mode: "setup",
+      keywords: "inicio primera venta caja denominaciones precios productos sucursal",
+      visible: has("manage_payment_methods", "manage_locations", "manage_prices", "manage_assortments"),
+    },
+    {
       id: "migration-readiness",
       label: "Migración inicial",
       description: "Comprueba qué información de origen tiene evidencia real.",
@@ -151,7 +165,7 @@ export function ConfigurationHome({ companyId, permissions }: { companyId: strin
     },
     {
       id: "users",
-      label: "Usuarios y accesos",
+      label: isRestaurant ? "Roles y accesos" : "Usuarios y accesos",
       description: "Invita personas y limita su acceso por rol y sucursal.",
       href: "/satrapy/configuracion/usuarios",
       icon: Users,
@@ -162,7 +176,7 @@ export function ConfigurationHome({ companyId, permissions }: { companyId: strin
     },
     {
       id: "sales",
-      label: "Ventas y caja",
+      label: isRestaurant ? "Caja, pagos y ticket" : "Ventas y caja",
       description: "Configura pagos, cajas, precios, descuentos y documentos.",
       href: "/satrapy/configuracion/ventas",
       icon: ShoppingCart,
@@ -173,8 +187,8 @@ export function ConfigurationHome({ companyId, permissions }: { companyId: strin
     },
     {
       id: "assortments",
-      label: "Surtidos comerciales",
-      description: "Define qué productos pertenecen al surtido de cada ubicación.",
+      label: "Productos por sucursal",
+      description: isRestaurant ? "Elige qué platillos se ofrecen en cada sucursal." : "Elige qué productos se pueden vender en cada sucursal.",
       href: "/satrapy/configuracion/surtidos",
       icon: SlidersHorizontal,
       group: "operation",
@@ -191,7 +205,7 @@ export function ConfigurationHome({ companyId, permissions }: { companyId: strin
       group: "finance",
       mode: "manage",
       keywords: "contabilidad catalogo cuentas polizas periodos",
-      visible: has("view_accounting", "configure_accounting"),
+      visible: !isRestaurant && has("view_accounting", "configure_accounting"),
     },
     {
       id: "bank-accounts",
@@ -202,7 +216,7 @@ export function ConfigurationHome({ companyId, permissions }: { companyId: strin
       group: "finance",
       mode: "manage",
       keywords: "bancos cuentas pagadoras pagos proveedores finanzas",
-      visible: has("view_banking", "manage_supplier_paying_accounts"),
+      visible: !isRestaurant && has("view_banking", "manage_supplier_paying_accounts"),
     },
     {
       id: "import-audit",
@@ -213,7 +227,7 @@ export function ConfigurationHome({ companyId, permissions }: { companyId: strin
       group: "audit",
       mode: "audit",
       keywords: "historial evidencia alpha lotes cambios",
-      visible: has("view_import_audit"),
+      visible: !isRestaurant && has("view_import_audit"),
     },
     {
       id: "sales-audit",
@@ -228,7 +242,7 @@ export function ConfigurationHome({ companyId, permissions }: { companyId: strin
     },
     ];
     return entries.filter((destination) => destination.visible);
-  }, [canReviewMigration, canUseImportCenter, has]);
+  }, [canReviewMigration, canUseImportCenter, has, isRestaurant]);
 
   const normalizedQuery = normalize(query);
   const visibleDestinations = destinations.filter((destination) => {

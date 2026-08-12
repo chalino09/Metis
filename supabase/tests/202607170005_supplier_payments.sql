@@ -49,7 +49,7 @@ begin
   begin perform public.confirm_supplier_payment(v_company,v_proposal,v_account,current_date,'TRANSFERENCIA','FORMA-INVALIDA',gen_random_uuid());exception when others then v_forbidden:=position('forma de pago sat inválida' in lower(sqlerrm))>0;end;
   if not v_forbidden then raise exception 'Se aceptó una forma de pago SAT inválida.';end if;v_forbidden:=false;
   v_result:=public.confirm_supplier_payment(v_company,v_proposal,v_account,current_date,'03','REF-E2-001',v_confirm_request);v_payment:=(v_result->>'id')::uuid;
-  if v_result#>>'{total_amount}'<>'240.000000' or v_result->>'status'<>'confirmed' or v_result->>'reconciliation_status'<>'unreconciled' then raise exception 'Confirmación parcial/total incorrecta: %',v_result;end if;
+  if (v_result#>>'{total_amount}')::numeric<>240 or v_result->>'status'<>'confirmed' or v_result->>'reconciliation_status'<>'unreconciled' then raise exception 'Confirmación parcial/total incorrecta: %',v_result;end if;
   if (select payment_method from public.supplier_payments where id=v_payment)<>'03' then raise exception 'La forma de pago SAT no se conservó exactamente.';end if;
   if (select outstanding_amount from public.accounts_payable where id=v_payable_a)<>60 or (select outstanding_amount from public.accounts_payable where id=v_payable_b)<>0 then raise exception 'Saldos parcial/total incorrectos.';end if;
   if (select count(*) from public.supplier_payment_applications where payment_id=v_payment)<>2 then raise exception 'Faltan aplicaciones explícitas.';end if;

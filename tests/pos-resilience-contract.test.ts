@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const sql = readFileSync("supabase/migrations/202608070002_pos_resilient_cart_changes.sql", "utf8");
+const sql = readFileSync("supabase/migrations/202608070003_pos_resilient_cart_changes.sql", "utf8");
 const sales = readFileSync("app/components/SalesModule.tsx", "utf8");
 const resilience = readFileSync("app/lib/pos-resilience.ts", "utf8");
 

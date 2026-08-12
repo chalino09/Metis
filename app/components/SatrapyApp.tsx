@@ -20,6 +20,7 @@ import {
   LogOut,
   MapPinned,
   PackageSearch,
+  Plus,
   RefreshCw,
   ReceiptText,
   ShoppingCart,
@@ -33,16 +34,17 @@ import {
   Users,
   WalletCards,
 } from "lucide-react";
-import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { DataPagination, DataRefreshStatus, DataState, DataToolbar, InteractiveTableRow, PageHeading } from "@/app/components/ui/data";
-import { Badge, Button, Drawer, Input, Modal, Select, ToastProvider, useToast } from "@/app/components/ui/primitives";
+import { Badge, Button, Drawer, Field, Input, Modal, Select, ToastProvider, useToast } from "@/app/components/ui/primitives";
 import { useDismissiblePopover } from "@/app/components/ui/use-dismissible-popover";
 import { getSupabaseClient } from "@/app/lib/supabase";
 import { classifyAlphaUpload, isPurchasingAlphaUpload } from "@/app/lib/alpha-upload-routing";
 import { OperationIdempotencyKeys } from "@/app/lib/operation-idempotency";
 import { presentImportedSourceText } from "@/app/lib/presentation-text";
+import { experienceRoleLabel, experienceSectionLabel, experienceViewLabel, isViewAvailableForExperience, type ProductExperience } from "@/app/lib/product-experience";
 import { purchasingUploadPackageState } from "@/app/lib/purchasing-upload-package";
 import { COMMERCIAL_ASSORTMENTS_PATH, LEGACY_POS_PREPARATION_PATH, MANAGE_ASSORTMENTS_REQUIREMENT, matchesNavigationRequirement, ROLE_PREVIEW_PERMISSIONS, type NavigationRequirement } from "@/app/lib/navigation-access";
 import { useSatrapy, type SatrapyAccessIssue } from "@/app/components/SatrapyProvider";
@@ -66,7 +68,6 @@ import { ProductCatalogView } from "@/app/components/ProductCatalogView";
 import { EcommerceModule } from "@/app/components/EcommerceModule";
 import { CollaboratorsDirectoryView, PayrollView } from "@/app/components/CollaboratorsModule";
 import { BiModule } from "@/app/components/BiModule";
-import { NeutralStartNotice } from "@/app/components/NeutralStartNotice";
 import type {
   AppRoleCode,
   ImportBatchRow,
@@ -87,6 +88,12 @@ const ALL_ROLES: RoleOption[] = [
   { code: "almacen", display_name: "Almacén" },
 ];
 
+const RESTAURANT_ROLES: RoleOption[] = [
+  { code: "direccion_admin", display_name: "Administrador" },
+  { code: "sucursal", display_name: "Encargado" },
+  { code: "punto_venta", display_name: "Cajero" },
+];
+
 const VIEW_META: Record<ViewName, {
   label: string;
   icon: typeof Boxes;
@@ -104,7 +111,7 @@ const VIEW_META: Record<ViewName, {
     icon: LayoutGrid,
     href: "/satrapy/configuracion",
     area: "settings",
-    requirement: { any: ["manage_locations","manage_company_users","import_data","import_prices","import_costs","import_accounting_opening","import_bi_budgets","view_import_audit","manage_assortments","manage_supplier_paying_accounts","manage_payment_methods","manage_discount_policies","manage_prices","manage_ticket_branding","view_sales_audit","view_accounting","configure_accounting","view_banking"] },
+    requirement: { any: ["manage_product_experience","manage_locations","manage_company_users","import_data","import_prices","import_costs","import_accounting_opening","import_bi_budgets","view_import_audit","manage_assortments","manage_supplier_paying_accounts","manage_payment_methods","manage_discount_policies","manage_prices","manage_ticket_branding","view_sales_audit","view_accounting","configure_accounting","view_banking"] },
   },
   initial_migration: {
     label: "Migración inicial",
@@ -233,7 +240,7 @@ const VIEW_META: Record<ViewName, {
     requirement: { all: ["view_sales_audit"] },
   },
   assortments: {
-    label: "Surtidos comerciales",
+    label: "Productos por sucursal",
     icon: ClipboardCheck,
     href: COMMERCIAL_ASSORTMENTS_PATH,
     area: "settings",
@@ -350,10 +357,15 @@ const SETTINGS_GROUPS: Partial<Record<ViewName, string>> = {
 
 const DATA_PAGE_SIZE = 50;
 
-function getAllowedNavigation(permissions: string[], previewRole: AppRoleCode | null) {
+function viewLabel(name: ViewName, experience: ProductExperience) {
+  return experienceViewLabel(name, VIEW_META[name].label, experience);
+}
+
+function getAllowedNavigation(permissions: string[], previewRole: AppRoleCode | null, experience: ProductExperience, isSuperAdmin: boolean) {
   const effectivePermissions = previewRole ? ROLE_PREVIEW_PERMISSIONS[previewRole] : permissions;
-  const isAllowed = (name: ViewName) => matchesNavigationRequirement(effectivePermissions, VIEW_META[name].requirement);
-  const navigation = NAVIGATION_SECTIONS.map((section) => ({ ...section, views: section.views.filter(isAllowed) }))
+  const isAllowed = (name: ViewName) => isViewAvailableForExperience(name, experience)
+    && ((!previewRole && isSuperAdmin) || matchesNavigationRequirement(effectivePermissions, VIEW_META[name].requirement));
+  const navigation = NAVIGATION_SECTIONS.map((section) => ({ ...section, label: experienceSectionLabel(section.id, section.label, experience), views: section.views.filter(isAllowed) }))
     .filter((section) => section.views.length > 0);
   return { navigation, views: navigation.flatMap((section) => section.views) };
 }
@@ -368,12 +380,13 @@ export function SatrapyShell({ children }: { children: ReactNode }) {
   if (accessIssue && !appState) return <AccessRecoveryScreen issue={accessIssue} onRetry={() => void refreshAccess()} />;
   if (!appState) return <LoginScreen />;
 
-  const { navigation: allowedNavigation, views: allowedViews } = getAllowedNavigation(appState.membership.permissions, previewRole);
+  const experience = appState.membership.productExperience;
+  const { navigation: allowedNavigation, views: allowedViews } = getAllowedNavigation(appState.membership.permissions, previewRole, experience, isSuperAdmin);
   const requestedView = customerMasterId(pathname) ? "customers" : viewForPath(pathname);
   const activeView = requestedView && allowedViews.includes(requestedView) ? requestedView : allowedViews[0] ?? "inventory";
   const activeArea = VIEW_META[activeView].area;
   const activeRole = appState.membership.roles.find((role) => role.code !== "super_admin") ?? appState.membership.roles[0];
-  const activeRoleLabel = isSuperAdmin ? "Superadmin" : activeRole ? roleDisplayName(activeRole.code, activeRole.display_name) : undefined;
+  const activeRoleLabel = isSuperAdmin ? "Superadmin" : activeRole ? experienceRoleLabel(activeRole.code, roleDisplayName(activeRole.code, activeRole.display_name), experience) : undefined;
   const activeSection = allowedNavigation.find((section) => section.id === activeArea) ?? allowedNavigation[0];
   const contextViews = activeSection?.views;
   const isSettingsArea = activeSection?.id === "settings";
@@ -402,7 +415,8 @@ export function SatrapyShell({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="global-header__controls">
-          {isSuperAdmin || companies.length > 1 ? <div className="global-session-switchers"><div className="global-company-selector"><Select ariaLabel="Cambiar empresa" value={appState.membership.companyId} onValueChange={(companyId) => void selectCompany(companyId)} options={companies.map((company) => ({ value: company.id, label: company.display_name }))} /></div>{isSuperAdmin && <RolePreview selectedRole={previewRole} onChange={(role) => setPreviewRole(role)} compact />}</div> : <div className="global-company-context" title={appState.membership.companyName}><Building2 size={14} /><span>{appState.membership.companyName}</span></div>}
+          {isSuperAdmin || companies.length > 1 ? <div className="global-session-switchers"><div className="global-company-selector"><Select ariaLabel="Cambiar empresa" value={appState.membership.companyId} onValueChange={(companyId) => void selectCompany(companyId)} options={companies.map((company) => ({ value: company.id, label: company.display_name }))} /></div>{isSuperAdmin && <RolePreview selectedRole={previewRole} onChange={(role) => setPreviewRole(role)} experience={experience} compact />}</div> : <div className="global-company-context" title={appState.membership.companyName}><Building2 size={14} /><span>{appState.membership.companyName}</span></div>}
+          {isSuperAdmin && <CreateCompanyAction onCreated={async () => { await refreshAccess(); router.push("/satrapy/configuracion"); }} />}
           {activeRoleLabel && <Badge className="global-role-badge" tone={isSuperAdmin ? "primary" : "neutral"}>{activeRoleLabel}</Badge>}
           <div className="user-avatar">{appState.email.slice(0, 1).toUpperCase()}</div>
           <button className="icon-button" aria-label="Cerrar sesión" onClick={() => void getSupabaseClient().auth.signOut()}><LogOut size={16} /></button>
@@ -412,19 +426,19 @@ export function SatrapyShell({ children }: { children: ReactNode }) {
       <section className="main-panel">
         {isSettingsArea ? <nav className="settings-context" aria-label="Ubicación en Configuración">
           <button className="settings-context__home" aria-current={activeView === "settings_home" ? "page" : undefined} onClick={() => router.push(VIEW_META.settings_home.href)}><LayoutGrid size={15} /> Configuración</button>
-          {activeView !== "settings_home" && <><span className="settings-context__separator" aria-hidden="true">/</span>{settingsGroup && <><span>{settingsGroup}</span><span className="settings-context__separator" aria-hidden="true">/</span></>}<strong>{VIEW_META[activeView].label}</strong></>}
+          {activeView !== "settings_home" && <><span className="settings-context__separator" aria-hidden="true">/</span>{settingsGroup && <><span>{settingsGroup}</span><span className="settings-context__separator" aria-hidden="true">/</span></>}<strong>{viewLabel(activeView, experience)}</strong></>}
         </nav> : <nav className={`context-nav ${activeSection?.id === "accounting" ? "context-nav--accounting" : ""}`} aria-label={`Secciones de ${activeSection?.label ?? "Satrapy"}`}>
           <div className="topbar__context">
             <strong>{appState.membership.companyName}</strong>
             <span>{activeSection?.label ?? "Operación"}</span>
           </div>
-          {activeSection?.id === "accounting" ? <div className="context-nav__links accounting-context-nav">{contextViews?.map((name) => { const item = VIEW_META[name]; const Icon = item.icon; return <Link className={`context-nav__item ${activeView === name ? "is-active" : ""}`} aria-current={activeView === name ? "page" : undefined} href={item.href} key={name}><Icon size={16} />{item.label}</Link>; })}</div> : <div className="context-nav__links">{contextViews?.map((name) => { const item = VIEW_META[name]; const Icon = item.icon; return <button className={`context-nav__item ${activeView === name ? "is-active" : ""}`} aria-current={activeView === name ? "page" : undefined} onClick={() => router.push(activeSection?.id === "bi" ? `${item.href}${window.location.search}` : item.href)} key={name}><Icon size={16} />{item.label}</button>; })}</div>}
+          {activeSection?.id === "accounting" ? <div className="context-nav__links accounting-context-nav">{contextViews?.map((name) => { const item = VIEW_META[name]; const Icon = item.icon; return <Link className={`context-nav__item ${activeView === name ? "is-active" : ""}`} aria-current={activeView === name ? "page" : undefined} href={item.href} key={name}><Icon size={16} />{viewLabel(name, experience)}</Link>; })}</div> : <div className="context-nav__links">{contextViews?.map((name) => { const item = VIEW_META[name]; const Icon = item.icon; return <button className={`context-nav__item ${activeView === name ? "is-active" : ""}`} aria-current={activeView === name ? "page" : undefined} onClick={() => router.push(activeSection?.id === "bi" ? `${item.href}${window.location.search}` : item.href)} key={name}><Icon size={16} />{viewLabel(name, experience)}</button>; })}</div>}
           <span className="topbar__status">Operación en orden</span>
         </nav>}
         {previewRole && (
           <div className="role-preview-banner">
             <UserRoundCheck size={17} />
-            <span>Vista de interfaz como <strong>{roleLabel(previewRole)}</strong>.</span>
+            <span>Vista de interfaz como <strong>{roleLabel(previewRole, experience)}</strong>.</span>
             <button onClick={() => setPreviewRole(null)}>Salir de vista</button>
           </div>
         )}
@@ -435,14 +449,104 @@ export function SatrapyShell({ children }: { children: ReactNode }) {
   );
 }
 
+function CreateCompanyAction({ onCreated }: { onCreated: () => Promise<void> }) {
+  const { toast } = useToast();
+  const idempotencyKeys = useRef(new OperationIdempotencyKeys()).current;
+  const legalNameRef = useRef<HTMLInputElement>(null);
+  const displayNameRef = useRef<HTMLInputElement>(null);
+  const reasonRef = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(false);
+  const [legalName, setLegalName] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [reason, setReason] = useState("");
+  const [invalidField, setInvalidField] = useState<"legalName" | "displayName" | "reason" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  function resetForm() {
+    setLegalName("");
+    setDisplayName("");
+    setReason("");
+    setInvalidField(null);
+    setError(null);
+  }
+
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen && saving) return;
+    setOpen(nextOpen);
+    if (!nextOpen) resetForm();
+  }
+
+  async function createCompany(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const normalizedLegalName = legalName.trim();
+    const normalizedDisplayName = displayName.trim();
+    const normalizedReason = reason.trim();
+    if (!normalizedLegalName) {
+      setInvalidField("legalName");
+      setError("Captura la razón social.");
+      legalNameRef.current?.focus();
+      return;
+    }
+    if (!normalizedDisplayName) {
+      setInvalidField("displayName");
+      setError("Captura el nombre visible.");
+      displayNameRef.current?.focus();
+      return;
+    }
+    if (!normalizedReason) {
+      setInvalidField("reason");
+      setError("Indica el motivo de creación para la auditoría.");
+      reasonRef.current?.focus();
+      return;
+    }
+
+    const fingerprint = `${normalizedLegalName}|${normalizedDisplayName}|${normalizedReason}`;
+    setSaving(true);
+    setError(null);
+    try {
+      const clientRequestId = idempotencyKeys.get("create_company", fingerprint);
+      const { error: rpcError } = await getSupabaseClient().rpc("create_company", {
+        p_legal_name: normalizedLegalName,
+        p_display_name: normalizedDisplayName,
+        p_reason: normalizedReason,
+        p_client_request_id: clientRequestId,
+      });
+      if (rpcError) throw rpcError;
+      await onCreated();
+      idempotencyKeys.clear("create_company");
+      setOpen(false);
+      resetForm();
+      toast({ title: "Empresa creada", description: `${normalizedDisplayName} inicia vacía en Satrapy completo.`, tone: "success" });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "No fue posible crear la empresa. Intenta de nuevo.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return <>
+    <Button className="global-create-company" onClick={() => setOpen(true)}><Plus size={16} /> Crear empresa</Button>
+    <Modal open={open} onOpenChange={handleOpenChange} eyebrow="Superadmin" title="Crear empresa" description="La empresa inicia vacía y en Satrapy completo. Podrás elegir Restaurant después de crearla." footer={<><Button disabled={saving} onClick={() => handleOpenChange(false)}>Cancelar</Button><Button type="submit" form="create-company" variant="primary" loading={saving}>Crear empresa</Button></>}>
+      <form id="create-company" className="create-company-form" onSubmit={createCompany} noValidate>
+        <Field label="Razón social" error={invalidField === "legalName" ? error ?? undefined : undefined}><Input ref={legalNameRef} required autoFocus maxLength={240} value={legalName} onChange={(event) => { setLegalName(event.target.value); if (invalidField === "legalName") { setInvalidField(null); setError(null); } }} placeholder="Ej. Comercializadora del Valle, S.A. de C.V." aria-invalid={invalidField === "legalName" || undefined} /></Field>
+        <Field label="Nombre visible" hint="Así aparecerá en Satrapy." error={invalidField === "displayName" ? error ?? undefined : undefined}><Input ref={displayNameRef} required maxLength={240} value={displayName} onChange={(event) => { setDisplayName(event.target.value); if (invalidField === "displayName") { setInvalidField(null); setError(null); } }} placeholder="Ej. Comercializadora del Valle" aria-invalid={invalidField === "displayName" || undefined} /></Field>
+        <Field label="Motivo" hint="Se conservará en la auditoría." error={invalidField === "reason" ? error ?? undefined : undefined}><Input ref={reasonRef} required maxLength={240} value={reason} onChange={(event) => { setReason(event.target.value); if (invalidField === "reason") { setInvalidField(null); setError(null); } }} placeholder="Ej. Alta de nueva unidad operativa" aria-invalid={invalidField === "reason" || undefined} /></Field>
+        {error && !invalidField && <p className="form-error" role="alert">{error}</p>}
+      </form>
+    </Modal>
+  </>;
+}
+
 export function SatrapyRouteContent() {
   const pathname = usePathname();
   const router = useRouter();
-  const { appState, loading, previewRole } = useSatrapy();
+  const { appState, isSuperAdmin, loading, previewRole } = useSatrapy();
   const selectedCustomerId = customerMasterId(pathname);
   const creatingCustomer = isNewCustomerPath(pathname);
   const requestedView = selectedCustomerId || creatingCustomer ? "customers" : viewForPath(pathname);
-  const { views: allowedViews } = getAllowedNavigation(appState?.membership.permissions ?? [], previewRole);
+  const experience = appState?.membership.productExperience ?? "core";
+  const { views: allowedViews } = getAllowedNavigation(appState?.membership.permissions ?? [], previewRole, experience, isSuperAdmin);
   const activeView = requestedView && allowedViews.includes(requestedView) ? requestedView : allowedViews[0] ?? "inventory";
   const isForbidden = Boolean(requestedView && !allowedViews.includes(requestedView));
 
@@ -466,6 +570,7 @@ export function SatrapyRouteContent() {
   // La revalidación de acceso no debe desmontar formularios que ya tienen una
   // identidad válida; sólo la carga inicial o un cierre de sesión ocultan la ruta.
   if (!appState) return null;
+  const effectivePermissions = previewRole ? ROLE_PREVIEW_PERMISSIONS[previewRole] : appState.membership.permissions;
   if (isForbidden) return <AccessDeniedScreen onGoHome={() => router.replace(VIEW_META[allowedViews[0]].href)} />;
   if (!requestedView) return <div className="route-loading" aria-live="polite"><LoaderCircle className="spin" size={18} /> Abriendo tu espacio de trabajo…</div>;
   if (activeView === "migration") return <MigrationCenter companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
@@ -473,43 +578,43 @@ export function SatrapyRouteContent() {
   if (activeView === "procurement") return <ProcurementView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "purchase_orders") return <PurchaseOrdersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "purchase_receipts") return <PurchaseReceiptsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
-  if (activeView === "supplier_invoices") return <NeutralStartNotice companyId={appState.membership.companyId} module="payables"><SupplierInvoicesView companyId={appState.membership.companyId} permissions={appState.membership.permissions} /></NeutralStartNotice>;
+  if (activeView === "supplier_invoices") return <SupplierInvoicesView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "supplier_paying_accounts") return <SupplierPayingAccountsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
-  if (activeView === "products") return <ProductCatalogView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
+  if (activeView === "products") return <ProductCatalogView companyId={appState.membership.companyId} permissions={appState.membership.permissions} experience={experience} />;
   if (activeView === "ecommerce_readiness") return <EcommerceModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
-  if (activeView === "inventory") return <NeutralStartNotice companyId={appState.membership.companyId} module="inventory"><InventoryView companyId={appState.membership.companyId} /></NeutralStartNotice>;
+  if (activeView === "inventory") return <InventoryView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "inventory_counts") return <InventoryCountsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "inventory_transfers") return <InventoryTransfersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "inventory_replenishment") return <InventoryReplenishmentView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "settings_home") return <ConfigurationHome companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "initial_migration") return <InitialMigrationView companyId={appState.membership.companyId} />;
-  if (activeView === "locations") return <CompanyLocationsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
+  if (activeView === "locations") return <CompanyLocationsView companyId={appState.membership.companyId} permissions={effectivePermissions} />;
   if (activeView === "users_access") return <CompanyUsersView companyId={appState.membership.companyId} />;
   if (activeView === "audit") return <ImportAuditWorkspace companyId={appState.membership.companyId} canPromotePurchaseOrders={appState.membership.permissions.includes("promote_purchase_orders")} />;
   if (activeView === "sales_audit") return <SalesAuditView companyId={appState.membership.companyId} />;
-  if (activeView === "pos") return <PosSalesView key={appState.membership.companyId} companyId={appState.membership.companyId} companyName={appState.membership.companyName} cashierName={appState.email} permissions={appState.membership.permissions} />;
+  if (activeView === "pos") return <PosSalesView key={appState.membership.companyId} companyId={appState.membership.companyId} companyName={appState.membership.companyName} cashierName={appState.email} permissions={appState.membership.permissions} experience={experience} />;
   if (activeView === "sales_history") return <SalesHistoryView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "sales_quotes") return <SalesQuotesView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "sales_orders") return <SalesOrdersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "customers") return <CustomersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} initialCustomerId={selectedCustomerId} initialCreateOpen={creatingCustomer} />;
   if (activeView === "receivables") return <ReceivablesView companyId={appState.membership.companyId} />;
-  if (activeView === "cash") return <NeutralStartNotice companyId={appState.membership.companyId} module="cash_banks"><CashDeskView companyId={appState.membership.companyId} /></NeutralStartNotice>;
-  if (activeView === "sales_settings") return <SalesSettingsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
+  if (activeView === "cash") return <CashDeskView companyId={appState.membership.companyId} />;
+  if (activeView === "sales_settings") return <SalesSettingsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} experience={experience} />;
   if (activeView === "collaborators_directory") return <CollaboratorsDirectoryView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "payroll") return <PayrollView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
-  if (activeView === "bi_summary") return <NeutralStartNotice companyId={appState.membership.companyId} module="bi"><BiModule companyId={appState.membership.companyId} view="summary" /></NeutralStartNotice>;
+  if (activeView === "bi_summary") return <BiModule companyId={appState.membership.companyId} view="summary" />;
   if (activeView === "bi_explorer") return <BiModule companyId={appState.membership.companyId} view="explorer" />;
   if (activeView === "bi_reports") return <BiModule companyId={appState.membership.companyId} view="reports" />;
   if (activeView === "bi_budgets") return <BiModule companyId={appState.membership.companyId} view="budgets" />;
   if (activeView === "bi_network") return <BiModule companyId={appState.membership.companyId} view="network" />;
-  if (activeView === "accounting_summary") return <NeutralStartNotice companyId={appState.membership.companyId} module="accounting"><AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="summary" /></NeutralStartNotice>;
+  if (activeView === "accounting_summary") return <AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="summary" />;
   if (activeView === "accounting_accounts") return <AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="accounts" />;
   if (activeView === "accounting_periods") return <AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="periods" />;
   if (activeView === "accounting_reports") return <AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="reports" />;
   if (activeView === "accounting_journals") return <AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="journals" />;
   if (activeView === "accounting_events") return <AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="events" />;
-  if (activeView === "accounting_banking") return <NeutralStartNotice companyId={appState.membership.companyId} module="cash_banks"><BankingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} /></NeutralStartNotice>;
-  if (activeView === "accounting_opening") return <NeutralStartNotice companyId={appState.membership.companyId} module="accounting"><AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="opening" /></NeutralStartNotice>;
+  if (activeView === "accounting_banking") return <BankingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
+  if (activeView === "accounting_opening") return <AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="opening" />;
   if (activeView === "accounting_settings") return <AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="settings" />;
   return <CommercialAssortmentsView key={appState.membership.companyId} companyId={appState.membership.companyId} />;
 }
@@ -667,7 +772,10 @@ function LoadingScreen() {
   </main>;
 }
 
-function RolePreview({ selectedRole, onChange, compact = false }: { selectedRole: AppRoleCode | null; onChange: (role: AppRoleCode | null) => void; compact?: boolean }) {
+function RolePreview({ selectedRole, onChange, experience, compact = false }: { selectedRole: AppRoleCode | null; onChange: (role: AppRoleCode | null) => void; experience: ProductExperience; compact?: boolean }) {
+  const availableRoles = experience === "restaurant"
+    ? RESTAURANT_ROLES
+    : ALL_ROLES.filter((role) => role.code !== "super_admin");
   return (
     <div className={compact ? "role-preview role-preview--compact" : "role-preview"}>
       {!compact && <span className="eyebrow">Super Admin</span>}
@@ -676,7 +784,7 @@ function RolePreview({ selectedRole, onChange, compact = false }: { selectedRole
           ariaLabel="Ver como rol"
           value={selectedRole ?? "default"}
           onValueChange={(value) => onChange(value === "default" ? null : value as AppRoleCode)}
-          options={[{ value: "default", label: compact ? "Vista" : "Vista predeterminada" }, ...ALL_ROLES.filter((role) => role.code !== "super_admin").map((role) => ({ value: role.code, label: role.display_name }))]}
+          options={[{ value: "default", label: compact ? "Vista" : "Vista predeterminada" }, ...availableRoles.map((role) => ({ value: role.code, label: experienceRoleLabel(role.code, role.display_name, experience) }))]}
           style={compact ? { width: 62, minWidth: 62, minHeight: 30, border: 0, borderRadius: 7, background: "transparent", boxShadow: "none", padding: "5px 7px", color: "#68756f", fontSize: 10, fontWeight: 650 } : undefined}
         />
       </label>
@@ -1469,8 +1577,11 @@ type InventoryMovementRow = {
   reference_label: string;
 };
 
-function InventoryView({ companyId }: { companyId: string }) {
+type InventoryOpeningProduct = { product_id: string; product_code: string; name: string; unit: string | null };
+
+function InventoryView({ companyId, permissions }: { companyId: string; permissions: string[] }) {
   const { accessibleLocations, queryCache } = useSatrapy();
+  const { toast } = useToast();
   const [rows, setRows] = useState<InventoryProductRow[]>([]);
   const [expandedProducts, setExpandedProducts] = useState<Set<string>>(() => new Set());
   const [referenceRow, setReferenceRow] = useState<InventoryRow | null>(null);
@@ -1489,9 +1600,25 @@ function InventoryView({ companyId }: { companyId: string }) {
   const [selectedLocation, setSelectedLocation] = useState("all");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [openingOpen, setOpeningOpen] = useState(false);
+  const [openingLocation, setOpeningLocation] = useState("");
+  const [openingRows, setOpeningRows] = useState<InventoryOpeningProduct[]>([]);
+  const [openingEligible, setOpeningEligible] = useState(true);
+  const [openingTotal, setOpeningTotal] = useState(0);
+  const [openingPage, setOpeningPage] = useState(1);
+  const [openingQuery, setOpeningQuery] = useState("");
+  const [openingDebouncedQuery, setOpeningDebouncedQuery] = useState("");
+  const [openingQuantities, setOpeningQuantities] = useState<Record<string,string>>({});
+  const [openingReason, setOpeningReason] = useState("");
+  const [openingLoading, setOpeningLoading] = useState(false);
+  const [openingSaving, setOpeningSaving] = useState(false);
+  const [openingError, setOpeningError] = useState<string|null>(null);
+  const openingRequestId = useRef("");
   const requestId = useRef(0);
   const movementRequestId = useRef(0);
+  const canInitializeInventory = permissions.includes("*") || permissions.includes("operate_inventory");
   useEffect(() => { const timer = window.setTimeout(() => { setDebouncedSearch(search.trim()); setPage(1); }, 280); return () => window.clearTimeout(timer); }, [search]);
+  useEffect(() => { const timer = window.setTimeout(() => { setOpeningDebouncedQuery(openingQuery.trim()); setOpeningPage(1); }, 280); return () => window.clearTimeout(timer); }, [openingQuery]);
   const load = useCallback(async () => {
     const cacheKey = `inventory:${companyId}:${debouncedSearch}:${selectedLocation}:${page}`;
     const cached = queryCache.get<{ rows: InventoryProductRow[]; total: number }>(cacheKey);
@@ -1515,6 +1642,43 @@ function InventoryView({ companyId }: { companyId: string }) {
     if (!queryError) queryCache.set(cacheKey, next);
   }, [companyId, debouncedSearch, page, queryCache, selectedLocation]);
   useEffect(() => { void Promise.resolve().then(load); }, [load]);
+  const loadOpeningProducts = useCallback(async () => {
+    if (!openingOpen || !openingLocation) return;
+    setOpeningLoading(true); setOpeningError(null);
+    const { data, error: queryError } = await getSupabaseClient().rpc("search_manual_inventory_opening_products", {
+      p_company_id: companyId,
+      p_location_id: openingLocation,
+      p_query: openingDebouncedQuery || null,
+      p_page: openingPage,
+      p_page_size: 50,
+    });
+    const result = data as { eligible?: boolean; items?: InventoryOpeningProduct[]; total?: number } | null;
+    setOpeningRows(result?.items ?? []); setOpeningTotal(result?.total ?? 0); setOpeningEligible(result?.eligible !== false);
+    setOpeningError(queryError ? (queryError.message?.includes("search_manual_inventory_opening_products") ? "Falta aplicar la migración de inventario inicial antes de usar esta captura." : "No se pudieron cargar los productos para esta sucursal.") : null);
+    setOpeningLoading(false);
+  }, [companyId, openingDebouncedQuery, openingLocation, openingOpen, openingPage]);
+  useEffect(() => { void Promise.resolve().then(loadOpeningProducts); }, [loadOpeningProducts]);
+  function openInventoryOpening() {
+    const preferred = selectedLocation !== "all" ? selectedLocation : accessibleLocations[0]?.id ?? "";
+    setOpeningLocation(preferred); setOpeningRows([]); setOpeningQuantities({}); setOpeningReason(""); setOpeningQuery(""); setOpeningDebouncedQuery(""); setOpeningPage(1); setOpeningError(null); setOpeningEligible(true);
+    openingRequestId.current = crypto.randomUUID(); setOpeningOpen(true);
+  }
+  function closeInventoryOpening() {
+    if (openingSaving) return;
+    setOpeningOpen(false); setOpeningRows([]); setOpeningQuantities({}); setOpeningReason(""); setOpeningError(null);
+  }
+  async function saveInventoryOpening(event: FormEvent) {
+    event.preventDefault();
+    const lines = Object.entries(openingQuantities).map(([product_id,raw]) => ({ product_id, quantity: Number(raw.replace(",",".")) })).filter(line => Number.isFinite(line.quantity) && line.quantity > 0);
+    if (!openingLocation || !openingReason.trim() || !lines.length) return;
+    setOpeningSaving(true);
+    const { data, error: saveError } = await getSupabaseClient().rpc("initialize_inventory_location", { p_company_id: companyId, p_location_id: openingLocation, p_lines: lines, p_reason: openingReason.trim(), p_client_request_id: openingRequestId.current });
+    setOpeningSaving(false);
+    if (saveError) { toast({ title: "No se pudo registrar el inventario inicial", description: presentImportedSourceText(saveError.message), tone: "error" }); return; }
+    const result = data as { item_count?: number } | null;
+    toast({ title: "Inventario inicial registrado", description: `${result?.item_count ?? lines.length} productos quedaron registrados y auditados.`, tone: "success" });
+    setOpeningOpen(false); setOpeningRows([]); setOpeningQuantities({}); setOpeningReason(""); refresh();
+  }
   function changeSearch(value: string) { setSearch(value); }
   function changeLocation(value: string) { setPage(1); setExpandedProducts(new Set()); setSelectedLocation(value); }
   function clearFilters() { setSearch(""); setDebouncedSearch(""); setSelectedLocation("all"); setExpandedProducts(new Set()); setPage(1); }
@@ -1568,13 +1732,26 @@ function InventoryView({ companyId }: { companyId: string }) {
     setMovementRow(null); setMovementRows([]); setMovementTotal(0); setMovementError(null); setMovementLoading(false); setMovementPage(1);
   }
   const directLocationView = selectedLocation !== "all" || accessibleLocations.length === 1;
-  return <div className="content-frame inventory-product-inquiry"><PageHeading eyebrow="Existencia operativa" title="Inventario por ubicación" description={directLocationView ? "Consulta la existencia y los movimientos de la sucursal seleccionada." : "Consulta cada producto con su existencia total y despliega el saldo de cada sucursal."} action={<Button variant="secondary" onClick={refresh}><RefreshCw size={16} /> Actualizar</Button>} /><DataToolbar search={search} onSearchChange={changeSearch} placeholder="Buscar producto o SKU" filters={<Select value={selectedLocation} onValueChange={changeLocation} ariaLabel="Filtrar por ubicación" options={locationOptions} />} activeFilters={(search.trim() ? 1 : 0) + (selectedLocation !== "all" ? 1 : 0)} onClear={clearFilters} results={total} /><DataState loading={loading && rows.length === 0} error={error} errorAction={<Button variant="secondary" size="sm" onClick={refresh}>Reintentar</Button>} hasData={rows.length} empty={empty}><div className="table-wrap surface-table inventory-product-table"><table><thead><tr><th>SKU</th><th>Producto</th><th className="number-cell">{directLocationView ? "Existencia" : "Existencia total"}</th><th>{directLocationView ? "Movimiento reciente" : "Sucursales"}</th><th>Actualización</th><th aria-label="Acciones" /></tr></thead><tbody>{rows.map((product) => {
+  const openingSelectedCount = Object.values(openingQuantities).filter(value => Number(value.replace(",",".")) > 0).length;
+  return <div className="content-frame inventory-product-inquiry"><PageHeading eyebrow="Existencia operativa" title="Inventario por ubicación" description={directLocationView ? "Consulta la existencia y los movimientos de la sucursal seleccionada." : "Consulta cada producto con su existencia total y despliega el saldo de cada sucursal."} action={<div className="inventory-heading-actions">{canInitializeInventory&&<Button variant="primary" onClick={openInventoryOpening}><Plus size={16}/> Registrar inventario inicial</Button>}<Button variant="secondary" onClick={refresh}><RefreshCw size={16} /> Actualizar</Button></div>} /><DataToolbar search={search} onSearchChange={changeSearch} placeholder="Buscar producto o SKU" filters={<Select value={selectedLocation} onValueChange={changeLocation} ariaLabel="Filtrar por ubicación" options={locationOptions} />} activeFilters={(search.trim() ? 1 : 0) + (selectedLocation !== "all" ? 1 : 0)} onClear={clearFilters} results={total} /><DataState loading={loading && rows.length === 0} error={error} errorAction={<Button variant="secondary" size="sm" onClick={refresh}>Reintentar</Button>} hasData={rows.length} empty={empty}><div className="table-wrap surface-table inventory-product-table"><table><thead><tr><th>SKU</th><th>Producto</th><th className="number-cell">{directLocationView ? "Existencia" : "Existencia total"}</th><th>{directLocationView ? "Movimiento reciente" : "Sucursales"}</th><th>Actualización</th><th aria-label="Acciones" /></tr></thead><tbody>{rows.map((product) => {
     const expanded = expandedProducts.has(product.product_id);
     const directLocation = directLocationView ? product.locations[0] : null;
     const displayedQuantity = directLocation ? directLocation.quantity_on_hand : product.total_quantity_on_hand;
     const displayedUpdatedAt = directLocation ? directLocation.balance_updated_at : product.balance_updated_at;
     return <Fragment key={product.product_id}><tr className="inventory-product-row"><td className="mono">{product.product_code}</td><td><strong>{product.product_name}</strong><small>{product.unit ?? "Sin unidad"}</small></td><td className="number-cell"><strong>{numberFormat(Number(displayedQuantity))} {product.unit ?? ""}</strong></td><td>{directLocation ? <><strong>{directLocation.last_movement_type ? inventoryMovementLabel(directLocation.last_movement_type) : "Sin movimientos"}</strong><small>{directLocation.last_movement_at ? dateTimeFormat(directLocation.last_movement_at) : "—"}</small></> : <><strong>{product.location_count} {product.location_count === 1 ? "sucursal" : "sucursales"}</strong><small>{product.positive_location_count} con existencia</small></>}</td><td>{displayedUpdatedAt ? dateTimeFormat(displayedUpdatedAt) : "Sin movimientos"}</td><td>{directLocation ? <Button variant="secondary" size="sm" aria-label={`Ver movimientos de ${product.product_name} en ${directLocation.location_name}`} onClick={() => openMovementHistory(directLocation)}>Ver movimientos</Button> : <Button variant="secondary" size="sm" aria-expanded={expanded} onClick={() => toggleProduct(product.product_id)}>{expanded ? "Ocultar" : "Ver sucursales"}</Button>}</td></tr>{!directLocation && expanded && <tr className="inventory-location-detail-row"><td colSpan={6}><div className="inventory-location-breakdown" aria-label={`Existencias por sucursal de ${product.product_name}`}>{product.locations.map((location) => <article key={location.location_id}><div><span className="location-chip">{location.location_code}</span><strong>{location.location_name}</strong></div><div className="inventory-location-balance"><strong>{numberFormat(Number(location.quantity_on_hand))} {product.unit ?? ""}</strong><small>{location.balance_updated_at ? `Actualizado ${dateTimeFormat(location.balance_updated_at)}` : "Sin saldo inicializado"}</small></div><div><strong>{location.last_movement_type ? inventoryMovementLabel(location.last_movement_type) : "Sin movimientos"}</strong><small>{location.last_movement_at ? dateTimeFormat(location.last_movement_at) : "—"}</small></div><div className="inventory-location-actions"><Button variant="secondary" size="sm" onClick={() => openMovementHistory(location)}>Ver movimientos</Button>{location.has_snapshot_reference && <Button variant="secondary" size="sm" onClick={() => void openSnapshotReference(location)}>Ver corte importado</Button>}</div></article>)}</div></td></tr>}</Fragment>;
   })}</tbody></table></div></DataState><DataPagination page={page} total={total} pageSize={DATA_PAGE_SIZE} onChange={setPage} />
+    <Drawer open={openingOpen} onOpenChange={open=>{if(!open)closeInventoryOpening();}} title="Registrar inventario inicial" className="inventory-opening-drawer"><form className="inventory-opening" onSubmit={saveInventoryOpening}>
+      <p className="settings-drawer-intro">Úsalo una sola vez por sucursal para capturar el saldo real con el que comienza la operación. Se guarda como un lote transaccional y auditado.</p>
+      <Field label="Sucursal"><Select value={openingLocation} onValueChange={value=>{setOpeningLocation(value);setOpeningPage(1);setOpeningQuantities({});}} ariaLabel="Sucursal para inventario inicial" options={accessibleLocations.map(location=>({value:location.id,label:`${location.external_code} · ${location.name}`}))}/></Field>
+      {!openingEligible?<div className="inventory-opening__blocked" role="status"><strong>Esta sucursal ya comenzó a operar</strong><p>Para cambiar sus cantidades usa una recepción de compra o un conteo físico; el inventario inicial no se puede repetir.</p></div>:<>
+        <div className="inventory-opening__scope"><strong>Captura manual por lote</strong><span>Adecuada para hasta 500 productos. Para un catálogo mayor, usa la importación.</span></div>
+        <DataToolbar search={openingQuery} onSearchChange={setOpeningQuery} placeholder="Buscar producto o código" results={openingTotal}/>
+        <DataState loading={openingLoading} error={openingError} errorAction={<Button size="sm" variant="secondary" onClick={()=>void loadOpeningProducts()}>Reintentar</Button>} hasData={openingRows.length} empty="No hay productos activos que controlen existencias."><div className="table-wrap inventory-opening__table"><table><thead><tr><th>Producto</th><th>Unidad</th><th className="number-cell">Cantidad inicial</th></tr></thead><tbody>{openingRows.map(product=><tr key={product.product_id}><td><strong>{product.name}</strong><small className="mono">{product.product_code}</small></td><td>{product.unit??"—"}</td><td className="number-cell"><Input inputMode="decimal" aria-label={`Cantidad inicial de ${product.name}`} value={openingQuantities[product.product_id]??""} onChange={event=>setOpeningQuantities(current=>({...current,[product.product_id]:event.target.value.replace(/[^\d.,]/g,"")}))} placeholder="0"/></td></tr>)}</tbody></table></div></DataState>
+        <DataPagination page={openingPage} total={openingTotal} pageSize={50} label="productos" onChange={setOpeningPage}/>
+        <label className="operation-reason">Motivo obligatorio<textarea required rows={3} value={openingReason} onChange={event=>setOpeningReason(event.target.value)} placeholder="Ej. Inventario físico al inicio de operaciones"/></label>
+        <div className="inventory-opening__footer"><span><strong>{openingSelectedCount}</strong> {openingSelectedCount===1?"producto":"productos"} con cantidad</span><div><Button variant="secondary" disabled={openingSaving} onClick={closeInventoryOpening}>Cancelar</Button><Button type="submit" variant="primary" loading={openingSaving} disabled={!openingLocation||!openingReason.trim()||openingSelectedCount===0}>Registrar lote inicial</Button></div></div>
+      </>}
+    </form></Drawer>
     <Modal open={Boolean(referenceRow)} onOpenChange={(open) => { if (!open) { setReferenceRow(null); setReferenceLoading(false); setReferenceError(null); } }} eyebrow="Referencia histórica" title={referenceRow ? referenceRow.product_name : "Corte importado"} description="Este corte fue el punto de referencia importado. No reemplaza la existencia actual ni registra un conteo físico.">{referenceLoading ? <div className="loading-copy" role="status"><LoaderCircle className="spin" size={18} /> Consultando corte importado…</div> : referenceError ? <p className="form-error">{referenceError}</p> : referenceRow && <dl className="inventory-reference-summary"><div><dt>Ubicación</dt><dd>{referenceRow.location_code} · {referenceRow.location_name}</dd></div><div><dt>Cantidad importada</dt><dd>{numberFormat(Number(referenceRow.snapshot_quantity ?? 0))} {referenceRow.unit ?? ""}</dd></div><div><dt>Fecha del corte</dt><dd>{referenceRow.snapshot_date ? dateOnlyFormat(referenceRow.snapshot_date) : "Sin fecha"}</dd></div><div><dt>Archivo de origen</dt><dd>{referenceRow.snapshot_source_file ?? "No disponible"}</dd></div><div><dt>Cambio desde ese corte</dt><dd>{referenceRow.difference_from_snapshot == null ? "No calculable" : `${Number(referenceRow.difference_from_snapshot) > 0 ? "+" : ""}${numberFormat(Number(referenceRow.difference_from_snapshot))} ${referenceRow.unit ?? ""}`}</dd></div><div><dt>Existencia actual</dt><dd>{numberFormat(Number(referenceRow.quantity_on_hand))} {referenceRow.unit ?? ""}</dd></div></dl>}</Modal>
     <Drawer open={Boolean(movementRow)} onOpenChange={(open) => { if (!open) closeMovementHistory(); }} title={movementRow ? `${movementRow.product_name} · Movimientos` : "Movimientos de inventario"} className="inventory-movement-drawer"><div className="inventory-movement-history">{movementRow && <><p className="settings-note">{movementRow.location_code} · {movementRow.location_name}</p><dl className="inventory-reference-summary"><div><dt>Saldo actual</dt><dd>{numberFormat(Number(movementRow.quantity_on_hand))} {movementRow.unit ?? ""}</dd></div><div><dt>Último movimiento</dt><dd>{movementRow.last_movement_at ? dateTimeFormat(movementRow.last_movement_at) : "Sin movimientos"}</dd></div></dl></>}<DataState loading={movementLoading} error={movementError} errorAction={<Button variant="secondary" size="sm" onClick={() => void loadMovementHistory()}>Reintentar</Button>} hasData={movementRows.length} emptyTitle="Aún no hay movimientos" empty="Esta existencia no tiene movimientos registrados en el ledger."><div className="table-wrap inventory-movement-table"><table><thead><tr><th>Fecha</th><th>Movimiento</th><th className="number-cell">Variación</th><th className="number-cell">Saldo</th><th>Referencia</th><th>Registró</th></tr></thead><tbody>{movementRows.map((movement) => <tr key={movement.id}><td>{dateTimeFormat(movement.occurred_at)}</td><td>{inventoryMovementLabel(movement.movement_type)}</td><td className="number-cell">{Number(movement.quantity_delta) > 0 ? "+" : ""}{numberFormat(Number(movement.quantity_delta))} {movementRow?.unit ?? ""}</td><td className="number-cell">{numberFormat(Number(movement.balance_after))} {movementRow?.unit ?? ""}</td><td>{movement.reference_label}</td><td>{movement.actor_name ?? "Sin usuario"}</td></tr>)}</tbody></table></div></DataState><DataPagination page={movementPage} total={movementTotal} pageSize={25} label="movimientos" onChange={changeMovementPage} /></div></Drawer>
   </div>;
@@ -2522,13 +2699,13 @@ function validationLabel(status: StagedRow["validation_status"]) {
 function fileNameForBatch(batch: StagedBatch) {
   return batch.import_files[0]?.original_name ?? "Archivo en staging";
 }
-function roleLabel(code: AppRoleCode) { return roleDisplayName(code, ALL_ROLES.find((role) => role.code === code)?.display_name); }
+function roleLabel(code: AppRoleCode, experience: ProductExperience) { const fallback=roleDisplayName(code, ALL_ROLES.find((role) => role.code === code)?.display_name);return experienceRoleLabel(code,fallback,experience); }
 function numberFormat(value: number) { return new Intl.NumberFormat("es-MX", { maximumFractionDigits: 3 }).format(value); }
 function dateOnlyFormat(value: string) { return new Intl.DateTimeFormat("es-MX", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`)); }
 function dateTimeFormat(value: string) { return new Intl.DateTimeFormat("es-MX", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)); }
 function statusLabel(status: string) { return status === "completed" ? "Completado" : status === "failed" ? "Fallido" : status === "discarded" ? "Descartado" : status === "expired" ? "Vencido" : status === "validation_failed" ? "Validación fallida" : status === "staged" ? "En staging" : "Procesando"; }
 function importTypeLabel(type: string) { return type === "products" ? "Productos" : type === "inventory" ? "Inventario" : type === "prices" ? "Precios" : type === "costs" ? "Costos" : type === "collaborators" ? "Colaboradores" : type; }
-function inventoryMovementLabel(type: string) { return type === "opening_snapshot" ? "Saldo inicial" : type === "sale" ? "Venta" : type === "sale_reversal" ? "Cancelación de venta" : type === "sale_return" ? "Devolución de venta" : type === "controlled_adjustment" ? "Ajuste controlado" : type === "physical_count_adjustment" ? "Conteo físico" : type === "transfer_out" ? "Salida por transferencia" : type === "transfer_in" ? "Entrada por transferencia" : type === "purchase_receipt" ? "Recepción de compra" : type === "purchase_receipt_reversal" ? "Reversa de recepción" : type; }
+function inventoryMovementLabel(type: string) { return type === "opening_snapshot" ? "Saldo inicial importado" : type === "opening_manual" ? "Inventario inicial" : type === "sale" ? "Venta" : type === "sale_reversal" ? "Cancelación de venta" : type === "sale_return" ? "Devolución de venta" : type === "controlled_adjustment" ? "Ajuste controlado" : type === "physical_count_adjustment" ? "Conteo físico" : type === "transfer_out" ? "Salida por transferencia" : type === "transfer_in" ? "Entrada por transferencia" : type === "purchase_receipt" ? "Recepción de compra" : type === "purchase_receipt_reversal" ? "Reversa de recepción" : type; }
 function inventoryTransferStatusLabel(status: InventoryTransferStatus) { return status === "sent" ? "Preparada" : status === "in_transit" ? "En tránsito" : "Recibida"; }
 function inventoryTransferTone(status: InventoryTransferStatus): "primary" | "warning" | "success" { return status === "sent" ? "primary" : status === "in_transit" ? "warning" : "success"; }
 function inventoryCountStatusLabel(status: InventoryCountStatus) { return status === "open" ? "En captura" : status === "review" ? "En revisión" : status === "pending_approval" ? "Por aprobar" : status === "posted" ? "Aplicado" : status === "cancelled" ? "Cancelado" : "Rechazado"; }

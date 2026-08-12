@@ -27,8 +27,7 @@ export function CommercialAssortmentsView({ companyId }: { companyId: string }) 
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [membershipFilter, setMembershipFilter] = useState<"all" | "included" | "excluded">("all");
   const [page, setPage] = useState(1);
-  const [newCode, setNewCode] = useState("SURTIDO-GENERAL");
-  const [newName, setNewName] = useState("Surtido general");
+  const [newName, setNewName] = useState("Catálogo general");
   const [newLocationIds, setNewLocationIds] = useState<string[]>([]);
   const [locationId, setLocationId] = useState("");
   const [confirmation, setConfirmation] = useState<"create" | "refresh" | null>(null);
@@ -45,7 +44,7 @@ export function CommercialAssortmentsView({ companyId }: { companyId: string }) 
     const supabase = getSupabaseClient();
     const { data, error: contextError } = await supabase.rpc("get_sales_assortment_admin_context", { p_company_id: companyId });
     if (contextError || !data) {
-      setError("No se pudo cargar la configuración de surtidos.");
+      setError("No se pudo cargar la disponibilidad por sucursal.");
       setLoading(false);
       return;
     }
@@ -56,11 +55,14 @@ export function CommercialAssortmentsView({ companyId }: { companyId: string }) 
     setLocations(nextLocations);
     setCatalogTotal(context.catalog_total ?? 0);
     setOutsideTotal(context.outside_assortment_total ?? 0);
+    setNewName((current) => current === "Catálogo general" && nextAssortments.length ? "Nuevo catálogo" : current);
     setNewLocationIds((current) => {
       const valid = current.filter((id) => nextLocations.some((location) => location.id === id));
       return valid.length ? valid : nextLocations.map((location) => location.id);
     });
-    setSelectedId((current) => nextAssortments.some((item) => item.id === current) ? current : nextAssortments[0]?.id ?? "");
+    setSelectedId((current) => nextAssortments.some((item) => item.id === current)
+      ? current
+      : nextAssortments.find((item) => item.status === "active")?.id ?? nextAssortments[0]?.id ?? "");
     setLoading(false);
   }, [companyId]);
 
@@ -83,7 +85,7 @@ export function CommercialAssortmentsView({ companyId }: { companyId: string }) 
     });
     if (current !== requestId.current) return;
     if (membershipResult.error) {
-      setError("No se pudo cargar el surtido.");
+      setError("No se pudo cargar el catálogo seleccionado.");
       setLoading(false);
       return;
     }
@@ -101,27 +103,27 @@ export function CommercialAssortmentsView({ companyId }: { companyId: string }) 
 
   function requestCreate(event: React.FormEvent) {
     event.preventDefault();
-    if (newCode.trim() && newName.trim() && newLocationIds.length) setConfirmation("create");
+    if (newName.trim() && newLocationIds.length) setConfirmation("create");
   }
 
   async function createAssortment() {
     setBusy(true);
     const { data, error: createError } = await getSupabaseClient().rpc("prepare_pos_operation", {
       p_company_id: companyId,
-      p_code: newCode.trim(),
+      p_code: "",
       p_name: newName.trim(),
       p_location_ids: newLocationIds,
     });
     setBusy(false);
     if (createError || !data) {
-      toast({ title: "No se pudo crear el surtido", description: createError?.message ?? "Intenta de nuevo.", tone: "error" });
+      toast({ title: "No se pudo preparar la venta", description: createError?.message ?? "Intenta de nuevo.", tone: "error" });
       return;
     }
     const result = data as { assortment_id: string; products_processed: number; locations_assigned: number };
     setConfirmation(null);
     await loadBase();
     setSelectedId(result.assortment_id);
-    toast({ title: "Surtido creado", description: `${result.products_processed.toLocaleString("es-MX")} productos y ${result.locations_assigned} sucursal${result.locations_assigned === 1 ? "" : "es"}.`, tone: "success" });
+    toast({ title: "Productos disponibles por sucursal", description: `${result.products_processed.toLocaleString("es-MX")} productos en ${result.locations_assigned} sucursal${result.locations_assigned === 1 ? "" : "es"}.`, tone: "success" });
   }
 
   async function changeStatus(status: string) {
@@ -149,7 +151,7 @@ export function CommercialAssortmentsView({ companyId }: { companyId: string }) 
     const result = data as { products_added: number };
     setConfirmation(null);
     await loadSelected();
-    toast({ title: "Membresía actualizada", description: result.products_added ? `${result.products_added} productos nuevos incorporados.` : "No había productos nuevos.", tone: "success" });
+    toast({ title: "Catálogo actualizado", description: result.products_added ? `${result.products_added} productos nuevos agregados.` : "No había productos nuevos.", tone: "success" });
   }
 
   async function updateMembership(included: boolean) {
@@ -163,12 +165,12 @@ export function CommercialAssortmentsView({ companyId }: { companyId: string }) 
     });
     setBusy(false);
     if (updateError) {
-      toast({ title: "No se pudo actualizar la membresía", description: updateError.message, tone: "error" });
+      toast({ title: "No se pudo actualizar la disponibilidad", description: updateError.message, tone: "error" });
       return;
     }
     const updated = Number((data as { updated?: number } | null)?.updated ?? 0);
     await loadSelected();
-    toast({ title: "Membresía actualizada", description: `${updated} producto${updated === 1 ? "" : "s"} ${included ? "incluido" : "retirado"}${updated === 1 ? "" : "s"}.`, tone: "success" });
+    toast({ title: "Disponibilidad actualizada", description: `${updated} producto${updated === 1 ? "" : "s"} ${included ? "disponible" : "retirado"}${updated === 1 ? "" : "s"}.`, tone: "success" });
   }
 
   async function assignLocation() {
@@ -218,59 +220,71 @@ export function CommercialAssortmentsView({ companyId }: { companyId: string }) 
   return (
     <div className="content-frame">
       <header className="page-heading">
-        <div><span className="eyebrow">Configuración comercial</span><h1>Surtidos comerciales</h1><p>Define qué productos pertenecen a cada surtido y en qué sucursales se utiliza.</p></div>
+        <div><span className="eyebrow">Configuración comercial</span><h1>Productos por sucursal</h1><p>Elige qué productos puede vender cada sucursal. Los precios se configuran por separado.</p></div>
         <Button variant="secondary" onClick={() => { void loadBase(); void loadSelected(); }}><RefreshCw size={16} /> Actualizar</Button>
       </header>
-      <div className="pos-prep-layout">
-        <aside className="pos-prep-panel">
-          <h2>Crear surtido</h2>
-          <form className="pos-prep-create" onSubmit={requestCreate}>
-            <label>Código<input value={newCode} onChange={(event) => setNewCode(event.target.value)} /></label>
-            <label>Nombre<input value={newName} onChange={(event) => setNewName(event.target.value)} /></label>
-            <fieldset className="pos-prep-locations">
-              <legend>Sucursales</legend>
-              {locations.map((location) => <label key={location.id}><input type="checkbox" checked={newLocationIds.includes(location.id)} onChange={() => toggleLocation(location.id)} /><span><strong>{location.name}</strong><small>{location.external_code}</small></span></label>)}
-            </fieldset>
-            <p className="pos-prep-help">Se incluirán los {catalogTotal.toLocaleString("es-MX")} productos vendibles actuales. La membresía puede ajustarse después.</p>
-            <Button type="submit" variant="primary" loading={busy} disabled={!catalogTotal || !newLocationIds.length}><Boxes size={15} /> Crear surtido</Button>
-          </form>
-          <div className="pos-prep-assortments">
-            {assortments.map((assortment) => <button className={assortment.id === selectedId ? "is-selected" : ""} key={assortment.id} onClick={() => { setSelectedId(assortment.id); setPage(1); }}><span><strong>{assortment.name}</strong><small>{assortment.code}</small></span><Badge tone={assortment.status === "active" ? "success" : assortment.status === "draft" ? "info" : "neutral"}>{assortment.status === "active" ? "Activo" : assortment.status === "draft" ? "Borrador" : "Inactivo"}</Badge></button>)}
-          </div>
-        </aside>
+      <div className="pos-products-workspace">
         <section className="pos-prep-main">
-          <DataState loading={loading && Boolean(selectedId) && !membership} error={error} hasData={selected ? 1 : 0} empty="Aún no hay surtidos comerciales.">
+          <DataState loading={loading && Boolean(selectedId) && !membership} error={error} hasData={selected ? 1 : 0} empty="Aún no hay productos asignados por sucursal.">
             {selected && <>
               <div className="pos-prep-heading">
-                <div><span className="eyebrow">Surtido seleccionado</span><h2>{selected.name}</h2><p>{selected.code} · La disponibilidad operativa no cambia esta membresía.</p></div>
+                <div><span className="eyebrow">Operación por sucursal</span><h2>Productos disponibles para vender</h2><p>Trabajas sobre <strong>{selected.name}</strong>. Elige productos y las sucursales donde deben aparecer.</p></div>
                 <div className="pos-prep-heading-actions">
-                  <Button variant="secondary" onClick={() => setConfirmation("refresh")} disabled={busy}>Agregar productos nuevos</Button>
-                  <Select value={selected.status} onValueChange={(value) => void changeStatus(value)} ariaLabel="Estado del surtido" disabled={busy} options={[{ value: "draft", label: "Borrador" }, { value: "active", label: "Activo", disabled: activationBlocked && selected.status !== "active" }, { value: "inactive", label: "Inactivo" }]} />
+                  {assortments.length > 1 && <Select value={selectedId} onValueChange={(value) => { setSelectedId(value); setPage(1); }} ariaLabel="Catálogo de productos" disabled={busy} options={assortments.map((assortment) => ({ value: assortment.id, label: `${assortment.name} · ${assortment.status === "active" ? "Activo" : assortment.status === "draft" ? "Borrador" : "Inactivo"}` }))} />}
+                  <Button variant="secondary" onClick={() => setConfirmation("refresh")} disabled={busy}>Incorporar productos nuevos</Button>
                 </div>
               </div>
-              <div className="pos-prep-kpis"><article><span>Miembros</span><strong>{membership?.member_count ?? 0}</strong></article><article><span>Sucursales</span><strong>{activeLocations.length}</strong></article><article><span>Fuera de surtido</span><strong>{outsideTotal}</strong></article></div>
+              <div className="pos-prep-current"><span><Badge tone={selected.status === "active" ? "success" : selected.status === "draft" ? "info" : "neutral"}>{selected.status === "active" ? "Activo" : selected.status === "draft" ? "Borrador" : "Inactivo"}</Badge><small>{selected.code}</small></span><p>{selected.status === "active" ? "Este catálogo puede alimentar el punto de venta de sus sucursales." : "Este catálogo no alimentará el punto de venta hasta que esté activo."}</p></div>
+              <div className="pos-prep-kpis"><article><span>En venta</span><strong>{membership?.member_count ?? 0}</strong></article><article><span>Sucursales asignadas</span><strong>{activeLocations.length}</strong></article><article><span>Fuera de este catálogo</span><strong>{outsideTotal}</strong></article></div>
               <div className="pos-prep-controls">
                 <section>
-                  <h3>Sucursales asignadas</h3>
-                  <div className="pos-prep-inline"><Select value={locationId} onValueChange={setLocationId} ariaLabel="Asignar sucursal" options={[{ value: "", label: "Seleccionar sucursal", disabled: true }, ...availableLocations.map((location) => ({ value: location.id, label: `${location.external_code} · ${location.name}` }))]} disabled={busy || !availableLocations.length} /><Button onClick={() => void assignLocation()} disabled={!locationId || busy}>Asignar</Button></div>
+                  <h3>Se vende en</h3>
+                  <p className="pos-prep-help">Estas sucursales comparten la selección de productos de este catálogo.</p>
+                  <div className="pos-prep-inline"><Select value={locationId} onValueChange={setLocationId} ariaLabel="Agregar sucursal al catálogo" options={[{ value: "", label: "Seleccionar sucursal", disabled: true }, ...availableLocations.map((location) => ({ value: location.id, label: `${location.external_code} · ${location.name}` }))]} disabled={busy || !availableLocations.length} /><Button onClick={() => void assignLocation()} disabled={!locationId || busy}>Agregar sucursal</Button></div>
                   <div className="pos-prep-chips">{activeLocations.length ? activeLocations.map((location) => <span key={location.id}>{location.external_code} · {location.name}<button aria-label={`Retirar ${location.name}`} onClick={() => void removeLocation(location.id)} disabled={busy}><Trash2 size={13} /></button></span>) : <small>Sin sucursales asignadas.</small>}</div>
                 </section>
-                <section><h3>Regla operativa</h3><p className="pos-prep-help">Un bloqueo de readiness impide vender, pero nunca retira el producto del surtido.</p></section>
+                <section><h3>Qué controla esta pantalla</h3><p className="pos-prep-help"><strong>Aquí:</strong> qué productos aparecen en cada sucursal.<br /><strong>Lista de precios:</strong> cuánto cuestan.<br /><strong>Inventario:</strong> si existen unidades para vender.</p></section>
               </div>
-              <div className="pos-bulk-actions"><span><strong>{selectedProductIds.length}</strong> seleccionados</span><Button size="sm" variant="secondary" disabled={!selectedProductIds.length || busy} onClick={() => void updateMembership(true)}>Incluir</Button><Button size="sm" variant="secondary" disabled={!selectedProductIds.length || busy} onClick={() => void updateMembership(false)}>Retirar</Button></div>
               <div className="pos-prep-table">
-                <DataToolbar search={query} onSearchChange={setQuery} placeholder="Buscar producto o código" filters={<Select value={membershipFilter} onValueChange={(value) => { setMembershipFilter(value as typeof membershipFilter); setPage(1); }} ariaLabel="Filtrar membresía" options={[{ value: "all", label: "Todos" }, { value: "included", label: "Incluidos" }, { value: "excluded", label: "Fuera del surtido" }]} />} activeFilters={(query.trim() ? 1 : 0) + (membershipFilter !== "all" ? 1 : 0)} onClear={() => { setQuery(""); setDebouncedQuery(""); setMembershipFilter("all"); setPage(1); }} results={membership?.total ?? 0} />
+                <div className="pos-prep-table-heading"><div><h3>Productos del catálogo</h3><p>Selecciona uno o varios productos para incluirlos o retirarlos de todas las sucursales asignadas.</p></div></div>
+                <div className="pos-bulk-actions" aria-live="polite"><span><strong>{selectedProductIds.length}</strong> seleccionados</span><Button size="sm" variant="secondary" disabled={!selectedProductIds.length || busy} onClick={() => void updateMembership(true)}>Ofrecer en sucursales</Button><Button size="sm" variant="secondary" disabled={!selectedProductIds.length || busy} onClick={() => void updateMembership(false)}>Retirar de sucursales</Button></div>
+                <DataToolbar search={query} onSearchChange={setQuery} placeholder="Buscar producto o código" filters={<Select value={membershipFilter} onValueChange={(value) => { setMembershipFilter(value as typeof membershipFilter); setPage(1); }} ariaLabel="Filtrar disponibilidad" options={[{ value: "all", label: "Todos" }, { value: "included", label: "Disponibles" }, { value: "excluded", label: "No disponibles" }]} />} activeFilters={(query.trim() ? 1 : 0) + (membershipFilter !== "all" ? 1 : 0)} onClear={() => { setQuery(""); setDebouncedQuery(""); setMembershipFilter("all"); setPage(1); }} results={membership?.total ?? 0} />
                 <DataState loading={loading} error={error} hasData={membership?.items.length ?? 0} empty="No hay productos para este filtro.">
-                  <div className="table-wrap surface-table"><table><thead><tr><th className="selection-cell"><input type="checkbox" aria-label="Seleccionar página" checked={allPageSelected} onChange={() => setSelectedProductIds(allPageSelected ? selectedProductIds.filter((id) => !currentPageIds.includes(id)) : [...new Set([...selectedProductIds, ...currentPageIds])])} /></th><th>Producto</th><th>Código</th><th>Pertenencia comercial</th></tr></thead><tbody>{(membership?.items ?? []).map((item) => <tr key={item.product_id}><td className="selection-cell"><input type="checkbox" aria-label={`Seleccionar ${item.name}`} checked={selectedProductIds.includes(item.product_id)} onChange={() => toggleProduct(item.product_id)} /></td><td><strong>{item.name}</strong></td><td className="mono">{item.code ?? "—"}</td><td><Badge tone={item.included ? "success" : "neutral"}>{item.included ? "Incluido" : "Fuera"}</Badge></td></tr>)}</tbody></table></div>
+                  <div className="table-wrap surface-table"><table><thead><tr><th className="selection-cell"><input type="checkbox" aria-label="Seleccionar página" checked={allPageSelected} onChange={() => setSelectedProductIds(allPageSelected ? selectedProductIds.filter((id) => !currentPageIds.includes(id)) : [...new Set([...selectedProductIds, ...currentPageIds])])} /></th><th>Producto</th><th>Código</th><th>Disponibilidad</th></tr></thead><tbody>{(membership?.items ?? []).map((item) => <tr key={item.product_id}><td className="selection-cell"><input type="checkbox" aria-label={`Seleccionar ${item.name}`} checked={selectedProductIds.includes(item.product_id)} onChange={() => toggleProduct(item.product_id)} /></td><td><strong>{item.name}</strong></td><td className="mono">{item.code ?? "—"}</td><td><Badge tone={item.included ? "success" : "neutral"}>{item.included ? "Disponible" : "No disponible"}</Badge></td></tr>)}</tbody></table></div>
                 </DataState>
                 <Pagination page={page} total={membership?.total ?? 0} onChange={setPage} />
               </div>
             </>}
           </DataState>
         </section>
+        <details className="pos-prep-advanced">
+          <summary><span><strong>Administración avanzada de catálogos</strong><small>Crea conjuntos distintos para temporadas, formatos de tienda o grupos de sucursales.</small></span><Badge tone="neutral">{assortments.length} catálogo{assortments.length === 1 ? "" : "s"}</Badge></summary>
+          <div className="pos-prep-advanced__body">
+            <section className="pos-prep-panel">
+              <h2>Catálogos existentes</h2>
+              <p className="pos-prep-help">Un catálogo agrupa productos y puede compartirse entre varias sucursales.</p>
+              <div className="pos-prep-assortments">
+                {assortments.map((assortment) => <button className={assortment.id === selectedId ? "is-selected" : ""} key={assortment.id} onClick={() => { setSelectedId(assortment.id); setPage(1); }}><span><strong>{assortment.name}</strong><small>{assortment.code}</small></span><Badge tone={assortment.status === "active" ? "success" : assortment.status === "draft" ? "info" : "neutral"}>{assortment.status === "active" ? "Activo" : assortment.status === "draft" ? "Borrador" : "Inactivo"}</Badge></button>)}
+              </div>
+              {selected && <label className="pos-prep-status"><span>Estado de {selected.name}</span><Select value={selected.status} onValueChange={(value) => void changeStatus(value)} ariaLabel={`Estado de ${selected.name}`} disabled={busy} options={[{ value: "draft", label: "Borrador" }, { value: "active", label: "Activo", disabled: activationBlocked && selected.status !== "active" }, { value: "inactive", label: "Inactivo" }]} /></label>}
+            </section>
+            <section className="pos-prep-panel">
+              <h2>Crear otro catálogo</h2>
+              <form className="pos-prep-create" onSubmit={requestCreate}>
+                <label>Nombre del catálogo<input value={newName} onChange={(event) => setNewName(event.target.value)} placeholder="Ej. Menú de temporada" /></label>
+                <fieldset className="pos-prep-locations">
+                  <legend>Sucursales iniciales</legend>
+                  {locations.map((location) => <label key={location.id}><input type="checkbox" checked={newLocationIds.includes(location.id)} onChange={() => toggleLocation(location.id)} /><span><strong>{location.name}</strong><small>{location.external_code}</small></span></label>)}
+                </fieldset>
+                <p className="pos-prep-help">Se incluirán los {catalogTotal.toLocaleString("es-MX")} productos vendibles actuales. Podrás ajustar la selección después.</p>
+                <Button type="submit" variant="primary" loading={busy} disabled={!catalogTotal || !newLocationIds.length}><Boxes size={15} /> Crear y activar</Button>
+              </form>
+            </section>
+          </div>
+        </details>
       </div>
-      <Modal open={confirmation === "create"} onOpenChange={(open) => { if (!open && !busy) setConfirmation(null); }} eyebrow="Configuración comercial" title="Crear surtido" description="Se creará el surtido, se incluirán los productos vendibles actuales y se asignarán las sucursales seleccionadas." footer={<><Button variant="secondary" onClick={() => setConfirmation(null)} disabled={busy}>Cancelar</Button><Button variant="primary" onClick={() => void createAssortment()} loading={busy}>Crear surtido</Button></>}><div className="pos-prep-confirm-summary"><span><strong>{catalogTotal}</strong> productos</span><span><strong>{newLocationIds.length}</strong> sucursales</span></div></Modal>
-      <Modal open={confirmation === "refresh"} onOpenChange={(open) => { if (!open && !busy) setConfirmation(null); }} eyebrow="Membresía comercial" title="Agregar productos nuevos" description="Se incorporarán los productos vendibles que aún no pertenecen al surtido. No se retirará ningún miembro existente." footer={<><Button variant="secondary" onClick={() => setConfirmation(null)} disabled={busy}>Cancelar</Button><Button variant="primary" onClick={() => void refreshCatalog()} loading={busy}>Incorporar</Button></>} />
+      <Modal open={confirmation === "create"} onOpenChange={(open) => { if (!open && !busy) setConfirmation(null); }} eyebrow="Productos por sucursal" title="Crear y activar catálogo" description="Los productos vendibles actuales quedarán disponibles en las sucursales seleccionadas. Después podrás ajustar la selección." footer={<><Button variant="secondary" onClick={() => setConfirmation(null)} disabled={busy}>Cancelar</Button><Button variant="primary" onClick={() => void createAssortment()} loading={busy}>Crear y activar</Button></>}><div className="pos-prep-confirm-summary"><span><strong>{catalogTotal}</strong> productos</span><span><strong>{newLocationIds.length}</strong> sucursales</span></div></Modal>
+      <Modal open={confirmation === "refresh"} onOpenChange={(open) => { if (!open && !busy) setConfirmation(null); }} eyebrow="Productos por sucursal" title="Agregar productos del catálogo" description="Se agregarán los productos vendibles que todavía no están disponibles aquí. No se retirará ningún producto existente." footer={<><Button variant="secondary" onClick={() => setConfirmation(null)} disabled={busy}>Cancelar</Button><Button variant="primary" onClick={() => void refreshCatalog()} loading={busy}>Agregar productos</Button></>} />
     </div>
   );
 }

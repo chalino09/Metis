@@ -55,6 +55,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   ref,
 ) {
   if (props.type === "date") return <DateInput ref={ref} className={className} {...props} />;
+  if (props.type === "datetime-local") return <DateTimeInput ref={ref} className={className} {...props} />;
   return <input ref={ref} className={cx("ui-input", className)} {...props} />;
 });
 
@@ -200,6 +201,48 @@ const DateInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElem
       <div className="satrapy-calendar-days">{calendarDays.map((day, index) => { if (day === null) return <span key={`empty-${index}`} />; const candidate = isoDate(new Date(viewMonth.getFullYear(), viewMonth.getMonth(), day)); return <button type="button" key={candidate} disabled={isUnavailable(candidate)} className={`${candidate === isoValue ? "is-selected " : ""}${candidate === todayValue ? "is-today" : ""}`} aria-label={new Date(`${candidate}T00:00:00`).toLocaleDateString("es-MX", { dateStyle: "full" })} aria-pressed={candidate === isoValue} onClick={() => choose(candidate)}>{day}</button>; })}</div>
       <footer>{!required ? <button type="button" disabled={!isoValue} onClick={() => { notify(""); setDraftText(null); setOpen(false); }}>Borrar</button> : <span />}{!isUnavailable(todayValue) && <button type="button" onClick={() => choose(todayValue)}>Hoy</button>}</footer>
     </div>}
+  </div>;
+});
+
+const DateTimeInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function DateTimeInput(
+  { className, type: _type, value, defaultValue: _defaultValue, min, max, required, disabled, onChange, "aria-label": ariaLabel, "aria-describedby": ariaDescribedBy, name, ...props },
+  ref,
+) {
+  void _type; void _defaultValue;
+  const current = typeof value === "string" ? value : "";
+  const [datePart = "", timePart = ""] = current.split("T");
+  const minValue = min == null ? undefined : String(min);
+  const maxValue = max == null ? undefined : String(max);
+  function notify(nextDate: string, nextTime: string) {
+    const next = nextDate ? `${nextDate}T${nextTime || "00:00"}` : "";
+    onChange?.({ target: { value: next }, currentTarget: { value: next } } as ChangeEvent<HTMLInputElement>);
+  }
+  return <div className={cx("satrapy-datetime-input", className)}>
+    <DateInput
+      ref={ref}
+      value={datePart}
+      min={minValue?.slice(0, 10)}
+      max={maxValue?.slice(0, 10)}
+      required={required}
+      disabled={disabled}
+      aria-label={ariaLabel ? `${ariaLabel}: fecha` : "Fecha"}
+      aria-describedby={ariaDescribedBy}
+      onChange={event => notify(event.target.value, timePart)}
+      {...props}
+    />
+    <input
+      type="time"
+      className="ui-input satrapy-datetime-time"
+      value={timePart}
+      min={datePart && minValue?.startsWith(`${datePart}T`) ? minValue.slice(11, 16) : undefined}
+      max={datePart && maxValue?.startsWith(`${datePart}T`) ? maxValue.slice(11, 16) : undefined}
+      required={required && Boolean(datePart)}
+      disabled={disabled || !datePart}
+      aria-label={ariaLabel ? `${ariaLabel}: hora` : "Hora"}
+      aria-describedby={ariaDescribedBy}
+      onChange={event => notify(datePart, event.target.value)}
+    />
+    {name && <input type="hidden" name={name} value={current} />}
   </div>;
 });
 

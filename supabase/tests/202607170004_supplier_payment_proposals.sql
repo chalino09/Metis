@@ -50,7 +50,7 @@ begin
   if not v_forbidden then raise exception 'Se mezclaron monedas en una propuesta.';end if;v_forbidden:=false;
 
   v_result:=public.save_supplier_payment_proposal(v_company,null,v_supplier,'MXN',jsonb_build_array(jsonb_build_object('accounts_payable_id',v_payable_overdue,'proposed_amount',40),jsonb_build_object('accounts_payable_id',v_payable_upcoming,'proposed_amount',200)),v_save,null);v_proposal:=(v_result->>'id')::uuid;
-  if v_result#>>'{total_proposed}'<>'240.000000' or (select count(*) from public.supplier_payment_proposal_lines where proposal_id=v_proposal)<>2 then raise exception 'Borrador parcial/total incorrecto: %',v_result;end if;
+  if (v_result#>>'{total_proposed}')::numeric<>240 or (select count(*) from public.supplier_payment_proposal_lines where proposal_id=v_proposal)<>2 then raise exception 'Borrador parcial/total incorrecto: %',v_result;end if;
   v_result:=public.save_supplier_payment_proposal(v_company,null,v_supplier,'MXN','[]'::jsonb,v_save,null);
   if coalesce((v_result->>'idempotent')::boolean,false)=false or (select count(*) from public.supplier_payment_proposals where company_id=v_company)<>1 then raise exception 'Guardado no idempotente.';end if;
   v_result:=public.submit_supplier_payment_proposal(v_company,v_proposal,v_submit);

@@ -72,7 +72,7 @@ begin
   v_batch := (v_result ->> 'batch_id')::uuid;
   v_result := public.confirm_staged_import(v_batch);
   if v_result ->> 'status' <> 'completed' or (v_result ->> 'records_imported')::integer <> 3 then
-    raise exception 'La promoción de productos con impuesto no se completó.';
+    raise exception 'La promoción de productos con impuesto no se completó: %',v_result;
   end if;
   if (select tax_category_id from public.products where id = v_pending_product) is null then
     raise exception 'La fuente fiscal separada no completó el producto previamente importado.';
