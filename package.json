@@ -17,7 +17,8 @@
     "inspect:alpha": "node --experimental-strip-types scripts/inspect-alpha-exports.ts",
     "inspect:alpha-purchasing": "node --env-file=.env --experimental-strip-types scripts/inspect-alpha-purchasing.ts",
     "validate:alpha-suppliers": "node --env-file=.env --experimental-strip-types scripts/run-real-alpha-supplier-validation.ts",
-    "validate:alpha-purchase-orders": "node --env-file=.env --experimental-strip-types scripts/run-real-alpha-purchase-order-validation.ts"
+    "validate:alpha-purchase-orders": "node --env-file=.env --experimental-strip-types scripts/run-real-alpha-purchase-order-validation.ts",
+    "worker:collection": "node --env-file=.env --experimental-strip-types scripts/collection-worker.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.19",

@@ -2340,7 +2340,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .inventory-replenishment-work-status .inventory-replenishment-status-tabs button.is-active { border-color:var(--accent); background:var(--accent-soft); color:var(--accent-strong); }
 .inventory-replenishment-work-status .inventory-replenishment-status-tabs button.is-active b { background:#cde4da; }
 @media (max-width:640px) { .inventory-replenishment-work-status .inventory-replenishment-status-tabs { width:100%; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px; }.inventory-replenishment-work-status .inventory-replenishment-status-tabs button { flex:0 0 auto; } }
-
 /* El resumen de sucursales contiene únicamente sus tres indicadores. */
 .location-management-summary { grid-template-columns:repeat(3,minmax(130px,1fr)); }
 @media (max-width:700px) { .location-management-summary { grid-template-columns:1fr; } }
@@ -2355,3 +2354,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .cash-movement-list small { overflow-wrap:anywhere; font-size:10px; line-height:1.45; }
 .cash-movement-list > p > strong { color:var(--ink); font-size:15px; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .cash-card--info > ul { margin:0; border:1px solid #cfe1da; border-radius:var(--radius-md); background:#f5faf8; padding:11px 14px 11px 30px; }
+.collection-automation { display:grid; gap:24px; }
+.receivables-tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); }
+.receivables-tabs a { min-height:40px; border-bottom:2px solid transparent; padding:10px 12px; color:var(--muted); font-size:11px; font-weight:650; text-decoration:none; }
+.receivables-tabs a:hover { color:var(--ink); }
+.receivables-tabs a[aria-current="page"] { border-color:var(--accent); color:var(--accent-strong); }
+.receivables-tabs a:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
+.collection-automation__toolbar { display:flex; align-items:end; justify-content:space-between; gap:24px; margin-block-end:12px; }
+.collection-automation__toolbar h2 { margin:0; }
+.collection-automation__toolbar p { margin:4px 0 0; color:var(--muted); }
+.collection-automation__toolbar label { display:grid; min-width:220px; gap:6px; }
+.collection-automation td small { display:block; margin-block-start:3px; color:var(--muted); }
+@media (max-width:760px) { .collection-automation__toolbar { align-items:stretch; flex-direction:column; }.collection-automation__toolbar label { min-width:0; } }

@@ -27,6 +27,8 @@ ROLE_PREVIEW_PERMISSIONS.direccion_admin.push(
   "manage_location_operating_profiles",
   "manage_location_responsibilities",
   "view_location_profitability",
+  "view_collection_automation",
+  "manage_collection_automation",
 );
 
 export function matchesNavigationRequirement(permissions: string[], requirement?: NavigationRequirement) {
