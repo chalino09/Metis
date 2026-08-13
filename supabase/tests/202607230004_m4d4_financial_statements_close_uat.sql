@@ -17,6 +17,10 @@ begin
  r:=public.list_financial_report(c,'trial_balance','2026-07-01','2026-07-31',null,true,1,50);if (r->>'total')::int<>0 or r->>'location_label'<>'Sin asignar' then raise exception 'Sin asignar incorrecto: %',r;end if;
  run:=public.prepare_accounting_close(c,p,'4d400000-0000-4000-8000-000000000101');rid:=(run->>'id')::uuid;h:=run->>'snapshot_sha256';if run->>'status'<>'prepared' or h is null then raise exception 'Vista previa/hash no creada: %',run;end if;
  if (public.prepare_accounting_close(c,p,'4d400000-0000-4000-8000-000000000101')->>'idempotent')::boolean is not true then raise exception 'Preparación no idempotente';end if;
+ run:=public.cancel_accounting_close_preparation(rid,'Corregir conciliación','4d400000-0000-4000-8000-000000000109');if run->>'status'<>'cancelled' then raise exception 'Cancelación de preparación falló: %',run;end if;
+ if (public.cancel_accounting_close_preparation(rid,'Corregir conciliación','4d400000-0000-4000-8000-000000000109')->>'idempotent')::boolean is not true then raise exception 'Cancelación no idempotente';end if;
+ if not exists(select 1 from public.accounting_close_runs where id=rid and snapshot_sha256=h and cancellation_reason='Corregir conciliación') then raise exception 'La cancelación no preservó evidencia y motivo';end if;
+ run:=public.prepare_accounting_close(c,p,'4d400000-0000-4000-8000-000000000110');rid:=(run->>'id')::uuid;if run->>'status'<>'prepared' then raise exception 'La cancelación no habilitó una nueva preparación: %',run;end if;
  perform set_config('request.jwt.claim.sub',u2::text,true);run:=public.approve_accounting_close(rid,'Conciliado','4d400000-0000-4000-8000-000000000102');if run->>'status'<>'approved' then raise exception 'Aprobación separada falló: %',run;end if;
  run:=public.confirm_accounting_close(rid,'4d400000-0000-4000-8000-000000000103');if run->>'status'<>'closed' or not exists(select 1 from public.accounting_periods where id=p and status='closed') then raise exception 'Cierre atómico falló: %',run;end if;
  if (public.confirm_accounting_close(rid,'4d400000-0000-4000-8000-000000000103')->>'idempotent')::boolean is not true then raise exception 'Confirmación no idempotente';end if;
@@ -26,6 +30,6 @@ begin
  run:=public.prepare_accounting_close(c,p2,'4d400000-0000-4000-8000-000000000105');rid:=(run->>'id')::uuid;perform set_config('request.jwt.claim.sub',u2::text,true);perform public.approve_accounting_close(rid,'Revisión','4d400000-0000-4000-8000-000000000106');
  begin perform public.confirm_accounting_close(rid,'4d400000-0000-4000-8000-000000000107');raise exception 'Permitió diferencias bloqueantes';exception when others then if position('bloqueantes' in lower(sqlerrm))=0 then raise;end if;end;
  perform set_config('request.jwt.claim.sub',u4::text,true);begin perform public.list_financial_report(c,'trial_balance','2026-07-01','2026-07-31');raise exception 'RLS permitió otra empresa';exception when others then if position('no autorizado' in lower(sqlerrm))=0 then raise;end if;end;
- raise notice 'M4D4: consolidado, ubicación/Sin asignar, corte hash, segregación, idempotencia, bloqueo y RLS aprobados.';
+ raise notice 'M4D4: consolidado, ubicación/Sin asignar, cancelación, nueva preparación, corte hash, segregación, idempotencia, bloqueo y RLS aprobados.';
 end $m4d4$;
 rollback;

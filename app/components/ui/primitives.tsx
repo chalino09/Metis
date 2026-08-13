@@ -10,6 +10,7 @@ import {
   forwardRef,
   useCallback,
   useContext,
+  useEffect,
   useId,
   useMemo,
   useRef,
@@ -146,6 +147,7 @@ const DateInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElem
   const validationMessageId = useId();
   const text = draftText ?? isoToDisplay(isoValue);
   const [open, setOpen] = useState(false);
+  const pickerId = useId();
   const [calendarPlacement, setCalendarPlacement] = useState<"below" | "above" | "fixed">("below");
   const pickerRef = useRef<HTMLDivElement>(null);
   const [viewMonth, setViewMonth] = useState(() => {
@@ -161,6 +163,11 @@ const DateInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElem
   const minValue = min == null ? undefined : String(min);
   const maxValue = max == null ? undefined : String(max);
   const isUnavailable = (candidate: string) => Boolean(minValue && candidate < minValue) || Boolean(maxValue && candidate > maxValue);
+  useEffect(() => {
+    const closeWhenAnotherPickerOpens = (event: Event) => { if ((event as CustomEvent<string>).detail !== pickerId) setOpen(false); };
+    window.addEventListener("satrapy-date-picker-open", closeWhenAnotherPickerOpens);
+    return () => window.removeEventListener("satrapy-date-picker-open", closeWhenAnotherPickerOpens);
+  }, [pickerId]);
   function notify(next: string) {
     onChange?.({ target: { value: next }, currentTarget: { value: next } } as ChangeEvent<HTMLInputElement>);
   }
@@ -176,6 +183,7 @@ const DateInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElem
   }
   function toggleCalendar() {
     if (!open) {
+      window.dispatchEvent(new CustomEvent("satrapy-date-picker-open", { detail: pickerId }));
       const rect = pickerRef.current?.getBoundingClientRect();
       if (rect) {
         const calendarHeight = 286;

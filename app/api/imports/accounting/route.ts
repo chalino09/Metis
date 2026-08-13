@@ -62,7 +62,7 @@ export async function GET(request:NextRequest){
     }
     if(view==="periods"){
       const [{data:configs,error:configError},{data:periods,error:periodError},{data:responsibles,error:responsibleError},{data:closeRuns,error:closeError},summary]=await Promise.all([
-        configQuery(),supabase.from("accounting_periods").select("id,period_code,starts_on,ends_on,status").eq("company_id",companyId).order("starts_on",{ascending:false}).limit(60),supabase.rpc("list_accounting_responsibles",{p_company_id:companyId}),supabase.from("accounting_close_runs").select("id,period_id,status,snapshot,snapshot_sha256,prepared_by,prepared_at,approval_reason,approved_by,approved_at,closed_by,closed_at,reopen_reason,reopened_by,reopened_at").eq("company_id",companyId).order("prepared_at",{ascending:false}).limit(60),stats(),
+        configQuery(),supabase.from("accounting_periods").select("id,period_code,starts_on,ends_on,status").eq("company_id",companyId).order("starts_on",{ascending:false}).limit(60),supabase.rpc("list_accounting_responsibles",{p_company_id:companyId}),supabase.from("accounting_close_runs").select("id,period_id,status,snapshot,snapshot_sha256,prepared_by,prepared_at,approval_reason,approved_by,approved_at,closed_by,closed_at,reopen_reason,reopened_by,reopened_at").eq("company_id",companyId).neq("status","cancelled").order("prepared_at",{ascending:false}).limit(60),stats(),
       ]);const error=configError??periodError??responsibleError??closeError;if(error)throw error;
       return result({configs,periods,responsibles:responsibles??[],closeRuns:closeRuns??[],stats:summary});
     }
@@ -123,6 +123,7 @@ export async function POST(request:NextRequest){
     }
     else if(action==="create_period")({data,error}=await supabase.rpc("create_accounting_period",{p_company_id:body.companyId,p_code:body.periodCode,p_starts_on:body.startsOn,p_ends_on:body.endsOn}));
     else if(action==="prepare_close")({data,error}=await supabase.rpc("prepare_accounting_close",{p_company_id:body.companyId,p_period_id:body.periodId,p_client_request_id:body.clientRequestId}));
+    else if(action==="cancel_close_preparation")({data,error}=await supabase.rpc("cancel_accounting_close_preparation",{p_close_run_id:body.closeRunId,p_reason:body.reason,p_client_request_id:body.clientRequestId}));
     else if(action==="approve_close")({data,error}=await supabase.rpc("approve_accounting_close",{p_close_run_id:body.closeRunId,p_reason:body.reason,p_client_request_id:body.clientRequestId}));
     else if(action==="confirm_close")({data,error}=await supabase.rpc("confirm_accounting_close",{p_close_run_id:body.closeRunId,p_client_request_id:body.clientRequestId}));
     else if(action==="reopen_close")({data,error}=await supabase.rpc("reopen_accounting_close",{p_close_run_id:body.closeRunId,p_reason:body.reason,p_client_request_id:body.clientRequestId}));

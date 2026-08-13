@@ -1033,9 +1033,8 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
   const [linkedAlphaFolderAvailable, setLinkedAlphaFolderAvailable] = useState(false);
   const pendingPurchasingFiles = useRef(new Map<string, File>());
   const actionRequestInFlight = useRef(false);
-  const canImport = permissions.some((permission) => ["import_data", "import_prices", "import_costs", "import_accounting_opening", "import_bank_statements"].includes(permission));
-  const canImportBudgets = permissions.includes("*") || permissions.includes("import_bi_budgets");
-  const canUploadAny = canImport || canImportBudgets;
+  const canImport = permissions.some((permission) => ["import_data", "import_prices", "import_costs", "import_accounting_opening"].includes(permission));
+  const canUploadAny = canImport;
   const canImportCustomers = permissions.includes("import_data");
   const visibleBatches = batches.filter((batch) => !isMisroutedCustomerMigrationBatch(batch));
   const visibleCustomerMigrationBatches = customerMigrationBatches.filter((batch) => !(batch.status === "failed"
@@ -1532,30 +1531,32 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
 
   return (
     <div className="content-frame migration-view">
-      <PageHeading eyebrow="Importación" title="Centro de Migración" description="Carga juntos los archivos de origen; Satrapy los reconoce, valida y conserva en staging antes de confirmar." />
+      <PageHeading eyebrow="Puesta en marcha" title="Centro de Migración" description="Prepara datos iniciales de productos, inventario, clientes, ventas, compras y contabilidad antes de incorporarlos a Satrapy." />
       <section className="migration-grid">
         <div className="upload-stack">
           <label className="upload-zone">
             <Upload size={22} />
-            <strong>Subir archivos de origen</strong>
-            <span>Selecciona todos los CSV o Excel disponibles. Satrapy detecta cada archivo automáticamente y conserva un resultado por archivo o paquete.</span>
+            <strong>Cargar archivos de migración inicial</strong>
+            <span>Selecciona juntos los CSV o Excel disponibles. Satrapy identifica cada fuente y conserva un resultado verificable antes de confirmar.</span>
             <input type="file" accept=".csv,.xls,.xlsx" multiple disabled={!canUploadAny || busy} onChange={(event) => { const selected = Array.from(event.target.files ?? []); event.target.value = ""; if (selected.length) void addFiles(selected); }} />
           </label>
           {pendingPurchasingFileCount > 0 && <p className="permission-note">Compras/CxP: {pendingPurchasingFileCount}/4 archivos detectados. No se creará staging hasta completar el paquete.</p>}
           {uploadResults.length > 0 && <section className="upload-results" aria-label="Resultado de la carga">{uploadResults.map((result) => <article key={`${result.kind}:${result.files.join("|")}`}><div><strong>{result.label}</strong><small>{result.files.join(", ")}{result.message ? ` · ${presentImportedSourceText(result.message)}` : ""}</small></div><Badge tone={result.status === "staged" || result.status === "promoted" ? "success" : result.status === "duplicate" ? "neutral" : result.status === "awaiting_configuration" || result.status === "validation_failed" ? "warning" : "danger"}>{uploadResultStatusLabel(result.status)}</Badge></article>)}</section>}
           {busy && <div className="inline-status upload-processing" role="status"><LoaderCircle className="spin" size={17} /> Procesando archivos…</div>}
         </div>
-        <div className="import-rules">
-          <span className="eyebrow">Antes de confirmar</span>
+        <aside className="import-rules">
+          <span className="eyebrow">Cómo funciona</span>
           <ul>
-            <li><Check size={15} /> El preview queda guardado aunque recargues la página.</li>
-            <li><Check size={15} /> La estructura y los datos de cada archivo se validan antes de confirmar.</li>
-            <li><Check size={15} /> La confirmación final es una sola transacción auditable.</li>
-            <li><Check size={15} /> Un archivo ya completado no se vuelve a importar.</li>
+            <li><Check size={15} /> La revisión queda guardada aunque recargues la página.</li>
+            <li><Check size={15} /> Los errores se resuelven antes de incorporar información.</li>
+            <li><Check size={15} /> La confirmación es transaccional, auditable e idempotente.</li>
           </ul>
-          <div className="folder-import-actions"><span>Para estados bancarios sin formato propio:</span><div><a className="secondary-button" href="/templates/plantilla_estado_bancario_neutral.xlsx" download>Plantilla XLSX</a><a className="secondary-button" href="/templates/plantilla_estado_bancario_neutral.csv" download>Plantilla CSV</a></div></div>
-          {canImportBudgets && <div className="folder-import-actions"><span>Para metas y presupuestos:</span><div><a className="secondary-button" href="/api/bi/budgets/import?format=xlsx" download>Plantilla XLSX</a><a className="secondary-button" href="/api/bi/budgets/import?format=csv" download>Plantilla CSV</a></div></div>}
-        </div>
+        </aside>
+      </section>
+
+      <section className="migration-specialized" aria-labelledby="specialized-imports-title">
+        <header><div><span className="eyebrow">Importaciones por módulo</span><h2 id="specialized-imports-title">Carga cada archivo donde corresponde</h2><p>Los estados bancarios se gestionan en Bancos y las metas y presupuestos en BI.</p></div></header>
+        <div><Link href="/satrapy/contabilidad/bancos"><Landmark size={18}/><span><strong>Estados bancarios</strong><small>Importa y concilia desde Bancos.</small></span><ArrowRight size={15}/></Link><Link href="/satrapy/bi/metas-presupuestos"><Target size={18}/><span><strong>Metas y presupuestos</strong><small>Captura y administra desde BI.</small></span><ArrowRight size={15}/></Link></div>
       </section>
 
       {budgetPreview && <section className="import-preview-shell" aria-labelledby="budget-import-preview-title">
@@ -1565,18 +1566,18 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
         {budgetPreview.batch.error_count === 0 && <div className="confirm-bar"><label>Motivo de promoción<Input value={budgetPromotionReason} onChange={(event) => setBudgetPromotionReason(event.target.value)} minLength={5} /></label><Button variant="primary" loading={busy} disabled={budgetPromotionReason.trim().length < 5} onClick={() => void promoteBudgetImport()}>Promover borradores</Button></div>}
       </section>}
 
-      <section className="location-review">
-        <div><span className="eyebrow">Clientes y CxC importados</span><h2>Paquetes detectados</h2><p>Los archivos cata_cte, cat_ctee, lis_sal y cob_cte se agrupan automáticamente. Satrapy compara las fuentes y valida qué datos están listos para importar. Cobranza es evidencia: nunca genera abonos.</p></div>
+      <section className="location-review migration-package-section">
+        <div><span className="eyebrow">Clientes y CxC</span><h2>Paquetes de migración</h2><p>Satrapy agrupa clientes, condiciones comerciales, saldos y cobranza; después valida el paquete antes de incorporarlo.</p></div>
         <div className="location-review-list">
-          <div className="location-review-note"><FileSpreadsheet size={22} /><span>Satrapy detecta los archivos, compara sus datos y bloquea cualquier diferencia antes de la importación final.</span></div>
+          <div className="location-review-note"><FileSpreadsheet size={18} /><span>La cobranza se conserva como evidencia y nunca genera abonos automáticamente.</span></div>
           {visibleCustomerMigrationBatches.map((batch) => <div className="location-review-row" key={batch.id}><span><strong>Corte {dateOnlyFormat(batch.cutoff_date)} · {customerMigrationStatusLabel(batch.status)}</strong><small>{customerMigrationSummary(batch)}</small></span>{["ready_to_promote", "promoting"].includes(batch.status) && <button className="primary-button" disabled={busy || !canImportCustomers} onClick={() => void promoteCustomerMigration(batch.id)}>{batch.status === "promoting" ? "Continuar importación" : "Importar clientes y CxC"}</button>}{["completed", "completed_with_discrepancies"].includes(batch.status) && batch.summary.receivable_repair?.status !== "completed" && customerConflicts.every((conflict) => conflict.batch_id !== batch.id) && <button className="secondary-button" disabled={busy || !canImportCustomers} onClick={() => void repairCustomerMigration(batch.id)}>Validar saldos CxC</button>}{(batch.summary.customer_identity_repair?.status === "completed" || batch.summary.customer_conflict_review?.status === "completed") && batch.summary.receivable_repair?.status === "completed" && batch.summary.receivable_backfill?.status !== "completed" && <button className="secondary-button" disabled={busy || !canImportCustomers} onClick={() => void previewReceivableBackfill(batch.id)}>Revisar CxC de clientes resueltos</button>}</div>)}
         </div>
       </section>
 
-      <section className="location-review">
-        <div><span className="eyebrow">Compras y CxP importados</span><h2>Paquetes de evidencia</h2><p>Satrapy agrupa cata_prv, rpcon2, lfchvenc y pag_det. Los datos quedan en staging y auditoría; no crean recepciones, saldos ni pagos operativos hasta que el flujo correspondiente esté habilitado.</p>{linkedAlphaFolderAvailable && <button className="secondary-button" disabled={busy || !canImportCustomers} onClick={() => void consolidatePurchasingFromLinkedFolder()}>Consolidar archivos detectados</button>}</div>
+      <section className="location-review migration-package-section">
+        <div className="migration-package-heading"><div><span className="eyebrow">Compras y CxP</span><h2>Paquetes de migración</h2><p>Satrapy agrupa proveedores, órdenes, documentos por pagar y evidencia de pagos.</p></div>{linkedAlphaFolderAvailable && <button className="secondary-button" disabled={busy || !canImportCustomers} onClick={() => void consolidatePurchasingFromLinkedFolder()}>Consolidar archivos</button>}</div>
         <div className="location-review-list">
-          <div className="location-review-note"><FileSpreadsheet size={22} /><span>Flujo confirmado: Proveedor → Orden de compra → Aprobación. La recepción vinculada no está en los archivos entregados y permanece como brecha explícita.</span></div>
+          <div className="location-review-note"><FileSpreadsheet size={18} /><span>La recepción histórica no está disponible; el paquete permanece como evidencia hasta completar el flujo operativo.</span></div>
           {visiblePurchasingMigrationBatches.map((batch) => <div className="location-review-row" key={batch.id}><span><strong>Corte {dateOnlyFormat(batch.cutoff_date)} · {batch.status === "staged" ? "Evidencia preparada" : batch.status === "validation_failed" ? "Datos por revisar" : batch.status === "failed" ? "Fallida" : "Procesando"}</strong><small>{batch.summary.suppliers ?? 0} proveedores · {batch.summary.purchase_orders ?? 0} órdenes de compra / {batch.summary.purchase_order_lines ?? 0} partidas · {batch.summary.payable_documents ?? 0} documentos CxP por {numberFormat(Number(batch.summary.payable_outstanding_total ?? 0))} MXN · {batch.summary.supplier_payments ?? 0} aplicaciones de pago como evidencia</small><small>{batch.summary.error_count ?? 0} errores · {batch.summary.warning_count ?? 0} alertas · recepción histórica no disponible</small></span><Badge tone={batch.status === "staged" ? "warning" : batch.status === "validation_failed" || batch.status === "failed" ? "danger" : "neutral"}>{batch.status === "staged" ? "Solo staging" : batch.status === "validation_failed" ? "Revisión requerida" : batch.status === "failed" ? "Fallida" : "Procesando"}</Badge></div>)}
         </div>
       </section>
@@ -1615,6 +1616,11 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
   );
 }
 
+function customerConflictDifferenceText(code:string,message:string){
+  if(code.includes("DUPLICATE")||message.includes("duplicate key")||message.includes("unique constraint"))return "El RFC ya pertenece a otro cliente. Confirma si corresponde vincularlo con la coincidencia encontrada.";
+  return presentImportedSourceText(message);
+}
+
 function CustomerConflictInbox({ conflicts, busy, onDecide }: {
   conflicts: CustomerIdentityConflict[];
   busy: boolean;
@@ -1633,7 +1639,7 @@ function CustomerConflictInbox({ conflicts, busy, onDecide }: {
     <div className="customer-conflict-inbox__heading"><div><span className="eyebrow">Revisión requerida</span><h2 id="customer-conflicts-title">Conflictos de identidad de clientes</h2><p>{conflicts.length} caso{conflicts.length === 1 ? "" : "s"} crítico{conflicts.length === 1 ? "" : "s"}. La CxC de cada caso queda bloqueada hasta que el cliente tenga una decisión auditada.</p></div><Badge tone="danger">{conflicts.length} pendientes</Badge></div>
     <div className="customer-conflict-list">{conflicts.map((conflict) => <article key={`${conflict.batch_id}:${conflict.external_code}`}>
       <div className="customer-conflict-source"><span className="customer-conflict-code">{conflict.external_code}</span><strong>{presentImportedSourceText(conflict.display_name)}</strong><small>RFC de origen: {conflict.tax_id || "sin RFC"} · Corte {dateOnlyFormat(conflict.cutoff_date)}</small><small>{conflict.document_count} documento{conflict.document_count === 1 ? "" : "s"} CxC por {numberFormat(Number(conflict.document_total))} MXN — no se incorporarán aún.</small></div>
-      <div className="customer-conflict-details"><div><b>Diferencias</b>{conflict.differences.map((difference) => <p key={`${difference.code}:${difference.message}`}>{presentImportedSourceText(difference.message)}</p>)}</div><div><b>Candidatos canónicos</b>{conflict.candidates.length ? conflict.candidates.map((candidate) => <p key={candidate.id}><strong>{presentImportedSourceText(candidate.display_name)}</strong> · {candidate.code} · RFC {candidate.tax_id || "—"}<small>{candidate.match_reasons.join(" · ")}{candidate.credit_enabled ? " · tiene crédito" : " · sin crédito"}</small></p>) : <p>No se encontró coincidencia automática; puedes crear el cliente de contado sin RFC o dejar el caso pendiente.</p>}</div></div>
+      <div className="customer-conflict-details"><div><b>Qué debes revisar</b>{conflict.differences.map((difference) => <p key={`${difference.code}:${difference.message}`}>{customerConflictDifferenceText(difference.code, difference.message)}</p>)}</div><div><b>Coincidencias encontradas</b>{conflict.candidates.length ? conflict.candidates.map((candidate) => <p key={candidate.id}><strong>{presentImportedSourceText(candidate.display_name)}</strong> · {candidate.code} · RFC {candidate.tax_id || "—"}<small>{candidate.match_reasons.join(" · ")}{candidate.credit_enabled ? " · tiene crédito" : " · sin crédito"}</small></p>) : <p>No se encontró coincidencia automática; puedes crear el cliente de contado sin RFC o dejar el caso pendiente.</p>}</div></div>
       <div className="customer-conflict-actions"><button className="secondary-button" disabled={busy || conflict.candidates.length === 0} onClick={() => open(conflict, "link_existing")}>Vincular existente</button><button className="secondary-button" disabled={busy} onClick={() => open(conflict, "create_cash_without_rfc")}>Crear de contado sin RFC</button><button className="text-button" disabled={busy} onClick={() => open(conflict, "leave_pending")}>Dejar pendiente</button></div>
     </article>)}</div>
     {selection && <Modal open onOpenChange={(isOpen) => { if (!isOpen && !busy) setSelection(null); }} eyebrow="Decisión de identidad" title={decisionLabel} description={selection.decision === "link_existing" ? "Elige el cliente canónico que coincide con la evidencia. No se creará otro cliente." : selection.decision === "create_cash_without_rfc" ? "Se creará un cliente de contado, sin RFC y sin crédito. El RFC de origen se conserva solo en la evidencia de importación." : "El cliente y sus documentos CxC seguirán bloqueados. Puedes retomarlo después desde esta bandeja."} footer={<><Button variant="secondary" disabled={busy} onClick={() => setSelection(null)}>Cancelar</Button><Button variant="primary" loading={busy} disabled={!reason.trim() || (selection.decision === "link_existing" && !targetCustomerId)} onClick={() => void onDecide(selection.conflict, selection.decision, reason, targetCustomerId || undefined).then((saved) => { if (saved) setSelection(null); })}>Registrar decisión</Button></>}><div className="customer-conflict-decision">{selection.decision === "link_existing" && <label>Cliente existente<Select ariaLabel="Cliente canónico a vincular" value={targetCustomerId || "unselected"} onValueChange={(value) => setTargetCustomerId(value === "unselected" ? "" : value)} options={[{ value: "unselected", label: "Seleccionar cliente", disabled: true }, ...selection.conflict.candidates.map((candidate) => ({ value: candidate.id, label: `${candidate.display_name} · ${candidate.code} · ${candidate.match_reasons.join(", ")}` }))]} /></label>}<label className="operation-reason">Motivo<textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Explica la evidencia de esta decisión para la auditoría" rows={3} /></label></div></Modal>}
