@@ -7,13 +7,14 @@ const styles = readFileSync("app/globals.css", "utf8");
 const migration = readFileSync("supabase/migrations/202608120002_bi_executive_decision_summary.sql", "utf8");
 const pkg = JSON.parse(readFileSync("package.json", "utf8")) as { dependencies?: Record<string, string> };
 
-test("Fase 1 prioriza señales, un KPI protagonista y máximo tres secundarios", () => {
-  assert.match(ui, /buildExecutiveAttention/);
-  assert.match(ui, /Reglas deterministas; no son alertas persistidas/);
+test("el resumen conserva la jerarquía de Fase 1 y consume alertas persistentes", () => {
+  assert.match(ui, /bi_get_attention_alerts/);
+  assert.match(ui, /function ExecutiveAttention/);
+  assert.doesNotMatch(ui, /no son alertas persistidas/);
   assert.match(ui, /const heroMetric=metrics\.find/);
   assert.match(ui, /\.slice\(0,3\)/);
   assert.match(ui, /Métricas secundarias/);
-  assert.match(ui, /periodo equivalente anterior/);
+  assert.match(ui, /periodo equivalente anterior/i);
 });
 
 test("la visualización principal usa Recharts y conserva una ruta de investigación accesible", () => {

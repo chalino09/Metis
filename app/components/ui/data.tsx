@@ -78,8 +78,8 @@ export function DataRefreshStatus({ loading, hasData, label = "Actualizando resu
   return <div className="inline-status" role="status" aria-live="polite"><LoaderCircle className="spin" size={15} aria-hidden="true" /> {label}</div>;
 }
 
-export function Table({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={`table-wrap surface-table ${className ?? ""}`}><table>{children}</table></div>;
+export function Table({ children, className, ariaLabel, ariaBusy = false }: { children: ReactNode; className?: string; ariaLabel?: string; ariaBusy?: boolean }) {
+  return <div className={`table-wrap surface-table ${className ?? ""}`} role={ariaLabel ? "region" : undefined} aria-label={ariaLabel} aria-busy={ariaBusy || undefined} tabIndex={ariaLabel ? 0 : undefined}><table>{children}</table></div>;
 }
 
 export function InteractiveTableRow({

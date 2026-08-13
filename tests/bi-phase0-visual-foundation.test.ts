@@ -26,11 +26,11 @@ test("los aliases BI conservan los tokens y significados semánticos de Satrapy"
   assert.match(styles, /\.bi-metric-card[^}]*box-shadow:none/);
 });
 
-test("el resumen adopta la base sin cambiar consultas; Recharts se incorpora sólo en Fase 1", () => {
+test("el resumen adopta la base compartida y conserva su consulta canónica; Recharts se incorpora sólo en Fase 1", () => {
   for (const name of ["MetricCard", "MetricDelta", "BiFilterBar", "ChartContainer", "BiDrawer", "AnalyticsTable", "BiState"]) {
     assert.match(summary, new RegExp(`<${name}`));
   }
-  assert.match(summary, /\.rpc\("bi_get_executive_summary"/);
+  assert.match(summary, /\.rpc\("bi_get_executive_summary(?:_compared)?"/);
   assert.ok(pkg.dependencies?.recharts);
 });
 
