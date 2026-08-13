@@ -2,19 +2,23 @@
 /* eslint-disable @next/next/no-img-element -- El logotipo procede del bucket de la empresa y sólo es una vista previa pequeña. */
 
 import { ImagePlus, ReceiptText, Save, X } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Button, Input, Select, useToast } from "@/app/components/ui/primitives";
 import { DataState } from "@/app/components/ui/data";
 import { getSupabaseClient } from "@/app/lib/supabase";
 
 type TicketBranding = {
-  display_name: string; legal_name: string | null; tax_id: string | null; contact_line: string | null; document_title: string; header_message: string | null; website: string | null; return_policy: string | null; footer_message: string; paper_width: "58mm" | "80mm"; show_customer: boolean; show_product_code: boolean; show_payment_details: boolean; show_tax_id: boolean; logo_path: string | null;
+  company_id: string; display_name: string; legal_name: string | null; tax_id: string | null; contact_line: string | null; document_title: string; header_message: string | null; website: string | null; return_policy: string | null; footer_message: string; paper_width: "58mm" | "80mm"; show_customer: boolean; show_product_code: boolean; show_payment_details: boolean; show_tax_id: boolean; logo_path: string | null;
 };
+type TicketLocation = { id: string; name: string; external_code: string };
+type TicketLocationPreview = { id: string; code: string; name: string; address: string | null; contact_phone: string | null };
 
 function publicLogoUrl(path: string | null) { return path ? getSupabaseClient().storage.from("ticket-branding-assets").getPublicUrl(path).data.publicUrl : null; }
 
 function normalizeBranding(value: Partial<TicketBranding>): TicketBranding {
   return {
+    company_id: value.company_id ?? "",
     display_name: value.display_name ?? "",
     legal_name: value.legal_name ?? null,
     tax_id: value.tax_id ?? null,
@@ -34,7 +38,25 @@ function normalizeBranding(value: Partial<TicketBranding>): TicketBranding {
 }
 
 function TicketPreview({ branding, logoUrl }: { branding: TicketBranding; logoUrl: string | null }) {
-  return <aside className={`ticket-preview ticket-preview--${branding.paper_width}`} aria-label="Vista previa del ticket"><header><span>Vista previa</span><strong>{branding.paper_width}</strong></header><article className="ticket-preview__paper">{logoUrl ? <img src={logoUrl} alt="Logotipo en ticket" /> : <ReceiptText size={25} />}<strong>{branding.display_name}</strong>{branding.legal_name && branding.legal_name !== branding.display_name && <small>{branding.legal_name}</small>}{branding.show_tax_id && branding.tax_id && <small>RFC {branding.tax_id}</small>}{branding.contact_line && <small>{branding.contact_line}</small>}{branding.header_message && <p>{branding.header_message}</p>}<b>{branding.document_title}</b><b>0000000012</b>{branding.show_customer && <span>Venta de mostrador</span>}<small>23 jul 2026, 2:30 p.m.</small><hr/><div className="ticket-preview__line"><span>1 x Producto de ejemplo {branding.show_product_code && <small>· SKU-001</small>}</span><b>$125.00</b></div><div className="ticket-preview__line"><span>2 x Insumo de muestra {branding.show_product_code && <small>· SKU-002</small>}</span><b>$80.00</b></div><hr/><div className="ticket-preview__total"><b>TOTAL</b><b>$205.00</b></div>{branding.show_payment_details && <div className="ticket-preview__payment"><span>Pago <b>EFECTIVO</b></span><span>Recibido <b>$300.00</b></span><span>Cambio <b>$95.00</b></span></div>}<hr/><p>{branding.footer_message}</p>{branding.return_policy && <small>{branding.return_policy}</small>}{branding.website && <small>{branding.website}</small>}</article><p>Representación visual; el importe definitivo siempre se calcula al cobrar.</p></aside>;
+  const [locations,setLocations]=useState<TicketLocation[]>([]);const [locationId,setLocationId]=useState("");const [location,setLocation]=useState<TicketLocationPreview|null>(null);
+  useEffect(()=>{if(!branding.company_id)return;void getSupabaseClient().from("locations").select("id,name,external_code").eq("company_id",branding.company_id).eq("is_active",true).order("name").then(({data})=>{const items=(data??[]) as TicketLocation[];setLocations(items);setLocationId(current=>current||items[0]?.id||"");const first=items[0];if(first)setLocation(current=>current??{id:first.id,code:first.external_code,name:first.name,address:null,contact_phone:null});});},[branding.company_id]);
+  useEffect(()=>{if(!locationId)return;void getSupabaseClient().rpc("get_ticket_location_preview",{p_company_id:branding.company_id,p_location_id:locationId}).then(({data})=>{if(data)setLocation(data as TicketLocationPreview);});},[branding.company_id,locationId]);
+  const onLocationChange=(value:string)=>{const selected=locations.find(item=>item.id===value);if(selected)setLocation({id:selected.id,code:selected.external_code,name:selected.name,address:null,contact_phone:null});setLocationId(value);};
+  return <aside className={`ticket-preview ticket-preview--${branding.paper_width}`} aria-label="Vista previa del ticket">
+    <header><span>Vista previa</span><strong>{branding.paper_width}</strong></header>
+    {locations.length>0&&<Select ariaLabel="Sucursal para vista previa" value={locationId} onValueChange={onLocationChange} options={locations.map(item=>({value:item.id,label:`${item.name} · ${item.external_code}`}))}/>}
+    <section className="ticket-automatic-data" aria-labelledby="ticket-automatic-data-title">
+      <header><div><strong id="ticket-automatic-data-title">Datos automáticos</strong><span>Se toman de la venta y de la sucursal seleccionada.</span></div><Link href="/satrapy/configuracion/empresa/sucursales">Editar sucursal</Link></header>
+      <dl>
+        <div><dt>Sucursal</dt><dd>{location?`${location.name} · ${location.code}`:"Selecciona una sucursal"}</dd></div>
+        <div><dt>Domicilio</dt><dd>{location?.address??"Pendiente en el maestro de la sucursal"}</dd></div>
+        <div><dt>Teléfono</dt><dd>{location?.contact_phone??"Pendiente en el maestro de la sucursal"}</dd></div>
+        <div><dt>Caja y colaborador</dt><dd>Se registran automáticamente al cobrar.</dd></div>
+      </dl>
+    </section>
+    <article className="ticket-preview__paper">{logoUrl ? <img src={logoUrl} alt="Logotipo en ticket" /> : <ReceiptText size={25} />}<strong>{branding.display_name}</strong>{branding.legal_name && branding.legal_name !== branding.display_name && <small>{branding.legal_name}</small>}{branding.show_tax_id && branding.tax_id && <small>RFC {branding.tax_id}</small>}{location&&<b>{location.name} · {location.code}</b>}{location?.address&&<small>{location.address}</small>}{location?.contact_phone&&<small>Tel. {location.contact_phone}</small>}{branding.contact_line && <small>{branding.contact_line}</small>}{branding.header_message && <p>{branding.header_message}</p>}<b>{branding.document_title}</b><b>0000000012</b>{branding.show_customer && <span>Venta de mostrador</span>}<small>23 jul 2026, 2:30 p.m.</small><small>Atendió: Colaborador de ejemplo · Caja principal</small><hr/><div className="ticket-preview__line"><span>1 x Producto de ejemplo {branding.show_product_code && <small>· SKU-001</small>}</span><b>$125.00</b></div><div className="ticket-preview__line"><span>2 x Insumo de muestra {branding.show_product_code && <small>· SKU-002</small>}</span><b>$80.00</b></div><hr/><div className="ticket-preview__total"><b>TOTAL</b><b>$205.00</b></div>{branding.show_payment_details && <div className="ticket-preview__payment"><span>Pago <b>EFECTIVO</b></span><span>Recibido <b>$300.00</b></span><span>Cambio <b>$95.00</b></span></div>}<hr/><p>{branding.footer_message}</p>{branding.return_policy && <small>{branding.return_policy}</small>}{branding.website && <small>{branding.website}</small>}</article>
+    <p>La sucursal, caja y persona que atendió se toman automáticamente al cobrar.</p>
+  </aside>;
 }
 
 export function TicketBrandingSettings({ companyId }: { companyId: string }) {
@@ -45,7 +67,7 @@ export function TicketBrandingSettings({ companyId }: { companyId: string }) {
   const update = (patch: Partial<TicketBranding>) => setBranding((current) => current ? { ...current, ...patch } : current);
   const load = useCallback(async () => {
     setLoading(true); const { data, error: loadError } = await getSupabaseClient().rpc("get_ticket_branding", { p_company_id: companyId });
-    if (loadError) { setError(loadError.message); setBranding(null); } else { setBranding(normalizeBranding((data ?? {}) as Partial<TicketBranding>)); setError(null); } setLoading(false);
+    if (loadError) { setError(loadError.message); setBranding(null); } else { setBranding(normalizeBranding({ ...((data ?? {}) as Partial<TicketBranding>), company_id: companyId })); setError(null); } setLoading(false);
   }, [companyId]);
   useEffect(() => { void Promise.resolve().then(load); }, [load]);
   async function uploadLogo(event: React.ChangeEvent<HTMLInputElement>) {
@@ -61,7 +83,7 @@ export function TicketBrandingSettings({ companyId }: { companyId: string }) {
     const { data, error: saveError } = await getSupabaseClient().rpc("update_ticket_branding", {
       p_company_id: companyId, p_display_name: branding.display_name, p_contact_line: branding.contact_line, p_footer_message: branding.footer_message, p_logo_path: branding.logo_path, p_document_title: branding.document_title, p_header_message: branding.header_message, p_website: branding.website, p_return_policy: branding.return_policy, p_paper_width: branding.paper_width, p_show_customer: branding.show_customer, p_show_product_code: branding.show_product_code, p_show_payment_details: branding.show_payment_details, p_show_tax_id: branding.show_tax_id,
     });
-    if (saveError) toast({ title: "No se pudo guardar", description: saveError.message, tone: "error" }); else { setBranding(normalizeBranding((data ?? {}) as Partial<TicketBranding>)); toast({ title: "Ticket actualizado", description: "La configuración se usará al imprimir ventas.", tone: "success" }); }
+    if (saveError) toast({ title: "No se pudo guardar", description: saveError.message, tone: "error" }); else { setBranding(normalizeBranding({ ...((data ?? {}) as Partial<TicketBranding>), company_id: companyId })); toast({ title: "Ticket actualizado", description: "La configuración se usará al imprimir ventas.", tone: "success" }); }
     setSaving(false);
   }
   if (loading) return <DataState loading error={null} hasData={0} empty="">{null}</DataState>;

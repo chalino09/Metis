@@ -7,6 +7,12 @@ type CanonicalTicket = {
   sale?: { total_amount?: number; currency_code?: string; customer?: { display_name?: string } | null };
   payment?: { method_code?: string; received_amount?: number; change_amount?: number; reference?: string };
   items?: TicketItem[];
+  identity?: {
+    company?: { display_name?: string; legal_name?: string | null; tax_id?: string | null };
+    location?: { code?: string; name?: string; address?: string | null; contact_phone?: string | null };
+    register?: { code?: string; name?: string } | null;
+    collaborator?: { display_name?: string } | null;
+  };
 };
 
 export type TicketBranding = {
@@ -92,6 +98,7 @@ async function embedTicketLogo(document: PDFDocument, logoUrl?: string | null) {
 
 export async function createTicketPdf(ticketInput: Record<string, unknown>, branding: TicketBranding = {}) {
   const ticket = ticketInput as CanonicalTicket;
+  branding = { ...branding, display_name: ticket.identity?.company?.display_name ?? branding.display_name, legal_name: ticket.identity?.company?.legal_name ?? branding.legal_name, tax_id: ticket.identity?.company?.tax_id ?? branding.tax_id };
   const layout = layoutFor(branding);
   const document = await PDFDocument.create();
   const regular = await document.embedFont(StandardFonts.Helvetica);
@@ -101,7 +108,7 @@ export async function createTicketPdf(ticketInput: Record<string, unknown>, bran
     lines: wrapText(`${Number(item.quantity ?? 0)} x ${branding.show_product_code && item.product_code ? `${item.product_code} · ` : ""}${item.product_name ?? "Producto"}`, regular, layout.bodySize, layout.textWidth - 54),
   }));
   const contentHeight = itemLines.reduce((sum, entry) => sum + Math.max(1, entry.lines.length) * layout.lineHeight + 5, 0);
-  const headerExtra = (branding.logo_url ? 46 : 0) + (branding.legal_name ? 12 : 0) + (branding.contact_line ? 12 : 0) + (branding.header_message ? 16 : 0) + (branding.show_tax_id && branding.tax_id ? 12 : 0) + (branding.show_customer !== false ? 15 : 0);
+  const headerExtra = (branding.logo_url ? 46 : 0) + (branding.legal_name ? 12 : 0) + (branding.contact_line ? 12 : 0) + (branding.header_message ? 16 : 0) + (branding.show_tax_id && branding.tax_id ? 12 : 0) + (branding.show_customer !== false ? 15 : 0) + (ticket.identity?.location?.name ? 12 : 0) + (ticket.identity?.location?.address ? 22 : 0) + (ticket.identity?.location?.contact_phone ? 12 : 0) + (ticket.identity?.collaborator?.display_name || ticket.identity?.register?.name ? 13 : 0);
   const footerExtra = (branding.website ? 12 : 0) + (branding.return_policy ? 24 : 0);
   const paymentRows = branding.show_payment_details === false ? 0 : (ticket.payment?.method_code ? 1 : 0) + (ticket.payment?.received_amount != null ? 1 : 0) + (ticket.payment?.reference ? 1 : 0) + (Number(ticket.payment?.change_amount ?? 0) > 0 ? 1 : 0);
   const height = Math.max(layout.width === 164.41 ? 330 : 360, 235 + headerExtra + footerExtra + contentHeight + paymentRows * 14);
@@ -118,11 +125,15 @@ export async function createTicketPdf(ticketInput: Record<string, unknown>, bran
   if (branding.legal_name && branding.legal_name !== branding.display_name) y = drawCenteredLines(page, layout, branding.legal_name, y, regular, 7);
   if (branding.show_tax_id && branding.tax_id) { drawCentered(page, layout, `RFC ${branding.tax_id}`, y, regular, 7); y -= 11; }
   y = drawCenteredLines(page, layout, branding.contact_line, y, regular, 7.3);
+  if (ticket.identity?.location?.name) { drawCentered(page, layout, `${ticket.identity.location.name}${ticket.identity.location.code ? ` · ${ticket.identity.location.code}` : ""}`, y, bold, 7.5); y -= 11; }
+  y = drawCenteredLines(page, layout, ticket.identity?.location?.address, y, regular, 7);
+  if (ticket.identity?.location?.contact_phone) { drawCentered(page, layout, `Tel. ${ticket.identity.location.contact_phone}`, y, regular, 7); y -= 11; }
   y = drawCenteredLines(page, layout, branding.header_message, y, regular, 7.3);
   drawCentered(page, layout, branding.document_title || "TICKET DE VENTA", y, bold, 8.5); y -= 17;
   drawCentered(page, layout, ticket.folio ?? "Sin folio", y, bold, 9.5); y -= 14;
   if (branding.show_customer !== false) { drawCentered(page, layout, ticket.sale?.customer?.display_name ?? "Venta de mostrador", y, regular, layout.bodySize); y -= 13; }
   drawCentered(page, layout, ticketDate(ticket.issued_at), y, regular, 7.2); y -= 13;
+  if (ticket.identity?.collaborator?.display_name || ticket.identity?.register?.name) { drawCentered(page, layout, `${ticket.identity.collaborator?.display_name ? `Atendio: ${ticket.identity.collaborator.display_name}` : ""}${ticket.identity?.register?.name ? ` · ${ticket.identity.register.name}` : ""}`, y, regular, 7); y -= 12; }
   drawRule(page, layout, y); y -= 14;
 
   for (const { item, lines } of itemLines) {
