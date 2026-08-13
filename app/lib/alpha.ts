@@ -7,6 +7,7 @@ import type {
   ProductRecord,
   PriceRecord,
   CostRecord,
+  SaleRecord,
 } from "./types.ts";
 import { classifyAlphaUpload } from "./alpha-upload-routing.ts";
 
@@ -14,7 +15,7 @@ type AlphaFileInput = Pick<File, "name" | "arrayBuffer">;
 
 export function detectAlphaFileKind(fileName: string): ImportKind {
   const kind = classifyAlphaUpload(fileName);
-  return kind === "products" || kind === "inventory" || kind === "prices" || kind === "costs" ? kind : "unsupported";
+  return kind === "products" || kind === "inventory" || kind === "prices" || kind === "costs" || kind === "sales" ? kind : "unsupported";
 }
 
 export async function parseAlphaFile(
@@ -42,6 +43,7 @@ export async function parseAlphaWorkbook(
     inventory: [],
     prices: [],
     costs: [],
+    sales: [],
     rejectedRows: [],
     locations: [],
     issues: [],
@@ -62,7 +64,7 @@ export async function parseAlphaWorkbook(
         issues: [{
           severity: "error",
           code: "ARCHIVO_NO_COMPATIBLE",
-          message: "Archivo no reconocido. Usa una exportación cata_prd, reexic2, rprecprd, rcostprd o un catálogo con encabezados fiscales de producto.",
+          message: "Archivo no reconocido. Usa una exportación cata_prd, reexic2, rprecprd, rcostprd, nvtadesg o un catálogo con encabezados fiscales de producto.",
         }],
       };
     }
@@ -74,6 +76,7 @@ export async function parseAlphaWorkbook(
     const rows = readWorksheetRows(firstSheet, XLSX);
     if (effectiveKind === "inventory") return { ...parsedBase, ...parseInventoryRows(rows) };
     if (effectiveKind === "prices") return { ...parsedBase, ...parsePriceRows(rows) };
+    if (effectiveKind === "sales") return { ...parsedBase, ...parseSalesRows(rows, fileName) };
     return { ...parsedBase, ...parseCostRows(rows) };
   } catch {
     return {
@@ -119,7 +122,7 @@ function parseProductWorkbook(workbook: { SheetNames: string[]; Sheets: Record<s
   }
   if (!primarySheetName) {
     return {
-      products: [], inventory: [], prices: [], costs: [], rejectedRows: [], locations: [],
+      products: [], inventory: [], prices: [], costs: [], sales: [], rejectedRows: [], locations: [],
       issues: [{
         severity: "error" as const,
         code: "HOJA_PRODUCTOS_FALTANTE" as const,
@@ -271,7 +274,7 @@ function parseProductRows(rows: Array<Array<string | number>>) {
       message: "No se encontraron productos válidos en el formato cata_prd de origen.",
     });
   }
-  return { products, inventory: [], prices: [], costs: [], rejectedRows, locations: [], issues };
+  return { products, inventory: [], prices: [], costs: [], sales: [], rejectedRows, locations: [], issues };
 }
 
 function findProductHeader(rows: Array<Array<string | number>>): { rowIndex: number; columns: ProductHeader } | null {
@@ -521,6 +524,7 @@ function parseInventoryRows(rows: Array<Array<string | number>>) {
     inventory,
     prices: [],
     costs: [],
+    sales: [],
     rejectedRows,
     locations: [...locationByCode.values()],
     snapshotDate,
@@ -581,7 +585,7 @@ function parsePriceRows(rows: Array<Array<string | number>>) {
   }
   for (const listNumber of populatedLists) issues.push({ severity: "error", code: "LISTA_PRECIO_SIN_MAPEAR", contextKey: `ALPHA_LIST_${listNumber}`, message: `La lista de origen ${listNumber} requiere asignación comercial antes de importar.` });
   for (const currency of currencies) issues.push({ severity: "error", code: "MONEDA_SIN_MAPEAR", contextKey: currency, message: `La moneda ${currency} requiere confirmación de código ISO.` });
-  return { products: [], inventory: [], prices, costs: [], rejectedRows, locations: [], snapshotDate, issues };
+  return { products: [], inventory: [], prices, costs: [], sales: [], rejectedRows, locations: [], snapshotDate, issues };
 }
 
 function parseCostRows(rows: Array<Array<string | number>>) {
@@ -618,7 +622,125 @@ function parseCostRows(rows: Array<Array<string | number>>) {
     costs.push({ rowNumber, rawData: row, alphaSku, alphaClass: nullIfEmpty(row[0]), description, unit: nullIfEmpty(row[8]), replacementCost, currencyLabel, adValorem });
   }
   for (const currency of currencies) issues.push({ severity: "error", code: "MONEDA_SIN_MAPEAR", contextKey: currency, message: `La moneda ${currency} requiere confirmación de código ISO.` });
-  return { products: [], inventory: [], prices: [], costs, rejectedRows, locations: [], snapshotDate, issues };
+  return { products: [], inventory: [], prices: [], costs, sales: [], rejectedRows, locations: [], snapshotDate, issues };
+}
+
+type SalesColumns = { headerRow: number; detailRow: number; header: Record<string, number>; detail: Record<string, number> };
+
+function parseSalesRows(rows: Array<Array<string | number>>, fileName: string) {
+  const sales: SaleRecord[] = [];
+  const rejectedRows: ParsedAlphaFile["rejectedRows"] = [];
+  const issues: ImportIssue[] = [];
+  const columns = findSalesColumns(rows);
+  const snapshotDate = extractReportDate(rows) ?? extractDateFromFileName(fileName);
+  if (!columns) {
+    return {
+      products: [], inventory: [], prices: [], costs: [], sales, rejectedRows, locations: [], snapshotDate,
+      issues: [{ severity: "error" as const, code: "VENTA_ESTRUCTURA_NO_COMPATIBLE" as const, message: "nvtadesg debe incluir Fecha Alta, Folio, Sucursal y una segunda fila con Clave Prod., Cantidad y Total." }],
+    };
+  }
+
+  let currentHeader: { saleDate: string; sourceFolio: string; locationCode: string; customerExternalCode: string | null; customerName: string | null; warehouseName: string | null; sourceStatus: string | null; sourceInvoice: string | null } | null = null;
+  for (let index = columns.detailRow + 1; index < rows.length; index += 1) {
+    const row = rows[index] ?? [];
+    const saleDate = parseAlphaDate(valueAt(row, columns.header, "fecha alta"));
+    const sourceFolio = valueAt(row, columns.header, "folio", columns.header.folio - 1);
+    const locationCode = valueAt(row, columns.header, "sucursal");
+    // The two visual header rows reuse several columns (for example column 5
+    // is Sucursal in the header and Descripción in the detail). Date or folio,
+    // not any shared column, identifies a new sale header.
+    if (saleDate || sourceFolio) {
+      if (!saleDate || !sourceFolio || !locationCode) {
+        const code = !saleDate ? "VENTA_FECHA_NO_VALIDA" : !sourceFolio ? "VENTA_FOLIO_FALTANTE" : "VENTA_SUCURSAL_FALTANTE";
+        issues.push({ severity: "error", code, rowNumber: index + 1, message: `Encabezado de venta incompleto: ${!saleDate ? "Fecha Alta" : !sourceFolio ? "Folio" : "Sucursal"} es obligatorio.` });
+        currentHeader = null;
+      } else {
+        currentHeader = {
+          saleDate, sourceFolio, locationCode,
+          customerExternalCode: nullIfEmpty(valueAt(row, columns.header, "cliente")),
+          customerName: nullIfEmpty(valueAt(row, columns.header, "nombre")),
+          warehouseName: nullIfEmpty(valueAt(row, columns.header, "almacen")),
+          sourceStatus: nullIfEmpty(valueAt(row, columns.header, "status")),
+          sourceInvoice: nullIfEmpty(valueAt(row, columns.header, "factura", columns.header.factura - 3)),
+        };
+      }
+      continue;
+    }
+    const alphaSku = valueAt(row, columns.detail, "clave prod.");
+    const description = nullIfEmpty(valueAt(row, columns.detail, "descripcion"));
+    if (!alphaSku && !description) continue;
+    if (!currentHeader) {
+      issues.push({ severity: "error", code: "VENTA_ESTRUCTURA_NO_COMPATIBLE", rowNumber: index + 1, alphaSku: alphaSku || undefined, message: "La partida de venta no tiene un encabezado válido de Fecha Alta, Folio y Sucursal." });
+      rejectedRows.push({ rowNumber: index + 1, rawData: compactSalesRaw(row, columns), detectedType: "sales", normalizedData: { alphaSku: alphaSku || null, description } });
+      continue;
+    }
+    if (!alphaSku) {
+      issues.push({ severity: "error", code: "SKU_FALTANTE", rowNumber: index + 1, message: "Partida de venta sin Clave Prod." });
+      rejectedRows.push({ rowNumber: index + 1, rawData: compactSalesRaw(row, columns), detectedType: "sales", normalizedData: { ...currentHeader, alphaSku: null, description } });
+      continue;
+    }
+    const quantity = parseNumeric(valueAt(row, columns.detail, "cantidad", 20));
+    const lineTotal = parseNumeric(valueAt(row, columns.detail, "total", 37));
+    if (quantity === null || quantity <= 0) {
+      issues.push({ severity: "error", code: "CANTIDAD_NO_VALIDA", rowNumber: index + 1, alphaSku, locationCode: currentHeader.locationCode, message: `La partida ${alphaSku} tiene una cantidad no válida.` });
+    }
+    if (lineTotal !== null && lineTotal < 0) {
+      issues.push({ severity: "error", code: "VENTA_TOTAL_NO_VALIDO", rowNumber: index + 1, alphaSku, locationCode: currentHeader.locationCode, message: `La partida ${alphaSku} tiene un total negativo.` });
+    }
+    if (quantity === null || quantity <= 0 || (lineTotal !== null && lineTotal < 0)) {
+      rejectedRows.push({ rowNumber: index + 1, rawData: compactSalesRaw(row, columns), detectedType: "sales", normalizedData: { ...currentHeader, alphaSku, description, quantity, lineTotal } });
+      continue;
+    }
+    const unitPrice = parseNumeric(valueAt(row, columns.detail, "pr. unitario"));
+    const sourceTax = parseNumeric(valueAt(row, columns.detail, "dcto", 27));
+    sales.push({
+      rowNumber: index + 1, rawData: compactSalesRaw(row, columns), ...currentHeader, alphaSku, description,
+      unit: nullIfEmpty(valueAt(row, columns.detail, "unidad", 17)), quantity,
+      unitPrice,
+      taxAmount: lineTotal !== null && unitPrice !== null ? Math.max(0, lineTotal - (unitPrice * quantity)) : sourceTax,
+      discountAmount: 0,
+      lineAmount: parseNumeric(valueAt(row, columns.detail, "importe")), lineTotal,
+      discountPercent: parseNumeric(valueAt(row, columns.detail, "descuentos %", 42)),
+      lot: nullIfEmpty(valueAt(row, columns.detail, "lote")),
+    });
+  }
+  if (!sales.length && !issues.length) issues.push({ severity: "error", code: "VENTA_ESTRUCTURA_NO_COMPATIBLE", message: "No se encontraron partidas válidas en nvtadesg." });
+  return { products: [], inventory: [], prices: [], costs: [], sales, rejectedRows, locations: [], snapshotDate, issues };
+}
+
+function findSalesColumns(rows: Array<Array<string | number>>): SalesColumns | null {
+  for (let index = 0; index < Math.min(rows.length - 1, 20); index += 1) {
+    const header = headerMap(rows[index] ?? []);
+    const detail = headerMap(rows[index + 1] ?? []);
+    if (header["fecha alta"] !== undefined && header.folio !== undefined && header.sucursal !== undefined
+      && detail["clave prod."] !== undefined && detail.cantidad !== undefined && detail.total !== undefined) {
+      return { headerRow: index, detailRow: index + 1, header, detail };
+    }
+  }
+  return null;
+}
+
+function headerMap(row: Array<string | number>) {
+  const map: Record<string, number> = {};
+  row.forEach((cell, index) => { const key = normalized(cell); if (key && map[key] === undefined) map[key] = index; });
+  return map;
+}
+
+function valueAt(row: Array<string | number>, columns: Record<string, number>, key: string, ...fallbacks: number[]) {
+  for (const index of [columns[key], ...fallbacks]) {
+    if (!Number.isInteger(index)) continue;
+    const value = clean(row[index]);
+    if (value) return value;
+  }
+  return "";
+}
+
+function compactSalesRaw(row: Array<string | number>, columns: SalesColumns): Array<string | number> {
+  return [
+    valueAt(row, columns.header, "fecha alta"), valueAt(row, columns.header, "folio"), valueAt(row, columns.header, "sucursal"),
+    valueAt(row, columns.header, "cliente"), valueAt(row, columns.header, "nombre"), valueAt(row, columns.header, "status"),
+    valueAt(row, columns.detail, "clave prod."), valueAt(row, columns.detail, "descripcion"), valueAt(row, columns.detail, "cantidad", 20), valueAt(row, columns.detail, "total", 37),
+  ];
 }
 
 export function classifyAlphaLocation(code: string, name: string): LocationType | null {
@@ -648,6 +770,15 @@ function extractReportDate(rows: Array<Array<string | number>>): string | null {
     }
   }
   return null;
+}
+
+function extractDateFromFileName(fileName: string): string | null {
+  const match = fileName.match(/(?:^|_)(20\d{2})(\d{2})(\d{2})(?:_|\.)/);
+  if (!match) return null;
+  const [, year, month, day] = match;
+  const candidate = `${year}-${month}-${day}`;
+  const date = new Date(`${candidate}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== candidate ? null : candidate;
 }
 
 function parseAlphaDate(value: string): string | null {

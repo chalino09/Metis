@@ -3,7 +3,7 @@ import type { ImportIssue, ParsedAlphaFile } from "@/app/lib/types";
 export type StagingRowPayload = {
   row_number: number;
   source_file: string;
-  detected_type: "products" | "inventory" | "prices" | "costs";
+  detected_type: "products" | "inventory" | "prices" | "costs" | "sales";
   raw_data: { cells: Array<string | number> };
   normalized_data: Record<string, unknown>;
   validation_status: "valid" | "warning" | "error";
@@ -133,6 +133,38 @@ export function buildStagingPayload(
       currencyCode: null,
       adValorem: row.adValorem,
       effectiveDate: parsed.snapshotDate,
+    },
+    validation_status: statusFor(row.rowNumber),
+  }));
+  if (parsed.importKind === "sales") acceptedRows = parsed.sales.map((row) => ({
+    row_number: row.rowNumber,
+    source_file: parsed.fileName,
+    detected_type: "sales",
+    raw_data: { cells: row.rawData },
+    normalized_data: {
+      evidenceKind: "sale_line",
+      saleDate: row.saleDate,
+      sourceFolio: row.sourceFolio,
+      locationCode: row.locationCode,
+      canonicalLocationId: row.canonicalLocationId ?? null,
+      canonicalLocationCode: row.canonicalLocationCode ?? null,
+      customerExternalCode: row.customerExternalCode,
+      customerName: row.customerName,
+      warehouseName: row.warehouseName,
+      sourceStatus: row.sourceStatus,
+      sourceInvoice: row.sourceInvoice,
+      alphaSku: row.alphaSku,
+      description: row.description,
+      unit: row.unit,
+      quantity: row.quantity,
+      unitPrice: row.unitPrice,
+      taxAmount: row.taxAmount,
+      discountAmount: row.discountAmount,
+      lineAmount: row.lineAmount,
+      lineTotal: row.lineTotal,
+      discountPercent: row.discountPercent,
+      lot: row.lot,
+      evidenceOnly: true,
     },
     validation_status: statusFor(row.rowNumber),
   }));

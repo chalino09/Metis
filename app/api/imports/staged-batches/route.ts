@@ -22,6 +22,12 @@ type StagedBatchRow = {
   file_type: string | null;
 };
 
+type ImportFileRow = {
+  import_batch_id: string;
+  original_name: string;
+  file_type: string;
+};
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = getRequestSupabaseClient(request.headers.get("authorization"));
@@ -42,10 +48,26 @@ export async function GET(request: NextRequest) {
     if (error) return response(error.message || "No se pudieron recuperar las importaciones en staging.", 422);
 
     const result = data as { items?: StagedBatchRow[]; pagination?: { page: number; page_size: number; total: number } } | null;
+    const items = result?.items ?? [];
+    const batchIds = items.map((batch) => batch.id);
+    const filesByBatch = new Map<string, Array<{ original_name: string; file_type: string }>>();
+    if (batchIds.length) {
+      const { data: fileRows, error: filesError } = await supabase
+        .from("import_files")
+        .select("import_batch_id,original_name,file_type")
+        .in("import_batch_id", batchIds)
+        .order("created_at", { ascending: true });
+      if (filesError) return response(filesError.message || "No se pudieron recuperar los archivos de staging.", 422);
+      for (const file of (fileRows ?? []) as ImportFileRow[]) {
+        const files = filesByBatch.get(file.import_batch_id) ?? [];
+        files.push({ original_name: file.original_name, file_type: file.file_type });
+        filesByBatch.set(file.import_batch_id, files);
+      }
+    }
 
-    return NextResponse.json({ batches: (result?.items ?? []).map((batch) => ({
+    return NextResponse.json({ batches: items.map((batch) => ({
       ...batch,
-      import_files: batch.original_name ? [{ original_name: batch.original_name, file_type: batch.file_type }] : [],
+      import_files: filesByBatch.get(batch.id) ?? (batch.original_name ? [{ original_name: batch.original_name, file_type: batch.file_type }] : []),
     })), pagination: result?.pagination ?? { page, page_size: pageSize, total: 0 } }, { headers: { "cache-control": "no-store" } });
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") return response("Sesión no válida.", 401);

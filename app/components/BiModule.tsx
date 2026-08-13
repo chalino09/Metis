@@ -1,10 +1,12 @@
 "use client";
 
-import { Activity, AlertCircle, ArrowDownRight, ArrowUpRight, ChevronLeft, ChevronRight, CircleHelp, Copy, Database, Download, GitFork, LayoutDashboard, LoaderCircle, Plus, RefreshCw, Save, Search, Target, Trash2, X } from "lucide-react";
+import { Activity, AlertCircle, ChevronLeft, ChevronRight, CircleHelp, Copy, Database, Download, GitFork, LayoutDashboard, LoaderCircle, Plus, RefreshCw, Save, Search, Target, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 import { DataPagination, DataState, PageHeading, Table } from "@/app/components/ui/data";
 import { Badge, Button, Input, Modal, Select } from "@/app/components/ui/primitives";
+import { AnalyticsTable, AttentionItem, BiDrawer, BiFilterBar, BiState, ChartContainer, MetricCard, MetricDelta } from "@/app/components/ui/bi";
 import { getSupabaseClient } from "@/app/lib/supabase";
 import { useSatrapy } from "@/app/components/SatrapyProvider";
 import { BiBudgetsModule } from "@/app/components/BiBudgetsModule";
@@ -41,6 +43,7 @@ type BiAnalytics = {
   currency_code: string | null;
   charts: BiChart[];
   comparisons: Record<string, Partial<BiMetric>>;
+  operational_rows?: Array<{ location_id: string; location_name: string; current_value: number; previous_value: number; share_percent: number; status: "declining" | "stable" | "new" }>;
   trace: { query: string; sources: string[]; company_id: string };
 };
 type BiSummary = {
@@ -66,7 +69,22 @@ type Drilldown = {
   metric_code: string;
   as_of?: string;
 };
-type DrillRequest = { code: string; dateFrom?: string; dateTo?: string; asOf?: string };
+type DrillRequest = { code: string; dateFrom?: string; dateTo?: string; asOf?: string; locationId?: string };
+type InvestigationDimension = "location" | "category" | "product" | "customer" | "supplier";
+type InvestigationCrumb = { dimension: InvestigationDimension; id: string; label: string };
+export type BiInvestigationContext = {
+  metricCode: string;
+  dateFrom: string;
+  dateTo: string;
+  comparison: "previous_equivalent";
+  filters: { locationId: string; productId: string; categoryId: string; customerId: string; supplierId: string };
+  activeDimension: InvestigationDimension | null;
+  path: InvestigationCrumb[];
+  level: number;
+  asOf?: string;
+};
+type InvestigationFactor = { group_key:string;group_label:string;current_value:number;previous_value:number;change_value:number;change_percent:number|null;current_share_percent:number|null;contribution_percent:number|null;status:"improved"|"deteriorated"|"stable" };
+type InvestigationData = { metric:{code:string;name:string;formula:string;source:string;kind:string;limitations:string};period:BiSummary["period"];currency_code:string|null;dimension:InvestigationDimension;summary:{current_value:number;previous_value:number;change_value:number;change_percent:number|null};factors:InvestigationFactor[];chart:InvestigationFactor[];pagination:{page:number;page_size:number;total:number};reconciliation:{all_factors_change:number;total_change:number;visible_page_change:number;remaining_change:number;reconciled:boolean;note:string};trace:{query:string;sources:string;formula:string;server_side:boolean} };
 type ExplorerMetric = {
   code: string;name: string;module: string;formula:string;unit:"currency"|"count"|"quantity"|"percent"|"days";
   source:string;grain:string;dimensions:string[];kind:"accrual"|"cash"|"operational";
@@ -125,6 +143,35 @@ const CHART_FOR_METRIC: Record<string, BiChart["code"] | undefined> = {
   payables: "payables",
   inventory_value: "inventory",
 };
+
+const INVESTIGATION_DIMENSIONS: Partial<Record<string, InvestigationDimension[]>> = {
+  net_sales: ["location", "category", "product", "customer"],
+  tickets: ["location", "customer"],
+  gross_margin: ["location", "category", "product"],
+  collections: ["customer"],
+  supplier_payments: ["supplier"],
+  receivables: ["location", "customer"],
+  payables: ["supplier"],
+  inventory_value: ["location", "category", "product"],
+};
+const INVESTIGATION_LABEL: Record<InvestigationDimension, string> = { location:"Sucursal",category:"Categoría",product:"Producto",customer:"Cliente",supplier:"Proveedor" };
+
+function nextInvestigationDimension(metricCode:string, dimension:InvestigationDimension):InvestigationDimension|null {
+  const dimensions=INVESTIGATION_DIMENSIONS[metricCode]??[];
+  if(metricCode==="net_sales"&&dimension==="location")return "category";
+  if(metricCode==="net_sales"&&dimension==="category")return "product";
+  if(metricCode==="net_sales"&&dimension==="product")return null;
+  const index=dimensions.indexOf(dimension);
+  return index>=0&&index+1<dimensions.length?dimensions[index+1]:null;
+}
+
+function createInvestigationContext(request:DrillRequest, filters:BiFilters):BiInvestigationContext {
+  const metricCode=request.code;
+  const inherited={locationId:request.locationId??filters.locationId,productId:filters.product?.id??"",categoryId:"",customerId:filters.customer?.id??"",supplierId:filters.supplier?.id??""};
+  const path:InvestigationCrumb[]=request.locationId?[{dimension:"location",id:request.locationId,label:"Sucursal seleccionada"}]:[];
+  const activeDimension=request.locationId?nextInvestigationDimension(metricCode,"location"):(INVESTIGATION_DIMENSIONS[metricCode]?.[0]??null);
+  return {metricCode,dateFrom:request.dateFrom??filters.dateFrom,dateTo:request.dateTo??filters.dateTo,comparison:"previous_equivalent",filters:inherited,activeDimension,path,level:path.length,asOf:request.asOf};
+}
 
 function isoDate(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -486,7 +533,7 @@ function BiExecutiveSummary({ companyId }: { companyId: string }) {
   const [budgetSummaryError,setBudgetSummaryError]=useState<string|null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedMetric, setSelectedMetric] = useState<DrillRequest | null>(null);
+  const [selectedMetric, setSelectedMetric] = useState<BiInvestigationContext | null>(null);
   const [definitionMetric, setDefinitionMetric] = useState<string | null>(null);
   const [activeChart,setActiveChart]=useState<BiChart["code"]>("sales");
   const [periodPreset,setPeriodPreset]=useState<ExecutivePeriodPreset>(()=>inferExecutivePeriod(filters));
@@ -530,6 +577,13 @@ function BiExecutiveSummary({ companyId }: { companyId: string }) {
   const dirty = JSON.stringify(filters) !== JSON.stringify(applied);
   const metrics=useMemo(()=>{const all=summary?.metrics.map(metric=>({...metric,...(analytics?.comparisons?.[metric.code]??{})}))??[];return isRestaurant?all.filter(metric=>["net_sales","tickets","average_ticket","gross_margin"].includes(metric.code)):all;},[analytics,isRestaurant,summary]);
   const charts=useMemo(()=>{const all=analytics?.charts??(summary?fallbackCharts({...summary,metrics}):[]);return isRestaurant?all.filter(chart=>chart.code==="sales"||chart.code==="gross_margin"):all;},[analytics,isRestaurant,metrics,summary]);
+  const heroMetric=metrics.find(metric=>metric.code==="net_sales")??metrics[0];
+  const secondaryMetrics=metrics.filter(metric=>metric.code!==heroMetric?.code&&["tickets","average_ticket","gross_margin","collections","receivables"].includes(metric.code)&&metric.available).slice(0,3);
+  const selectedMetricCodes=new Set([heroMetric?.code,...secondaryMetrics.map(metric=>metric.code)]);
+  const remainingMetrics=metrics.filter(metric=>!selectedMetricCodes.has(metric.code));
+  const attentionItems=useMemo(()=>buildExecutiveAttention(metrics,budgetSummary),[budgetSummary,metrics]);
+  const salesChart=charts.find(chart=>chart.code==="sales")??charts[0];
+  const operationalRows=analytics?.operational_rows??summary?.locations.map(location=>({location_id:location.location_id,location_name:location.location_name,current_value:location.sales,previous_value:0,share_percent:0,status:"stable" as const}))??[];
 
   function applyFilters(next:BiFilters){
     setFilters(next);setApplied(next);
@@ -556,10 +610,15 @@ function BiExecutiveSummary({ companyId }: { companyId: string }) {
   function focusMetric(code:string){
     const chart=CHART_FOR_METRIC[code];if(chart)setActiveChart(chart);
   }
+  function openInvestigation(request:DrillRequest){
+    const context=createInvestigationContext(request,applied);
+    if(request.locationId) context.path[0]={dimension:"location",id:request.locationId,label:accessibleLocations.find(location=>location.id===request.locationId)?.name??"Sucursal seleccionada"};
+    setSelectedMetric(context);
+  }
 
   return <section className="content-frame module-page bi-module">
     <PageHeading eyebrow={isRestaurant?"Operación del restaurante":"Business Intelligence"} title={isRestaurant?"Indicadores":"Resumen ejecutivo"} description={isRestaurant?"Ventas, tickets, ticket promedio y margen para dar seguimiento al piloto.":"Lectura transversal con distinción entre devengado, efectivo y operación. Cada cifra conserva fórmula, fuente y acceso al origen."} action={<Button variant="secondary" size="sm" onClick={() => void load(applied)} disabled={loading}><RefreshCw size={14} /> Actualizar</Button>} />
-    <section className={`bi-executive-filterbar${dirty?" has-pending":""}`} aria-label="Filtros del Resumen ejecutivo">
+    <BiFilterBar className="bi-executive-filterbar" pending={dirty} ariaLabel="Filtros del Resumen ejecutivo">
       <div className="bi-executive-filterbar__primary">
         <label><span>Periodo</span><Select ariaLabel="Periodo del resumen" value={periodPreset} onValueChange={changePeriod} options={EXECUTIVE_PERIOD_OPTIONS} /></label>
         <label><span>Ubicación</span><Select ariaLabel="Filtrar por ubicación" value={filters.locationId || "__all__"} onValueChange={value => setFilters(current => ({ ...current, locationId: value === "__all__" ? "" : value }))} options={[{ value: "__all__", label: "Todas las ubicaciones" }, ...accessibleLocations.filter(location => location.is_active).map(location => ({ value: location.id, label: location.name }))]} /></label>
@@ -594,27 +653,67 @@ function BiExecutiveSummary({ companyId }: { companyId: string }) {
           {!activeFilterCount&&<span>Sin dimensiones adicionales</span>}
         </div>
       </div>
-    </section>
-    {analyticsError&&summary&&<div className="bi-partial-state" role="status"><AlertCircle size={15}/><span><strong>Datos parciales</strong>{analyticsError}</span></div>}
+    </BiFilterBar>
+    {analyticsError&&summary&&<BiState kind="partial" compact title="Datos parciales" description={analyticsError}/>}
     <DataState loading={loading && !summary} error={error} hasData={summary?.metrics.length ?? 0} empty="No hay métricas disponibles para este acceso." errorAction={<Button size="sm" onClick={() => void load(applied)}>Reintentar</Button>}>
       {summary && <>
         {loading && <div className="bi-refreshing"><LoaderCircle className="spin" size={14} /> Actualizando indicadores…</div>}
-        <div className="bi-kpi-grid">{metrics.map(metric => <BiKpiCard key={metric.code} metric={metric} currencyCode={summary.currency_code} active={CHART_FOR_METRIC[metric.code]===activeChart} onFocus={() => focusMetric(metric.code)} onOpen={() => metric.available && setSelectedMetric({code:metric.code})} onDefinition={() => setDefinitionMetric(metric.code)} />)}</div>
+        <ExecutiveAttention items={attentionItems} onInspect={openInvestigation} />
+        <section className="bi-executive-kpis" aria-labelledby="bi-executive-kpis-title">
+          <header><div><span className="eyebrow">Qué está pasando</span><h2 id="bi-executive-kpis-title">Lectura del periodo</h2><p>Contra el periodo equivalente anterior: {formatSourceDate(summary.period.previous_from)}–{formatSourceDate(summary.period.previous_to)}.</p></div></header>
+          <div className="bi-executive-kpis__primary">{heroMetric&&<BiKpiCard metric={heroMetric} currencyCode={summary.currency_code} active={CHART_FOR_METRIC[heroMetric.code]===activeChart} featured onFocus={() => focusMetric(heroMetric.code)} onOpen={() => heroMetric.available && openInvestigation({code:heroMetric.code})} onDefinition={() => setDefinitionMetric(heroMetric.code)} />}
+            <div className="bi-executive-kpis__secondary">{secondaryMetrics.map(metric=><BiKpiCard key={metric.code} metric={metric} currencyCode={summary.currency_code} active={CHART_FOR_METRIC[metric.code]===activeChart} onFocus={()=>focusMetric(metric.code)} onOpen={()=>metric.available&&openInvestigation({code:metric.code})} onDefinition={()=>setDefinitionMetric(metric.code)}/>)}</div>
+          </div>
+          {remainingMetrics.length>0&&<details className="bi-secondary-metrics"><summary>Métricas secundarias <span>{remainingMetrics.length}</span></summary><div>{remainingMetrics.map(metric=><BiKpiCard key={metric.code} metric={metric} compact currencyCode={summary.currency_code} active={CHART_FOR_METRIC[metric.code]===activeChart} onFocus={()=>focusMetric(metric.code)} onOpen={()=>metric.available&&openInvestigation({code:metric.code})} onDefinition={()=>setDefinitionMetric(metric.code)}/>)}</div></details>}
+        </section>
         {canViewBudgets&&<ExecutiveBudgetPanel data={budgetSummary} error={budgetSummaryError} currencyCode={summary.currency_code} onOpen={()=>router.push("/satrapy/bi/metas-presupuestos")}/>}
         <div className="bi-chart-section">
-          <header><div><span className="eyebrow">Análisis visual</span><h2>Actual contra periodo anterior</h2><p>Selecciona un KPI o un punto para mantener la misma trazabilidad y filtros.</p></div><div className="bi-chart-tabs" aria-label="Métricas visualizadas">{charts.map(chart=><button type="button" key={chart.code} className={activeChart===chart.code?"is-active":""} onClick={()=>setActiveChart(chart.code)}>{CHART_META[chart.code].title}</button>)}</div></header>
+          <header><div><span className="eyebrow">Análisis visual</span><h2>Actual contra periodo anterior</h2><p>Selecciona un punto o barra para preparar una investigación con el mismo contexto.</p></div><div className="bi-chart-tabs" aria-label="Métricas visualizadas">{charts.map(chart=><button type="button" key={chart.code} className={activeChart===chart.code?"is-active":""} onClick={()=>setActiveChart(chart.code)}>{CHART_META[chart.code].title}</button>)}</div></header>
           <div className="bi-chart-grid">
-            {charts.map(chart=><BiExecutiveChart key={chart.code} chart={chart} active={activeChart===chart.code} currencyCode={summary.currency_code} period={summary.period} updatedAt={analytics?.updated_at??summary.updated_at} onDefinition={()=>setDefinitionMetric(chart.metric_code)} onInspect={request=>setSelectedMetric(request)}/>)}
+            {salesChart&&<ExecutiveTrendChart chart={salesChart} currencyCode={summary.currency_code} period={summary.period} onInspect={openInvestigation} onDefinition={()=>setDefinitionMetric(salesChart.metric_code)}/>}
+            {charts.filter(chart=>chart.code!=="sales"&&chart.code===activeChart).map(chart=><BiExecutiveChart key={chart.code} chart={chart} active currencyCode={summary.currency_code} period={summary.period} updatedAt={analytics?.updated_at??summary.updated_at} onDefinition={()=>setDefinitionMetric(chart.metric_code)} onInspect={openInvestigation}/>)}
           </div>
         </div>
-        <BiLocationChart locations={summary.locations} currencyCode={summary.currency_code} onInspect={() => setSelectedMetric({code:"net_sales"})} />
+        <ExecutiveOperationalSummary rows={operationalRows} currencyCode={summary.currency_code} onInspect={openInvestigation} />
         {!isRestaurant&&<article className="bi-accrual-note"><AlertCircle size={18} /><div><strong>Devengado no es efectivo</strong><p>Ventas reconoce la operación cuando se completa; cobranza, pagos y bancos reconocen movimientos efectivos. El margen usa sólo el costo reconocido congelado por partida; una comparación sin base histórica queda “No disponible” y nunca se sustituye con una estimación.</p></div></article>}
         {!isRestaurant&&<div className="bi-trace"><Database size={15} /><span><strong>Trazabilidad de consulta</strong>{summary.trace.query}{analytics?` + ${analytics.trace.query}`:""} · {[...summary.trace.sources,...(analytics?.trace.sources??[])].filter((source,index,all)=>all.indexOf(source)===index).join(", ")}</span></div>}
       </>}
     </DataState>
     <MetricDefinition code={definitionMetric} summary={summary} onClose={() => setDefinitionMetric(null)} />
-    <BiDrilldown key={selectedMetric?`${selectedMetric.code}:${selectedMetric.dateFrom??selectedMetric.asOf??"all"}`:"closed"} companyId={companyId} request={selectedMetric} currencyCode={summary?.currency_code} filters={applied} onClose={() => setSelectedMetric(null)} />
+    <BiDrilldown key={selectedMetric?`${selectedMetric.metricCode}:${selectedMetric.level}:${selectedMetric.activeDimension??"records"}`:"closed"} companyId={companyId} context={selectedMetric} currencyCode={summary?.currency_code} onClose={() => setSelectedMetric(null)} />
   </section>;
+}
+
+type ExecutiveAttentionSignal = { title: string; description: string; tone: "warning" | "danger" | "accent"; request: DrillRequest };
+
+function buildExecutiveAttention(metrics: BiMetric[], budget: ExecutiveBudgetSummary | null): ExecutiveAttentionSignal[] {
+  const byCode=(code:string)=>metrics.find(metric=>metric.code===code);
+  const sales=byCode("net_sales"), overdue=byCode("overdue_receivables"), reconciliation=byCode("bank_reconciliation");
+  const signals: ExecutiveAttentionSignal[]=[];
+  if(overdue?.available&&overdue.value!=null&&overdue.value>0) signals.push({title:"Cobranza vencida por revisar",description:`${formatMetric(overdue)} de CxC vencida al cierre del periodo.`,tone:"danger",request:{code:"overdue_receivables",asOf:undefined}});
+  const salesChange=sales?comparison(sales):null;
+  if(sales?.available&&salesChange&&salesChange.absolute<0) signals.push({title:"Las ventas netas disminuyeron",description:`${formatDifference(sales,salesChange.absolute)} frente al periodo equivalente anterior.`,tone:"warning",request:{code:"net_sales"}});
+  if(reconciliation?.available&&reconciliation.value!=null&&reconciliation.value<95) signals.push({title:"Conciliación bancaria incompleta",description:`${reconciliation.value.toLocaleString("es-MX",{maximumFractionDigits:1})}% conciliado; el umbral operativo es 95%.`,tone:"warning",request:{code:"bank_reconciliation"}});
+  if(budget?.available&&budget.status==="behind") signals.push({title:"Meta comercial por debajo del ritmo",description:`Cumplimiento ${Number(budget.attainment_percent??0).toLocaleString("es-MX",{maximumFractionDigits:1})}% frente a un ritmo esperado de ${Number(budget.pace_percent??0).toLocaleString("es-MX",{maximumFractionDigits:1})}%.`,tone:"warning",request:{code:"net_sales"}});
+  return signals.slice(0,3);
+}
+
+function ExecutiveAttention({ items, onInspect }: { items: ExecutiveAttentionSignal[]; onInspect: (request: DrillRequest) => void }) {
+  return <section className="bi-executive-attention" aria-labelledby="bi-executive-attention-title"><header><div><span className="eyebrow">Qué necesita atención</span><h2 id="bi-executive-attention-title">Señales del periodo</h2></div><small>Reglas deterministas; no son alertas persistidas.</small></header>{items.length?<div>{items.map(item=><AttentionItem key={item.title} tone={item.tone} title={item.title} description={item.description} action={<Button size="sm" variant="secondary" onClick={()=>onInspect(item.request)}>Revisar <ChevronRight size={13}/></Button>}/>)}</div>:<BiState kind="empty" compact title="Sin señales deterministas" description="Las reglas disponibles no encontraron una situación prioritaria con estos filtros."/>}</section>;
+}
+
+function ExecutiveTrendChart({ chart, currencyCode, period, onInspect, onDefinition }: { chart: BiChart; currencyCode?: string | null; period: BiSummary["period"]; onInspect: (request: DrillRequest) => void; onDefinition: () => void }) {
+  const copy=CHART_META[chart.code], points=chart.points.map(point=>({...point,label:formatSourceDate(point.date),current:point.value??0,previous:point.previous_value??0}));
+  const inspect=(point:BiChartPoint)=>onInspect({code:chart.metric_code,dateFrom:point.date,dateTo:point.date});
+  const tooltip=(props:unknown)=>{const {active,payload}=props as {active?:boolean;payload?:ReadonlyArray<{payload?:BiChartPoint&{label:string;current:number;previous:number}}>} ;const point=payload?.[0]?.payload;if(!active||!point)return null;return <div className="bi-recharts-tooltip"><strong>{point.label}</strong><span>Actual <b>{formatMoney(point.current,currencyCode)}</b></span><span>Anterior <b>{formatMoney(point.previous,currencyCode)}</b></span><small>Haz clic para investigar este día.</small></div>;};
+  return <ChartContainer className="bi-chart-card bi-executive-trend" eyebrow="Devengado · línea" title={copy.title} description="Serie diaria contra el periodo equivalente anterior." action={<button type="button" aria-label={`Definición de ${copy.title}`} onClick={onDefinition}><CircleHelp size={15}/></button>}>
+    {!chart.available?<BiState kind="partial" compact title="Serie no disponible" description={chart.reason??"No hay una serie comparable para estos filtros."}/>:points.length===0?<BiState kind="empty" compact title="Sin datos para graficar" description="No hay operaciones que mostrar con esta selección."/>:<><div className="bi-recharts-chart" aria-label={`${copy.title}: periodo actual y periodo anterior`}><ResponsiveContainer width="100%" height={268}><LineChart data={points} margin={{top:8,right:8,left:0,bottom:0}} onClick={(event:unknown)=>{const point=(event as {activePayload?:Array<{payload?:BiChartPoint}>})?.activePayload?.[0]?.payload;if(point)inspect(point);}}><CartesianGrid vertical={false} stroke="var(--bi-border)"/><XAxis dataKey="label" minTickGap={34} tickLine={false} axisLine={false}/><YAxis tickFormatter={value=>formatMoney(Number(value),currencyCode)} width={72} tickLine={false} axisLine={false}/><RechartsTooltip content={tooltip}/><Line type="monotone" dataKey="previous" name="Periodo anterior" stroke="#a0aaa6" strokeDasharray="5 5" strokeWidth={2} dot={false} activeDot={{r:5}} isAnimationActive={false}/><Line type="monotone" dataKey="current" name="Periodo actual" stroke="var(--accent)" strokeWidth={2.5} dot={false} activeDot={{r:5}} isAnimationActive={false}/></LineChart></ResponsiveContainer></div><div className="bi-trend-points" aria-label="Investigar día de ventas">{points.slice(-7).map(point=><button type="button" key={point.date} onClick={()=>inspect(point)}><span>{point.label}</span><b>{formatMoney(point.current,currencyCode)}</b></button>)}</div><p className="bi-chart-period">Comparación equivalente: {formatSourceDate(period.previous_from)}–{formatSourceDate(period.previous_to)}.</p></>}
+  </ChartContainer>;
+}
+
+function ExecutiveOperationalSummary({ rows, currencyCode, onInspect }: { rows: NonNullable<BiAnalytics["operational_rows"]>; currencyCode?: string | null; onInspect: (request: DrillRequest) => void }) {
+  const visible=rows.slice(0,8), chartRows=visible.slice(0,6);
+  return <section className="bi-operational-summary" aria-labelledby="bi-operational-summary-title"><header><div><span className="eyebrow">Dónde comenzar</span><h2 id="bi-operational-summary-title">Sucursales con mayor impacto</h2><p>Ordenadas primero por disminución y luego por valor actual. El detalle conserva los filtros de la pantalla.</p></div></header>{visible.length?<div className="bi-operational-summary__grid"><ChartContainer className="bi-chart-card bi-operational-ranking" eyebrow="Ranking" title="Ventas por sucursal" description="Haz clic en una barra para investigar la sucursal."><div className="bi-recharts-ranking"><ResponsiveContainer width="100%" height={Math.max(210,chartRows.length*42)}><BarChart data={chartRows} layout="vertical" margin={{top:2,right:8,left:4,bottom:2}} onClick={(event:unknown)=>{const row=(event as {activePayload?:Array<{payload?:{location_id:string}}>})?.activePayload?.[0]?.payload;if(row)onInspect({code:"net_sales",locationId:row.location_id});}}><CartesianGrid horizontal={false} stroke="var(--bi-border)"/><XAxis type="number" hide/><YAxis dataKey="location_name" type="category" width={106} tickLine={false} axisLine={false}/><RechartsTooltip formatter={(value)=>formatMoney(Number(value),currencyCode)}/><Bar dataKey="current_value" name="Ventas" fill="var(--accent)" radius={3} isAnimationActive={false}/></BarChart></ResponsiveContainer></div></ChartContainer><AnalyticsTable caption="Resumen operativo por sucursal" className="bi-operational-table"><thead><tr><th>Sucursal</th><th>Actual</th><th>Anterior</th><th>Variación</th><th>Participación</th><th>Estado</th><th><span className="sr-only">Acción</span></th></tr></thead><tbody>{visible.map(row=>{const difference=row.current_value-row.previous_value;return <tr key={row.location_id}><td><strong>{row.location_name}</strong></td><td>{formatMoney(row.current_value,currencyCode)}</td><td>{row.previous_value===0?"—":formatMoney(row.previous_value,currencyCode)}</td><td className={difference<0?"is-negative":""}>{row.previous_value===0?"Sin base":formatDifference({code:"net_sales",available:true,value:row.current_value},difference,currencyCode)}</td><td>{row.share_percent.toLocaleString("es-MX",{maximumFractionDigits:1})}%</td><td><Badge tone={row.status==="declining"?"warning":"neutral"}>{row.status==="declining"?"Disminución":row.status==="new"?"Sin base":"Estable"}</Badge></td><td><Button size="sm" variant="ghost" onClick={()=>onInspect({code:"net_sales",locationId:row.location_id})}>Revisar <ChevronRight size={13}/></Button></td></tr>;})}</tbody></AnalyticsTable></div>:<BiState kind="empty" compact title="Sin sucursales para comparar" description="No hay ventas por sucursal dentro de los filtros aplicados."/>}</section>;
 }
 
 function BiEntityFilter({ companyId, dimension, label, value, onChange }: { companyId: string; dimension: "product" | "customer" | "supplier"; label: string; value: FilterSelection; onChange: (value: FilterSelection) => void }) {
@@ -639,20 +738,20 @@ function BiEntityFilter({ companyId, dimension, label, value, onChange }: { comp
   </div></label>;
 }
 
-function BiKpiCard({ metric, currencyCode, active, onFocus, onOpen, onDefinition }: { metric: BiMetric; currencyCode?: string | null; active: boolean; onFocus: () => void; onOpen: () => void; onDefinition: () => void }) {
+function BiKpiCard({ metric, currencyCode, active, featured=false, compact=false, onFocus, onOpen, onDefinition }: { metric: BiMetric; currencyCode?: string | null; active: boolean; featured?: boolean; compact?: boolean; onFocus: () => void; onOpen: () => void; onDefinition: () => void }) {
   const meta = METRICS[metric.code];if (!meta) return null;
   const delta = comparison(metric);
-  return <article className={`bi-kpi ${metric.available ? "" : "is-unavailable"} ${active?"is-active":""}`}>
-    <header><Badge tone={meta.kind === "Efectivo" ? "info" : meta.kind === "Devengado" ? "primary" : "neutral"}>{meta.kind}</Badge><button type="button" aria-label={`Definición de ${meta.label}`} onClick={onDefinition}><CircleHelp size={15} /></button></header>
-    <button type="button" className="bi-kpi__focus" onClick={onFocus} disabled={!CHART_FOR_METRIC[metric.code]}><span>{meta.label}</span><strong>{formatMetric(metric, currencyCode)}</strong></button>
-    {delta == null ? <small>{metric.reason ?? (metric.available ? "Comparación no disponible" : "No disponible")}</small> : <div className="bi-kpi__comparison">
+  return <MetricCard className={`bi-kpi${compact?" is-compact":""}`} label={meta.label} value={formatMetric(metric,currencyCode)} selected={active} unavailable={!metric.available} featured={featured} onSelect={CHART_FOR_METRIC[metric.code]?onFocus:undefined}
+    eyebrow={<Badge tone={meta.kind === "Efectivo" ? "info" : meta.kind === "Devengado" ? "primary" : "neutral"}>{meta.kind}</Badge>}
+    headerAction={<button type="button" aria-label={`Definición de ${meta.label}`} onClick={onDefinition}><CircleHelp size={15} /></button>}
+    description={delta == null ? <small>{metric.reason ?? (metric.available ? "Comparación no disponible" : "No disponible")}</small> : <div className="bi-kpi__comparison">
       <span>Anterior <b>{formatMetric({...metric,value:metric.previous_value??null},currencyCode)}</b></span>
-      <span>Diferencia <b className={delta.absolute>=0?"is-positive":"is-negative"}>{formatDifference(metric,delta.absolute,currencyCode)}</b></span>
-      <small className={delta.absolute>=0?"is-positive":"is-negative"}>{delta.absolute>=0?<ArrowUpRight size={12}/>:<ArrowDownRight size={12}/>} {delta.percent==null?"Base anterior en cero":`${Math.abs(delta.percent).toLocaleString("es-MX",{maximumFractionDigits:1})}%`}</small>
+      <span>Diferencia <b>{formatDifference(metric,delta.absolute,currencyCode)}</b></span>
+      <MetricDelta direction={delta.absolute>=0?"up":"down"} value={delta.percent==null?"Base anterior en cero":`${Math.abs(delta.percent).toLocaleString("es-MX",{maximumFractionDigits:1})}%`}/>
     </div>}
-    {(metric.code === "inventory_value" || metric.code === "gross_margin") && metric.coverage != null && <small>Cobertura de costo: {metric.coverage}%</small>}
-    <button type="button" className="bi-kpi__drill" disabled={!metric.available} onClick={onOpen}>Ver operaciones <ChevronRight size={14} /></button>
-  </article>;
+    delta={(metric.code === "inventory_value" || metric.code === "gross_margin") && metric.coverage != null ? <small>Cobertura de costo: {metric.coverage}%</small> : undefined}
+    footerAction={<button type="button" className="bi-kpi__drill" disabled={!metric.available} onClick={onOpen}>Ver operaciones <ChevronRight size={14} /></button>}
+  />;
 }
 
 function ExecutiveBudgetPanel({data,error,currencyCode,onOpen}:{data:ExecutiveBudgetSummary|null;error:string|null;currencyCode?:string|null;onOpen:()=>void}){
@@ -703,8 +802,7 @@ function BiExecutiveChart({chart,active,currencyCode,period,updatedAt,onDefiniti
     <b>{formatMoney(hovered.previous?hovered.point.previous_value:hovered.point.value,currencyCode)}</b>
     <dl><div><dt>Fórmula</dt><dd>{meta?.formula}</dd></div><div><dt>Fuente</dt><dd>{meta?.source}</dd></div><div><dt>Periodo</dt><dd>{period.from} a {period.to}</dd></div><div><dt>Actualización</dt><dd>{new Date(updatedAt).toLocaleString("es-MX")}</dd></div></dl>
   </div>:null;
-  return <article className={`bi-chart-card bi-executive-chart ${active?"is-active":""} ${chart.available?"":"is-unavailable"}`}>
-    <header><div><span className="eyebrow">{chart.kind} · {chart.visualization==="area"?"Área":chart.visualization==="bars"?"Barras":"Línea"}</span><h2>{copy.title}</h2><p>{copy.description}</p></div><button type="button" aria-label={`Definición de ${copy.title}`} onClick={onDefinition}><CircleHelp size={15}/></button></header>
+  return <ChartContainer className={`bi-chart-card bi-executive-chart ${chart.available?"":"is-unavailable"}`} selected={active} eyebrow={`${chart.kind} · ${chart.visualization==="area"?"Área":chart.visualization==="bars"?"Barras":"Línea"}`} title={copy.title} description={copy.description} action={<button type="button" aria-label={`Definición de ${copy.title}`} onClick={onDefinition}><CircleHelp size={15}/></button>}>
     {!chart.available?<div className="bi-chart-unavailable"><AlertCircle size={17}/><strong>No disponible</strong><p>{chart.reason}</p></div>:chart.points.length===0?<div className="bi-chart-empty">No hay datos para los filtros seleccionados.</div>:chart.visualization==="bars"?<div className="bi-comparison-bars">
       {chart.points.map((point,index)=>{const max=Math.max(...chart.points.map(item=>Math.abs(item.value??0)),1);const previous=point.period==="previous";return <button type="button" key={`${point.date}:${index}`} onMouseEnter={()=>setHovered({point,previous:false})} onMouseLeave={()=>setHovered(null)} onFocus={()=>setHovered({point,previous:false})} onBlur={()=>setHovered(null)} onClick={()=>inspect(point)}>
         <span>{previous?"Periodo anterior":"Periodo actual"}<small>{formatSourceDate(point.date)}</small></span><i><b style={{width:`${Math.max(3,100*Math.abs(point.value??0)/max)}%`}}/></i><strong>{formatMoney(point.value,currencyCode)}</strong>
@@ -719,35 +817,71 @@ function BiExecutiveChart({chart,active,currencyCode,period,updatedAt,onDefiniti
       </g>)}
     </svg></div>}
     {tooltip}
-  </article>;
+  </ChartContainer>;
 }
 
-function BiLocationChart({ locations, currencyCode, onInspect }: { locations: BiSummary["locations"]; currencyCode?: string | null; onInspect: () => void }) {
-  const max=Math.max(...locations.map(location => location.sales),1);
-  return <article className="bi-chart-card"><header><div><span className="eyebrow">Comparación</span><h2>Ventas por ubicación</h2><p>Únicamente ubicaciones autorizadas.</p></div><button onClick={onInspect}>Abrir detalle <ChevronRight size={14} /></button></header>
-    <div className="bi-location-bars">{locations.length ? locations.map(location => <button type="button" key={location.location_id} onClick={onInspect} title={`${location.location_name}: ${formatMoney(location.sales,currencyCode)}`}><span>{location.location_name}</span><i><b style={{ width: `${Math.max(2,100*location.sales/max)}%` }} /></i><strong>{formatMoney(location.sales,currencyCode)}</strong><small>{location.tickets} tickets</small></button>) : <p>Sin ventas por ubicación para este periodo.</p>}</div>
-  </article>;
-}
-
-function BiDrilldown({ companyId, request, currencyCode, filters, onClose }: { companyId: string; request: DrillRequest | null; currencyCode?: string | null; filters: BiFilters; onClose: () => void }) {
-  const router=useRouter();const [data,setData]=useState<Drilldown|null>(null);const [loading,setLoading]=useState(false);const [error,setError]=useState<string|null>(null);const [page,setPage]=useState(1);
-  useEffect(() => {
-    if (!request) return;
-    let cancelled=false;
-    void Promise.resolve().then(async() => {
-      setLoading(true);setError(null);
-      const args={p_company_id:companyId,p_metric_code:request.code,p_date_from:request.dateFrom??filters.dateFrom,p_date_to:request.dateTo??filters.dateTo,p_location_id:filters.locationId||null,p_product_id:filters.product?.id??null,p_customer_id:filters.customer?.id??null,p_supplier_id:filters.supplier?.id??null,p_as_of_date:request.asOf??null,p_page:page,p_page_size:25};
-      let response=await getSupabaseClient().rpc("bi_get_drilldown_v2",args);
-      if(response.error&&/bi_get_drilldown_v2|schema cache|could not find/i.test(response.error.message)){
-        const {p_as_of_date:_,...legacyArgs}=args;void _;
-        response=await getSupabaseClient().rpc("bi_get_drilldown",legacyArgs);
-      }
-      if(cancelled)return;if(response.error)setError(response.error.message);else setData(response.data as Drilldown);setLoading(false);
-    });
+function BiDrilldown({ companyId, context, currencyCode, onClose }: { companyId: string; context: BiInvestigationContext | null; currencyCode?: string | null; onClose: () => void }) {
+  const router=useRouter();const [current,setCurrent]=useState<BiInvestigationContext|null>(context);const [investigation,setInvestigation]=useState<InvestigationData|null>(null);const [analysisLoading,setAnalysisLoading]=useState(false);const [analysisError,setAnalysisError]=useState<string|null>(null);const [records,setRecords]=useState<Drilldown|null>(null);const [recordsLoading,setRecordsLoading]=useState(false);const [recordsError,setRecordsError]=useState<string|null>(null);const [page,setPage]=useState(1);
+  useEffect(()=>{
+    if(!current?.activeDimension)return;
+    let cancelled=false;void Promise.resolve().then(async()=>{setAnalysisLoading(true);setAnalysisError(null);setInvestigation(null);
+      const response=await getSupabaseClient().rpc("bi_get_metric_investigation",{
+        p_company_id:companyId,p_metric_code:current.metricCode,p_dimension:current.activeDimension,p_date_from:current.dateFrom,p_date_to:current.dateTo,
+        p_location_id:current.filters.locationId||null,p_product_id:current.filters.productId||null,p_category_id:current.filters.categoryId||null,
+        p_customer_id:current.filters.customerId||null,p_supplier_id:current.filters.supplierId||null,p_page:page,p_page_size:25,
+      });if(cancelled)return;if(response.error){setAnalysisError(response.error.message);}else setInvestigation(response.data as InvestigationData);setAnalysisLoading(false);});
     return()=>{cancelled=true;};
-  },[request,companyId,filters,page]);
-  const meta=request?METRICS[request.code]:null;
-  return <Modal open={Boolean(request)} onOpenChange={open => !open&&onClose()} eyebrow="Trazabilidad" title={meta ? `Origen · ${meta.label}` : "Operaciones de origen"} description={request?.asOf?`Posición reconstruida al ${formatSourceDate(request.asOf)}; detalle paginado desde las fuentes canónicas.`:"Detalle paginado desde las mismas fuentes canónicas del indicador."} footer={data?.source_path?<Button variant="secondary" onClick={() => router.push(data.source_path)}>Abrir módulo de origen <ChevronRight size={14}/></Button>:undefined}>
-    {loading&&!data?<div className="bi-drill-state"><LoaderCircle className="spin" size={18}/> Cargando operaciones…</div>:error?<div className="bi-drill-state is-error"><AlertCircle size={18}/>{error}</div>:data?<><Table className="bi-drill-table"><thead><tr><th>Fecha</th><th>Origen</th><th>Contexto</th><th className="number-cell">Importe</th></tr></thead><tbody>{data.items.map(item=><tr key={item.id}><td>{formatSourceDate(item.occurred_at)}</td><td><strong>{item.party??item.location_name??"Operación"}</strong></td><td>{item.detail??item.sale_type??item.location_name??"—"}</td><td className="number-cell">{formatMoney(item.amount,currencyCode)}</td></tr>)}</tbody></Table><DataPagination page={data.pagination.page} pageSize={data.pagination.page_size} total={data.pagination.total} onChange={setPage} label="operaciones"/></>:null}
-  </Modal>;
+  },[companyId,current?.activeDimension,current?.dateFrom,current?.dateTo,current?.filters.locationId,current?.filters.productId,current?.filters.categoryId,current?.filters.customerId,current?.filters.supplierId,current?.metricCode,page]);
+  useEffect(()=>{
+    if(!current||current.activeDimension)return;
+    let cancelled=false;const request={asOf:current.asOf};const args={p_company_id:companyId,p_metric_code:current.metricCode,p_date_from:current.dateFrom,p_date_to:current.dateTo,p_location_id:current.filters.locationId||null,p_product_id:current.filters.productId||null,p_customer_id:current.filters.customerId||null,p_supplier_id:current.filters.supplierId||null,p_as_of_date:request.asOf??null,p_page:page,p_page_size:25};
+    void Promise.resolve().then(async()=>{setRecordsLoading(true);setRecordsError(null);setRecords(null);let response=await getSupabaseClient().rpc("bi_get_drilldown_v2",args);
+      if(response.error&&/bi_get_drilldown_v2|schema cache|could not find/i.test(response.error.message)){
+        const {p_as_of_date:_,...legacyArgs}=args;void _;response=await getSupabaseClient().rpc("bi_get_drilldown",legacyArgs);
+      }if(cancelled)return;if(response.error)setRecordsError(response.error.message);else setRecords(response.data as Drilldown);setRecordsLoading(false);});
+    return()=>{cancelled=true;};
+  },[companyId,current,page]);
+  const meta=current?METRICS[current.metricCode]:null;
+  const sourceCurrency=investigation?.currency_code??currencyCode;
+  const advance=(factor:InvestigationFactor)=>{
+    if(!current?.activeDimension)return;
+    const dimension=current.activeDimension;const filters={...current.filters};
+    if(dimension==="location")filters.locationId=factor.group_key;
+    if(dimension==="category"){
+      if(factor.group_key==="uncategorized"){setCurrent({...current,activeDimension:null,path:[...current.path,{dimension,id:factor.group_key,label:factor.group_label}],level:current.level+1});return;}
+      filters.categoryId=factor.group_key;
+    }
+    if(dimension==="product")filters.productId=factor.group_key;
+    if(dimension==="customer")filters.customerId=factor.group_key;
+    if(dimension==="supplier")filters.supplierId=factor.group_key;
+    setPage(1);setCurrent({...current,filters,path:[...current.path,{dimension,id:factor.group_key,label:factor.group_label}],activeDimension:nextInvestigationDimension(current.metricCode,dimension),level:current.level+1});
+  };
+  const backTo=(index:number)=>{
+    if(!current)return;const path=current.path.slice(0,index);const filters={...current.filters,locationId:"",categoryId:"",productId:"",customerId:"",supplierId:""};
+    path.forEach(crumb=>{if(crumb.dimension==="location")filters.locationId=crumb.id;if(crumb.dimension==="category")filters.categoryId=crumb.id;if(crumb.dimension==="product")filters.productId=crumb.id;if(crumb.dimension==="customer")filters.customerId=crumb.id;if(crumb.dimension==="supplier")filters.supplierId=crumb.id;});
+    setPage(1);setCurrent({...current,filters,path,activeDimension:path.length?nextInvestigationDimension(current.metricCode,path[path.length-1].dimension):(INVESTIGATION_DIMENSIONS[current.metricCode]?.[0]??null),level:path.length});
+  };
+  return <BiDrawer open={Boolean(context)} onOpenChange={open=>!open&&onClose()} className="bi-investigation-drawer" eyebrow="Investigación contextual" title={meta?`Explicar · ${meta.label}`:"Investigación de métrica"} description="Evidencia descriptiva: los factores muestran cómo se distribuye el cambio; no prueban causalidad." footer={records?.source_path?<Button variant="secondary" onClick={()=>router.push(records.source_path)}>Abrir módulo de origen <ChevronRight size={14}/></Button>:undefined}>
+    {!current?null:<div className="bi-investigation">
+      <nav className="bi-investigation__breadcrumbs" aria-label="Ruta de investigación"><button type="button" onClick={()=>backTo(0)}>{meta?.label??current.metricCode}</button>{current.path.map((crumb,index)=><span key={`${crumb.dimension}:${crumb.id}`}><ChevronRight size={13}/><button type="button" onClick={()=>backTo(index+1)}>{crumb.label}</button></span>)}</nav>
+      <div className="bi-investigation__context" role="status"><span>Periodo {formatSourceDate(current.dateFrom)}–{formatSourceDate(current.dateTo)}</span><span>Comparación equivalente anterior</span>{current.path.length>0&&<span>{current.path.length} filtro{current.path.length===1?"":"s"} heredado{current.path.length===1?"":"s"}</span>}</div>
+      {current.activeDimension?<>
+        {analysisLoading?<BiState kind="loading" title="Calculando contribuciones…" description="La agregación y la reconciliación se hacen en servidor."/>:analysisError?<><BiState kind="partial" title="Desglose no disponible" description={`${analysisError} Puedes continuar con los registros canónicos mientras se aplica la ampliación de BI.`}/><Button variant="secondary" size="sm" onClick={()=>{setPage(1);setCurrent({...current,activeDimension:null});}}>Ver registros de respaldo <ChevronRight size={13}/></Button></>:investigation&&<>
+          <section className="bi-investigation__summary" aria-label="Resumen de variación"><div><span>Actual</span><strong>{formatMetric({code:current.metricCode,available:true,value:investigation.summary.current_value},sourceCurrency)}</strong></div><div><span>Anterior</span><strong>{formatMetric({code:current.metricCode,available:true,value:investigation.summary.previous_value},sourceCurrency)}</strong></div><div><span>Variación</span><strong className={investigation.summary.change_value<0?"is-negative":"is-positive"}>{formatDifference({code:current.metricCode,available:true,value:investigation.summary.current_value},investigation.summary.change_value,sourceCurrency)}</strong></div></section>
+          <section className="bi-investigation__definition"><strong>{investigation.metric.name} · evidencia y método</strong><p>{investigation.metric.formula}</p><small>{investigation.metric.source} · {investigation.metric.limitations}</small></section>
+          <ContributionChart factors={investigation.chart} metricCode={current.metricCode} currencyCode={sourceCurrency} dimension={current.activeDimension} onSelect={advance}/>
+          <section className="bi-investigation__factors" aria-labelledby="bi-investigation-factors-title"><header><div><span className="eyebrow">Desglose por {INVESTIGATION_LABEL[current.activeDimension].toLowerCase()}</span><h2 id="bi-investigation-factors-title">Factores de mayor impacto</h2><p>Ordenados por impacto absoluto. “Mejoró” y “deterioró” describen el movimiento de la métrica, no una causa comprobada.</p></div></header><AnalyticsTable caption="Contribuciones al cambio de la métrica"><thead><tr><th>Factor</th><th>Actual</th><th>Anterior</th><th>Variación</th><th>Participación</th><th>Contribución</th><th>Estado</th><th><span className="sr-only">Avanzar</span></th></tr></thead><tbody>{investigation.factors.map(factor=><tr key={factor.group_key}><td><strong>{factor.group_label}</strong></td><td>{formatMetric({code:current.metricCode,available:true,value:factor.current_value},sourceCurrency)}</td><td>{formatMetric({code:current.metricCode,available:true,value:factor.previous_value},sourceCurrency)}</td><td className={factor.change_value<0?"is-negative":"is-positive"}>{formatDifference({code:current.metricCode,available:true,value:factor.current_value},factor.change_value,sourceCurrency)}</td><td>{factor.current_share_percent==null?"—":`${factor.current_share_percent.toLocaleString("es-MX",{maximumFractionDigits:1})}%`}</td><td>{factor.contribution_percent==null?"—":`${factor.contribution_percent.toLocaleString("es-MX",{maximumFractionDigits:1})}%`}</td><td><Badge tone={factor.status==="deteriorated"?"warning":factor.status==="improved"?"success":"neutral"}>{factor.status==="deteriorated"?"Deterioró":factor.status==="improved"?"Mejoró":"Sin cambio significativo"}</Badge></td><td><Button size="sm" variant="ghost" onClick={()=>advance(factor)}>{nextInvestigationDimension(current.metricCode,current.activeDimension!)?"Desglosar":"Ver registros"} <ChevronRight size={13}/></Button></td></tr>)}</tbody></AnalyticsTable><DataPagination page={investigation.pagination.page} pageSize={investigation.pagination.page_size} total={investigation.pagination.total} onChange={setPage} label="factores"/><p className="bi-investigation__reconciliation"><strong>{investigation.reconciliation.reconciled?"Reconciliado":"Pendiente de reconciliar"}.</strong> Variación total {formatDifference({code:current.metricCode,available:true,value:investigation.summary.current_value},investigation.reconciliation.total_change,sourceCurrency)}; todos los factores suman el mismo valor. Esta página representa {formatDifference({code:current.metricCode,available:true,value:investigation.summary.current_value},investigation.reconciliation.visible_page_change,sourceCurrency)}.</p></section>
+          <section className="bi-investigation__trace"><Database size={15}/><span><strong>Trazabilidad</strong>{investigation.trace.query} · {investigation.trace.sources} · cálculo server-side.</span></section>
+        </>}
+      </>:recordsLoading?<BiState kind="loading" title="Cargando registros de respaldo…"/>:recordsError?<BiState kind="error" title="No pudimos cargar los registros" description={recordsError}/>:records?.items.length?<section className="bi-investigation__records"><header><span className="eyebrow">Evidencia</span><h2>Registros de respaldo</h2><p>Operaciones canónicas, ordenadas y paginadas en servidor.</p></header><AnalyticsTable className="bi-drill-table" caption="Registros que respaldan la métrica"><thead><tr><th>Fecha</th><th>Origen</th><th>Contexto</th><th className="number-cell">Importe</th></tr></thead><tbody>{records.items.map(item=><tr key={item.id}><td>{formatSourceDate(item.occurred_at)}</td><td><strong>{item.party??item.location_name??"Operación"}</strong></td><td>{item.detail??item.sale_type??item.location_name??"—"}</td><td className="number-cell">{formatMoney(item.amount,sourceCurrency)}</td></tr>)}</tbody></AnalyticsTable><DataPagination page={records.pagination.page} pageSize={records.pagination.page_size} total={records.pagination.total} onChange={setPage} label="registros"/></section>:records?<BiState kind="empty" title="Sin registros de respaldo" description="No hay operaciones canónicas con este contexto."/>:null}
+      {current.activeDimension&&<aside className="bi-investigation__next"><strong>Siguiente paso</strong><span>Selecciona un factor para añadirlo al contexto y seguir hasta los registros de respaldo.</span></aside>}
+    </div>}
+  </BiDrawer>;
+}
+
+function ContributionChart({ factors, metricCode, currencyCode, dimension, onSelect }: { factors: InvestigationFactor[]; metricCode:string; currencyCode?:string|null; dimension:InvestigationDimension; onSelect:(factor:InvestigationFactor)=>void }) {
+  const data=factors.map(factor=>({...factor,label:factor.group_label}));
+  const tooltip=(props:unknown)=>{const {active,payload}=props as {active?:boolean;payload?:ReadonlyArray<{payload?:InvestigationFactor}>};const factor=payload?.[0]?.payload;if(!active||!factor)return null;return <div className="bi-recharts-tooltip"><strong>{factor.group_label}</strong><span>Actual <b>{formatMetric({code:metricCode,available:true,value:factor.current_value},currencyCode)}</b></span><span>Anterior <b>{formatMetric({code:metricCode,available:true,value:factor.previous_value},currencyCode)}</b></span><span>Contribución <b>{factor.contribution_percent==null?"—":`${factor.contribution_percent.toLocaleString("es-MX",{maximumFractionDigits:1})}%`}</b></span><small>Selecciona para desglosar o ver evidencia.</small></div>;};
+  const chartHeight=Math.min(264,Math.max(152,data.length*34+28));
+  return <ChartContainer className="bi-chart-card bi-contribution-chart" eyebrow="Explicación descriptiva" title={`Contribución por ${INVESTIGATION_LABEL[dimension].toLowerCase()}`} description="Barras divergentes: arriba mejora la métrica; abajo la deteriora."><div className="bi-recharts-ranking"><ResponsiveContainer width="100%" height={chartHeight}><BarChart data={data} layout="vertical" margin={{top:4,right:30,left:4,bottom:8}} onClick={(event:unknown)=>{const factor=(event as {activePayload?:Array<{payload?:InvestigationFactor}>})?.activePayload?.[0]?.payload;if(factor)onSelect(factor);}}><CartesianGrid horizontal={false} stroke="var(--bi-border)"/><XAxis type="number" tickCount={4} tickMargin={8} tickFormatter={value=>formatDifference({code:metricCode,available:true,value:Number(value)},Number(value),currencyCode)} tickLine={false} axisLine={false}/><YAxis dataKey="label" type="category" width={118} tickLine={false} axisLine={false}/><RechartsTooltip content={tooltip}/><Bar dataKey="change_value" name="Variación" fill="var(--accent)" maxBarSize={24} radius={3} isAnimationActive={false}/></BarChart></ResponsiveContainer></div></ChartContainer>;
 }

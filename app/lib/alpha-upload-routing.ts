@@ -1,4 +1,4 @@
-export type AlphaStandardImportKind = "products" | "inventory" | "prices" | "costs";
+export type AlphaStandardImportKind = "products" | "inventory" | "prices" | "costs" | "sales";
 export type AlphaCollaboratorFileKind = "collaborators";
 export type AlphaCustomerFileKind = "customers" | "credit_terms" | "ledger" | "collections";
 export type AlphaPurchasingFileKind = "suppliers" | "purchase_orders" | "payable_documents" | "supplier_payments";
@@ -9,6 +9,7 @@ const standardPatterns: Array<[AlphaStandardImportKind, RegExp]> = [
   ["inventory", /^reexic2_.+\.xlsx?$/i],
   ["prices", /^rprecprd_.+\.xlsx?$/i],
   ["costs", /^rcostprd_.+\.xlsx?$/i],
+  ["sales", /^nvtadesg_.+\.xlsx?$/i],
 ];
 
 const collaboratorPatterns: Array<[AlphaCollaboratorFileKind, RegExp]> = [
@@ -42,7 +43,7 @@ export function isCollaboratorAlphaUpload(kind: AlphaUploadKind): kind is AlphaC
 }
 
 export function isStandardAlphaUpload(kind: AlphaUploadKind): kind is AlphaStandardImportKind {
-  return ["products", "inventory", "prices", "costs"].includes(kind);
+  return ["products", "inventory", "prices", "costs", "sales"].includes(kind);
 }
 
 export function isCustomerAlphaUpload(kind: AlphaUploadKind): kind is AlphaCustomerFileKind {
@@ -58,6 +59,7 @@ export function alphaUploadLabel(kind: AlphaUploadKind): string {
   if (kind === "inventory") return "Inventario";
   if (kind === "prices") return "Precios";
   if (kind === "costs") return "Costos";
+  if (kind === "sales") return "Ventas históricas y cobranza";
   if (kind === "collaborators") return "Colaboradores";
   if (kind === "customers") return "Catálogo de clientes";
   if (kind === "credit_terms") return "Condiciones comerciales";
