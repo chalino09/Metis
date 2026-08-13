@@ -8,7 +8,7 @@ const { data: tasks, error } = await supabase.rpc("collection_claim_tasks", { p_
 if (error) throw error;
 for (const task of tasks ?? []) {
   try {
-    if (task.task_type !== "internal_healthcheck") throw new Error(`Tipo de tarea no soportado en Fase 1: ${task.task_type}`);
+    if (!["internal_healthcheck", "internal_follow_up"].includes(task.task_type)) throw new Error(`Tipo de tarea de cobranza no soportado: ${task.task_type}`);
     const { error: finishError } = await supabase.rpc("collection_finish_task", { p_task_id: task.id, p_worker_id: workerId, p_success: true, p_result: { mode: "deterministic", provider: null } });
     if (finishError) throw finishError;
   } catch (taskError) {

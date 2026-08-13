@@ -355,6 +355,12 @@ llamadas ni otros canales.
 
 ### Fase 2 — Cobranza operativa sin IA
 
+**Estado de cierre de implementación el 2026-08-13:** completada en la rama
+`codex/cobranza-fase-2`, validada contra la base local desechable y comprobada
+en la empresa QA conectada. Las migraciones de Fase 2 y el parche de lectura
+(`202608120003`, `202608130005` y `202608130006`) ya fueron aplicados al QA;
+no se modificaron datos de Teza ni se aprobó su política operativa.
+
 **Backend**
 
 - Generar casos agrupados por cliente desde CxC.
@@ -376,6 +382,53 @@ llamadas ni otros canales.
 - La cartera completa puede gestionarse desde una bandeja agrupada.
 - Los saldos continúan proviniendo exclusivamente de CxC.
 - Toda próxima acción tiene fecha, motivo y responsable.
+
+#### Evidencia de implementación de Fase 2
+
+- La migración `202608120003_collection_operations.sql` extiende el caso por
+  cliente con responsable, próxima acción, prioridad determinista y cierre; añade
+  promesas auditadas sin duplicar saldos de CxC.
+- La configuración ya es administrable desde `Gestiones`: se captura una
+  política explícita (horario, frecuencia, límites y responsables), se guarda
+  como borrador y se aprueba con motivo. Sin esa aprobación, la sincronización y
+  las acciones operativas permanecen bloqueadas tanto en interfaz como en RPC.
+- `collection_sync_cases` procesa hasta 500 clientes por lote y devuelve un
+  cursor reanudable. Crea un único caso por empresa y cliente, actualiza
+  prioridades y cierra casos sin saldo; la interfaz encadena los lotes hasta
+  terminar la cartera sin recorrer documentos manualmente.
+- `collection_generate_followups` genera tareas internas vencidas por lote e
+  idempotencia. El worker solo admite trabajo determinista
+  `internal_healthcheck` e `internal_follow_up`; no integra IA ni canales.
+- Un trigger sobre la liquidación del último documento cierra el caso, cumple la
+  promesa activa y cancela tareas pendientes. El registro canónico del pago sigue
+  perteneciendo exclusivamente a CxC.
+- Las RPC manuales registran seguimiento, promesa, escalamiento y cierre con
+  permisos, revalidación, responsable y motivo. El expediente reúne documentos,
+  pagos, contacto, promesas, bloqueos y cronología. Disputa y solicitud de no
+  contacto son bloqueos explícitos y auditados que cancelan las tareas hasta su
+  resolución; una promesa vencida pasa a incumplida y un pago confirmado por CxC
+  puede cumplirla automáticamente.
+- El monto recuperado se calcula con pagos confirmados desde la apertura del
+  caso y la respuesta publica expresamente esa base de cálculo.
+- `202608130006_collection_case_read_repairs.sql` corrige la lectura del folio
+  desde `canonical_tickets` (en lugar de una columna inexistente en `sales`) y
+  conserva el saldo abierto desde los documentos canónicos de CxC. La interfaz
+  separa saldo abierto de vencido y muestra un reintento accesible si falla la
+  consulta del expediente.
+- La vista autenticada `CxC → Gestiones` ofrece resumen, filtros server-side,
+  paginación por cliente, expediente y acciones manuales. Se validó a 1280 × 800
+  CSS sin desbordamiento horizontal. En QA se registró una promesa de prueba de
+  $2.32 para el 20/08/2026 y apareció en el resumen, el expediente y la
+  cronología con estado `En gestión`.
+- La reconstrucción completa de la base local aplicó todas las migraciones. Las
+  tres pruebas transaccionales (fundación, operación y cierre) terminaron con
+  `DO` y `ROLLBACK`, incluyendo una cartera de 501 clientes para comprobar el
+  cursor; ESLint y el build de producción aprobaron.
+
+**Criterio de salida técnico:** cumplido en código, base local y QA conectado.
+Para producción falta aplicar las migraciones aprobadas en ese entorno y que un
+responsable de Teza configure y apruebe su política real; esas acciones no se
+infieren ni se ejecutaron desde esta rama.
 
 ### Fase 3 — Agente asistido y aprobaciones
 
