@@ -133,7 +133,9 @@ async function printCompanyTicket(companyId: string, ticket: Record<string, unkn
   printWindow.document.write("<title>Preparando ticket…</title><p style=\"font-family:system-ui;padding:24px\">Preparando ticket…</p>");
   const { data } = await getSupabaseClient().rpc("get_ticket_branding", { p_company_id: companyId });
   const branding = data as (TicketBranding & { logo_path?: string | null }) | null;
-  const logoUrl = branding?.logo_path ? getSupabaseClient().storage.from("ticket-branding-assets").getPublicUrl(branding.logo_path).data.publicUrl : null;
+  const identity = ticket.identity as { company?: { logo_path?: string | null } } | undefined;
+  const logoPath = identity?.company?.logo_path ?? branding?.logo_path;
+  const logoUrl = logoPath ? getSupabaseClient().storage.from("ticket-branding-assets").getPublicUrl(logoPath).data.publicUrl : null;
   await printTicketPdf(ticket, { ...branding, logo_url: logoUrl }, printWindow);
 }
 

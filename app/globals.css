@@ -2689,3 +2689,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .settings-workspace > .volume-discount-settings { align-content:start; min-width:0; margin:0; border:0; border-radius:0; background:transparent; padding:0; }.settings-workspace > .volume-discount-settings > header { min-height:68px; }.settings-workspace > .volume-discount-settings h2 { margin:0 0 5px; font-size:20px; }.settings-workspace > .volume-discount-settings .eyebrow { display:none; }.settings-workspace > .volume-discount-settings .volume-discount-empty { margin-top:4px; }
 .settings-workspace .volume-discount-grid fieldset { grid-template-columns:repeat(3,minmax(0,1fr)); align-items:start; padding:14px; }.settings-workspace .volume-discount-grid legend { padding-inline:6px; color:var(--ink); font-size:12px; }.settings-workspace .volume-discount-grid label { gap:6px; font-size:10px; }.settings-workspace .volume-discount-note.is-draft { color:var(--warning); }
 .settings-workspace .volume-discount-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr)); min-width:0; }.settings-workspace .volume-discount-grid fieldset,.settings-workspace .volume-discount-grid label,.settings-workspace .volume-discount-grid .ui-input { box-sizing:border-box; min-width:0; width:100%; }.settings-workspace .volume-discount-grid fieldset { overflow:hidden; }.settings-workspace .volume-discount-grid .ui-input { text-overflow:ellipsis; }
+
+.ticket-automatic-data { display:grid; gap:11px; border-radius:var(--radius-lg); background:var(--accent-soft); padding:13px; }
+.ticket-automatic-data > header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; letter-spacing:normal; text-transform:none; }
+.ticket-automatic-data > header > div { display:grid; gap:3px; }
+.ticket-automatic-data > header strong { color:var(--accent-strong); font-size:12px; }
+.ticket-automatic-data > header span { color:var(--muted); font-size:10px; font-weight:500; }
+.ticket-automatic-data > header a { flex:0 0 auto; color:var(--accent-strong); font-size:10px; font-weight:700; text-decoration:underline; text-underline-offset:3px; }
+.ticket-automatic-data dl { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; margin:0; }
+.ticket-automatic-data dl > div { display:grid; gap:3px; min-width:0; border-radius:var(--radius-md); background:rgb(255 255 255 / .72); padding:9px; }
+.ticket-automatic-data dt { color:var(--muted); font-size:9px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; }
+.ticket-automatic-data dd { overflow-wrap:anywhere; margin:0; color:var(--ink); font-size:10px; line-height:1.4; }
+@media (max-width:760px) { .ticket-automatic-data dl { grid-template-columns:1fr; } }
