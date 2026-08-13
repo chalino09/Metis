@@ -9,6 +9,7 @@ import {
   CircleHelp,
   CreditCard,
   CloudOff,
+  Clock3,
   Printer,
   ExternalLink,
   Minus,
@@ -85,7 +86,10 @@ type ReceivablesPage = { items?: ReceivableDocument[]; summary?: ReceivablesSumm
 type ReceivableCustomerContext = { customer: { id: string; code: string; display_name: string; tax_id: string | null; payment_manager: string | null; credit_term_days: number | null }; contact: CustomerContact | null; address: CustomerAddress | null; summary: ReceivablesSummary };
 type CustomerMaster = { id: string; code: string; display_name: string; tax_id: string | null; customer_type: "persona_fisica" | "persona_moral" | null; notes: string | null; is_active: boolean; is_imported: boolean; source_reference: string | null; migration_status: string; addresses: CustomerAddress[]; contacts: CustomerContact[]; commercial: { price_list_id: string | null; price_list_name: string | null; payment_manager: string | null; sales_agent: string | null; credit_enabled: boolean | null; credit_limit: number | null; credit_term_days: number | null; outstanding_amount: number | null; available_credit: number | null }; receivables_summary: ReceivablesSummary | null; open_receivables: CustomerReceivable[] };
 type CartItem = { cart_item_id: string; product_id: string; code: string | null; name: string; unit: string | null; quantity: number; quantity_on_hand: number; inventory_tracked: boolean; unit_price_amount: number; discount_percent: number; gross_amount: number; discount_amount: number; tax_amount: number; total_amount: number };
+type VolumeDiscountTier = { tier_number: number; min_quantity: number; max_quantity: number | null; discount_percent: number; is_active: boolean };
 type CartQuote = { cart_id: string; revision: number; customer_id: string | null; currency_code: string | null; items: CartItem[]; subtotal_amount: number; discount_amount: number; tax_amount: number; total_amount: number; can_checkout: boolean; pending_discount_approval: boolean };
+type HeldSaleCart = { cart_id: string; revision: number; customer_id: string | null; customer_name: string | null; held_at: string; item_count: number; unit_count: number; preview_items: string[]; pending_discount_approval: boolean };
+type HeldSaleCartPage = { items: HeldSaleCart[]; total: number; page: number; page_size: number };
 type SaleRow = { sale_id: string; folio: string; location_id: string; sale_type: "cash" | "credit"; source_kind: "operational" | "alpha_historical"; customer_name: string | null; currency_code: string; total_amount: number; returned_amount: number; cancelled: boolean; completed_at: string };
 type SaleTicketState = { saleId: string; sourceKind: SaleRow["source_kind"]; payload: Record<string, unknown>; cancellation: { id: string; reason: string; cancelled_at: string } | null };
 type SaleReturnContext = {
@@ -105,6 +109,14 @@ function money(value: number | string | null | undefined, currency?: string | nu
 
 function dateTime(value: string) {
   return new Intl.DateTimeFormat("es-MX", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function heldFor(value: string) {
+  const minutes = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 60000));
+  if (minutes < 1) return "Hace menos de un minuto";
+  if (minutes < 60) return `Hace ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  return `Hace ${hours} h ${minutes % 60} min`;
 }
 
 function Pagination({ page, total, pageSize, onChange }: { page: number; total: number; pageSize: number; onChange: (page: number) => void }) {
@@ -244,6 +256,15 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
   const { context, loading: contextLoading, error: contextError, stale: contextStale, reload: reloadContext } = usePosContext(companyId);
   const [cartId, setCartId] = useState<string | null>(null);
   const [quote, setQuote] = useState<CartQuote | null>(null);
+  const [posTab, setPosTab] = useState<"current" | "held">("current");
+  const [heldSales, setHeldSales] = useState<HeldSaleCartPage>({ items: [], total: 0, page: 1, page_size: 20 });
+  const [heldLoading, setHeldLoading] = useState(false);
+  const [heldError, setHeldError] = useState<string | null>(null);
+  const [selectedHeldId, setSelectedHeldId] = useState<string | null>(null);
+  const [heldPreview, setHeldPreview] = useState<CartQuote | null>(null);
+  const [heldPreviewLoading, setHeldPreviewLoading] = useState(false);
+  const [resumeCart, setResumeCart] = useState<HeldSaleCart | null>(null);
+  const [discardHeldCart, setDiscardHeldCart] = useState<HeldSaleCart | null>(null);
   const [search, setSearch] = useState("");
   const [products, setProducts] = useState<ProductSearchItem[]>([]);
   const [productTotal, setProductTotal] = useState(0);
@@ -384,6 +405,46 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
     authoritativeQuoteRef.current = data as CartQuote;
     if (storageScope) await writePosCache(storageScope, `cart:${id}`, data as CartQuote);
   }, [online, storageScope, toast]);
+
+  const loadHeldSales = useCallback(async (page = 1) => {
+    if (!ownSession || !online) {
+      setHeldSales({ items: [], total: 0, page: 1, page_size: 20 });
+      setSelectedHeldId(null);
+      setHeldPreview(null);
+      return;
+    }
+    setHeldLoading(true);
+    const { data, error } = await getSupabaseClient().rpc("list_own_held_sale_carts", {
+      p_cash_session_id: ownSession.id,
+      p_page: page,
+      p_page_size: 20,
+    });
+    if (error) {
+      setHeldError(rpcError(error, "No se pudieron cargar las ventas en espera."));
+    } else {
+      const next = data as HeldSaleCartPage;
+      setHeldSales(next);
+      setHeldError(null);
+      setSelectedHeldId((current) => next.items.some((item) => item.cart_id === current) ? current : next.items[0]?.cart_id ?? null);
+    }
+    setHeldLoading(false);
+  }, [online, ownSession]);
+
+  useEffect(() => { void Promise.resolve().then(() => loadHeldSales()); }, [loadHeldSales]);
+
+  useEffect(() => {
+    if (!selectedHeldId || !online) { void Promise.resolve().then(() => setHeldPreview(null)); return; }
+    let active = true;
+    void Promise.resolve().then(async () => {
+      setHeldPreviewLoading(true);
+      const { data, error } = await getSupabaseClient().rpc("quote_sale_cart", { p_cart_id: selectedHeldId });
+      if (!active) return;
+      setHeldPreview(error ? null : data as CartQuote);
+      if (error) setHeldError(rpcError(error, "La venta necesita revisión antes de retomarla."));
+      setHeldPreviewLoading(false);
+    });
+    return () => { active = false; };
+  }, [online, selectedHeldId]);
 
   const ensureCart = useCallback(async () => {
     if (cartRecoveryInFlight.current) return;
@@ -913,6 +974,98 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
     setBusy(false);
   }
 
+  function resetUnconfirmedSettlement() {
+    setCustomer(null);
+    setCustomerQuery("");
+    setCustomerResults([]);
+    setCustomerPickerOpen(false);
+    setSaleType("cash");
+    setReceived("");
+    setPaymentReference("");
+    setExpectedDeliveryDate("");
+    setDiscountOpen(false);
+    setDiscountPercent("");
+    setDiscountReason("");
+  }
+
+  async function holdCurrentSale() {
+    if (!cartId || !quote || !quote.items.length || !checkoutReady) return;
+    setBusy(true);
+    const { data, error } = await getSupabaseClient().rpc("hold_own_sale_cart", {
+      p_cart_id: cartId,
+      p_expected_revision: quote.revision,
+    });
+    if (error || !data) {
+      toast({ title: "No se pudo poner la venta en espera", description: rpcError(error, "Actualiza la venta e intenta nuevamente."), tone: "error" });
+    } else {
+      const result = data as { quote: CartQuote; held_count: number };
+      setCartId(result.quote.cart_id);
+      setQuote(result.quote);
+      quoteRef.current = result.quote;
+      authoritativeQuoteRef.current = result.quote;
+      resetUnconfirmedSettlement();
+      setSearch("");
+      setHeldSales((current) => ({ ...current, total: result.held_count }));
+      await loadHeldSales();
+      if (storageScope) await writePosCache(storageScope, "active-cart", { cartId: result.quote.cart_id, quote: result.quote });
+      toast({ title: "Venta en espera", description: "La venta quedó guardada y puedes atender al siguiente cliente.", tone: "success" });
+      window.setTimeout(() => searchRef.current?.focus(), 0);
+    }
+    setBusy(false);
+  }
+
+  async function resumeHeldSale(item: HeldSaleCart) {
+    if (!cartId || !quote || !checkoutReady) return;
+    setBusy(true);
+    const { data, error } = await getSupabaseClient().rpc("resume_own_held_sale_cart", {
+      p_held_cart_id: item.cart_id,
+      p_expected_held_revision: item.revision,
+      p_active_cart_id: cartId,
+      p_expected_active_revision: quote.revision,
+    });
+    if (error || !data) {
+      toast({ title: "No se pudo retomar la venta", description: rpcError(error, "Actualiza las ventas en espera e intenta nuevamente."), tone: "error" });
+      await loadHeldSales();
+    } else {
+      const result = data as { quote: CartQuote; held_count: number; previous_active_held: boolean };
+      setCartId(result.quote.cart_id);
+      setQuote(result.quote);
+      quoteRef.current = result.quote;
+      authoritativeQuoteRef.current = result.quote;
+      resetUnconfirmedSettlement();
+      if (result.quote.customer_id) {
+        const { data: resumedCustomer } = await getSupabaseClient().from("customers").select("id, code, display_name, credit_enabled, price_list_id, credit_limit, credit_term_days, outstanding_amount, migration_status, alpha_external_code").eq("id", result.quote.customer_id).maybeSingle();
+        if (resumedCustomer) setCustomer(resumedCustomer as Customer);
+      }
+      setSearch("");
+      setResumeCart(null);
+      setPosTab("current");
+      setHeldSales((current) => ({ ...current, total: result.held_count }));
+      await loadHeldSales();
+      if (storageScope) await writePosCache(storageScope, "active-cart", { cartId: result.quote.cart_id, quote: result.quote });
+      toast({ title: "Venta retomada", description: result.previous_active_held ? "La venta anterior quedó en espera." : "Revisa productos y total antes de cobrar.", tone: "success" });
+      window.setTimeout(() => searchRef.current?.focus(), 0);
+    }
+    setBusy(false);
+  }
+
+  async function discardHeldSale(item: HeldSaleCart) {
+    setBusy(true);
+    const { error } = await getSupabaseClient().rpc("discard_own_held_sale_cart", {
+      p_cart_id: item.cart_id,
+      p_expected_revision: item.revision,
+    });
+    if (error) {
+      toast({ title: "No se pudo descartar la venta", description: rpcError(error, "Actualiza las ventas en espera e intenta nuevamente."), tone: "error" });
+    } else {
+      setDiscardHeldCart(null);
+      setHeldPreview(null);
+      await loadHeldSales(heldSales.page);
+      toast({ title: "Venta descartada", description: "La acción quedó registrada en la auditoría.", tone: "success" });
+    }
+    setBusy(false);
+  }
+
   async function printCompletedTicket() {
     if (!ticket) return;
     setTicketDownloading(true);
@@ -936,7 +1089,11 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
     {(connectionDegraded || showSlowSyncStatus) && <div className="pos-connection-status" role="status" aria-live="polite"><CloudOff size={18} aria-hidden="true" /><div className="pos-connection-status__content"><strong>{connectionDegraded ? "Sin conexión: venta pendiente de sincronizar" : syncing ? "Sincronizando cambios pendientes" : "Venta pendiente de sincronizar"}</strong><small>{connectionDegraded ? "Puedes buscar en caché y preparar el carrito. El cobro, inventario y ticket se habilitan al recuperar la conexión." : `${pendingChanges} cambio${pendingChanges === 1 ? "" : "s"} en cola; el cobro se habilitará al terminar.`}</small></div>{connectionDegraded && <Button size="sm" variant="secondary" onClick={() => { setOnline(navigator.onLine); void reloadContext(); setQueueVersion((current) => current + 1); }}>Reintentar conexión</Button>}</div>}
     {syncConflict && <div className="pos-sync-conflict" role="alert"><AlertCircle size={18} aria-hidden="true" /><div className="pos-connection-status__content"><strong>Revisa el carrito</strong><small>{syncConflict.message}</small></div><Button size="sm" variant="secondary" onClick={() => void resolveSyncConflict()}>{syncConflict.discardIds?.length ? "Descartar cambio pendiente" : "Confirmar revisión"}</Button></div>}
     {!ownSession ? <section className="pos-start-card"><Banknote size={22} /><div><strong>Abre tu caja para iniciar.</strong><span>La apertura requiere un conteo formal por denominación. Si hay varias cajas, la selección se hace explícitamente en Caja.</span></div><Link href="/satrapy/ventas/caja" className="button button--primary">Ir a Caja</Link></section> : <>
-      <div className="pos-shell">
+      <div className="pos-workspace-tabs" role="tablist" aria-label="Ventas del punto de venta" onKeyDown={(event) => { if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return; event.preventDefault(); const next = posTab === "current" ? "held" : "current"; setPosTab(next); window.requestAnimationFrame(() => document.getElementById(`pos-tab-${next}`)?.focus()); }}>
+        <button id="pos-tab-current" type="button" role="tab" aria-selected={posTab === "current"} aria-controls="pos-panel-current" tabIndex={posTab === "current" ? 0 : -1} className={posTab === "current" ? "is-active" : ""} onClick={() => setPosTab("current")}><ShoppingCart size={16} aria-hidden="true" /> Venta actual</button>
+        <button id="pos-tab-held" type="button" role="tab" aria-selected={posTab === "held"} aria-controls="pos-panel-held" tabIndex={posTab === "held" ? 0 : -1} className={posTab === "held" ? "is-active" : ""} onClick={() => setPosTab("held")}><Clock3 size={16} aria-hidden="true" /> En espera <span>{heldSales.total}</span></button>
+      </div>
+      {posTab === "current" ? <div className="pos-shell" id="pos-panel-current" role="tabpanel" aria-labelledby="pos-tab-current">
         <section className="pos-catalog">
           <label className="pos-search-field"><span>Buscar {productWords.plural}</span><div className="pos-search"><Search size={20} aria-hidden="true" /><Input ref={searchRef} value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && productTotal === 1 && products.length === 1) { event.preventDefault(); void changeItem(products[0].product_id, 1, true); } }} placeholder="Escanea o busca por nombre, SKU o código" aria-label={`Buscar ${productWords.plural}`} autoFocus /><kbd>F2 cliente</kbd></div></label>
           <div className="pos-search-meta" role="status" aria-live="polite"><span>{productLoading ? "Buscando…" : `${products.length} de ${productTotal} resultados${!online ? " en caché" : ""}`}</span><span>Enter agrega la coincidencia única · p95 búsqueda {metricP95.search === null ? "—" : `${Math.round(metricP95.search)} ms`} · agregar {metricP95.add_item === null ? "—" : `${Math.round(metricP95.add_item)} ms`}</span></div>
@@ -950,10 +1107,11 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
           </div>
         </section>
         <aside className="pos-cart" id="pos-checkout">
-          <div className="pos-cart__top"><div><span className="eyebrow">Venta actual</span><h2>{quote?.items.length ?? 0} {(quote?.items.length ?? 0) === 1 ? "partida" : "partidas"}</h2></div><span className="pos-cart__actions">{permissions.includes("apply_discount") && (quote?.pending_discount_approval || Number(quote?.discount_amount ?? 0) > 0) ? <Button variant="ghost" size="sm" loading={busy} disabled={!checkoutReady} onClick={() => void cancelDiscount()}>Quitar descuento</Button> : permissions.includes("apply_discount") ? <Button variant="ghost" size="sm" disabled={!checkoutReady || !quote?.items.length} onClick={() => setDiscountOpen(true)}>Aplicar descuento</Button> : null}{Boolean(quote?.items.length) && <Button variant="ghost" size="sm" disabled={!checkoutReady || busy} onClick={() => setDiscardCartOpen(true)}><Trash2 size={14} aria-hidden="true" /> Vaciar venta</Button>}<Badge tone={pendingChanges ? "warning" : "success"}>{pendingChanges ? `${pendingChanges} pendiente${pendingChanges === 1 ? "" : "s"}` : "Caja abierta"}</Badge></span></div>
+          <div className="pos-cart__top"><div><span className="eyebrow">Venta actual</span><h2>{quote?.items.length ?? 0} {(quote?.items.length ?? 0) === 1 ? "partida" : "partidas"}</h2></div><span className="pos-cart__actions">{permissions.includes("apply_discount") && (quote?.pending_discount_approval || Number(quote?.discount_amount ?? 0) > 0) ? <Button variant="ghost" size="sm" loading={busy} disabled={!checkoutReady} onClick={() => void cancelDiscount()}>Quitar descuento</Button> : permissions.includes("apply_discount") ? <Button variant="ghost" size="sm" disabled={!checkoutReady || !quote?.items.length} onClick={() => setDiscountOpen(true)}>Aplicar descuento</Button> : null}{Boolean(quote?.items.length) && <Button variant="ghost" size="sm" disabled={!checkoutReady || busy} onClick={() => void holdCurrentSale()}><Clock3 size={14} aria-hidden="true" /> Poner en espera</Button>}{Boolean(quote?.items.length) && <Button variant="ghost" size="sm" disabled={!checkoutReady || busy} onClick={() => setDiscardCartOpen(true)}><Trash2 size={14} aria-hidden="true" /> Vaciar venta</Button>}<Badge tone={pendingChanges ? "warning" : "success"}>{pendingChanges ? `${pendingChanges} pendiente${pendingChanges === 1 ? "" : "s"}` : "Caja abierta"}</Badge></span></div>
           <div ref={customerPickerRef} className="pos-customer-picker"><div className="pos-customer-picker__heading"><span>Cliente</span>{permissions.includes("manage_customers") && <button type="button" onClick={() => setQuickCustomerOpen(true)}><UserPlus size={13} aria-hidden="true" /> Crear cliente</button>}</div><Input ref={customerRef} role="combobox" aria-expanded={customerPickerOpen && customerResults.length > 0} value={customerQuery} onFocus={() => setCustomerPickerOpen(customerResults.length > 0)} onClick={() => setCustomerPickerOpen(customerResults.length > 0)} onChange={(event) => setCustomerQuery(event.target.value)} placeholder={customer ? customer.display_name : "Buscar cliente (F2)"} aria-label="Buscar cliente" aria-controls="pos-customer-options" aria-describedby="pos-customer-status" /><span id="pos-customer-status" className="sr-only" role="status" aria-live="polite">{customerQuery && customerResults.length ? `${customerResults.length} clientes disponibles.` : ""}</span>{customer && <button className="pos-customer-chip" aria-label={`Quitar cliente ${customer.display_name}`} onClick={() => void selectCustomer(null)}><span>{customer.display_name}</span><X size={14} aria-hidden="true" /></button>}{customerPickerOpen && customerResults.length > 0 && <div id="pos-customer-options" className="pos-customer-results" role="listbox">{customerResults.map((item) => <button role="option" aria-selected={customer?.id === item.id} key={item.id} disabled={saleType === "credit" && (!item.credit_enabled || Boolean(item.alpha_external_code && item.migration_status !== "promoted"))} onClick={() => void selectCustomer(item)}><strong>{item.display_name}</strong><small>{item.code}{saleType === "credit" && item.available_credit !== undefined ? ` · crédito disponible ${money(item.available_credit)}` : ""}{item.alpha_external_code && item.migration_status !== "promoted" ? " · migración pendiente" : ""}</small></button>)}</div>}</div>
           {customer && saleType === "credit" && customer.available_credit !== undefined && <div className="pos-credit-alert"><CircleDollarSign size={18} /><div><strong>Crédito disponible</strong><span>{money(customer.available_credit)} · plazo {customer.credit_term_days} días</span></div></div>}
           <div className="pos-cart-lines" role="region" aria-label={`${productWords.pluralTitle} en la venta`} tabIndex={(quote?.items.length ?? 0) > 2 ? 0 : undefined}>{quote?.items.length ? quote.items.map((item) => <article key={item.cart_item_id} tabIndex={0} aria-label={`${item.name}, cantidad ${item.quantity}. Usa más o menos para ajustar la partida.`} onKeyDown={(event) => { if (busy || event.target !== event.currentTarget) return; if (event.key === "+") { event.preventDefault(); void changeItem(item.product_id, 1); } if (event.key === "-") { event.preventDefault(); void changeItem(item.product_id, -1); } }}><div><strong>{item.name}</strong><small>{item.code ?? ""} · {money(item.total_amount / item.quantity, quote.currency_code ?? "MXN")} por unidad</small></div><div className="pos-line-controls"><button aria-label={`Restar ${item.name}`} disabled={busy} onClick={() => void changeItem(item.product_id, -1)}><Minus size={14} aria-hidden="true" /></button><Input key={`${item.cart_item_id}:${quote.revision}`} className="pos-quantity-input" type="number" min="0" max={item.inventory_tracked ? item.quantity_on_hand : undefined} step="any" inputMode="decimal" defaultValue={item.quantity} aria-label={`Cantidad de ${item.name}`} disabled={busy} onBlur={(event) => setItemQuantity(item.product_id, item.quantity, event.currentTarget)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); if (event.key === "Escape") { event.currentTarget.value = String(item.quantity); event.currentTarget.blur(); } }} /><button aria-label={`Sumar ${item.name}`} disabled={busy} onClick={() => void changeItem(item.product_id, 1)}><Plus size={14} aria-hidden="true" /></button><strong>{money(item.total_amount, quote.currency_code ?? "MXN")}</strong></div></article>) : <div className="pos-cart-empty"><ShoppingCart size={22} aria-hidden="true" /><strong>Carrito vacío</strong><span>Busca o escanea un {productWords.singular} para comenzar.</span></div>}</div>
+          {quote?.items.some((item) => item.discount_percent > 0) && <div className="pos-volume-discounts" role="status" aria-live="polite">{quote.items.filter((item) => item.discount_percent > 0).map((item) => <span key={item.cart_item_id}><CircleDollarSign size={13} aria-hidden="true" /><strong>{item.name}</strong> · {item.discount_percent}% · {item.quantity >= 10 ? "10 o más piezas" : item.quantity >= 5 ? "5–9 piezas" : "2–4 piezas"}</span>)}</div>}
           <div className="pos-settlement">
             <div className="pos-cart-summary"><dl><div><dt>Subtotal</dt><dd>{money(quote?.subtotal_amount, quote?.currency_code ?? "MXN")}</dd></div><div><dt>Descuentos</dt><dd>−{money(quote?.discount_amount, quote?.currency_code ?? "MXN")}</dd></div><div><dt>Impuestos</dt><dd>{money(quote?.tax_amount, quote?.currency_code ?? "MXN")}</dd></div><div className="pos-cart-summary__total"><dt>Total</dt><dd>{money(quote?.total_amount, quote?.currency_code ?? "MXN")}</dd></div></dl></div>
             {quote?.pending_discount_approval && <div className="pos-credit-alert is-blocked"><AlertCircle size={18} /><div><strong>Descuento pendiente</strong><span>Otro usuario autorizado debe aprobarlo antes de cobrar.</span></div></div>}
@@ -988,13 +1146,28 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
           </div>
           </div>
         </aside>
-      </div>
+      </div> : <section className="pos-held-workspace" id="pos-panel-held" role="tabpanel" aria-labelledby="pos-tab-held">
+        <header className="pos-held-heading"><div><span className="eyebrow">Continuidad de atención</span><h2>Ventas en espera</h2><p>Estas ventas no reservan inventario. Precios, impuestos y existencias se vuelven a validar antes del cobro.</p></div><Button variant="secondary" size="sm" loading={heldLoading} disabled={!online} onClick={() => void loadHeldSales(heldSales.page)}>Actualizar</Button></header>
+        <DataState loading={heldLoading && !heldSales.items.length} error={heldError} hasData={heldSales.items.length} empty="No hay ventas en espera en esta sesión de caja." errorAction={<Button size="sm" variant="secondary" onClick={() => void loadHeldSales(heldSales.page)}>Reintentar</Button>}>
+          <div className="pos-held-layout">
+            <div className="pos-held-list" role="list" aria-label="Ventas en espera">
+              {heldSales.items.map((item) => <button type="button" role="listitem" aria-current={selectedHeldId === item.cart_id ? "true" : undefined} className={selectedHeldId === item.cart_id ? "is-selected" : ""} key={item.cart_id} onClick={() => setSelectedHeldId(item.cart_id)}><span className="pos-held-list__main"><strong>{item.customer_name ?? "Venta de mostrador"}</strong><small>{item.preview_items.join(" · ")}</small></span><span className="pos-held-list__meta"><b>{item.item_count} {item.item_count === 1 ? "partida" : "partidas"}</b><small>{heldFor(item.held_at)}</small>{item.pending_discount_approval && <em>Descuento pendiente</em>}</span></button>)}
+              {heldSales.total > heldSales.page_size && <DataPagination page={heldSales.page} total={heldSales.total} pageSize={heldSales.page_size} label="ventas en espera" onChange={(page) => void loadHeldSales(page)} />}
+            </div>
+            <aside className="pos-held-detail" aria-live="polite">
+              {heldPreviewLoading ? <DataState loading error={null} hasData={0} empty="">{null}</DataState> : heldPreview && selectedHeldId ? <><header><div><span className="eyebrow">Venta seleccionada</span><h3>{heldSales.items.find((item) => item.cart_id === selectedHeldId)?.customer_name ?? "Venta de mostrador"}</h3><small>{heldFor(heldSales.items.find((item) => item.cart_id === selectedHeldId)?.held_at ?? new Date().toISOString())}</small></div>{heldPreview.pending_discount_approval && <Badge tone="warning">Descuento pendiente</Badge>}</header><div className="pos-held-detail__lines">{heldPreview.items.map((item) => <article key={item.cart_item_id}><span><strong>{item.name}</strong><small>{item.code ?? "Sin código"} · {item.quantity} {item.unit ?? "unidad"}</small></span><b>{money(item.total_amount, heldPreview.currency_code)}</b></article>)}</div><div className="pos-held-detail__total"><span>Total actualizado</span><strong>{money(heldPreview.total_amount, heldPreview.currency_code)}</strong></div><footer><Button variant="secondary" disabled={busy || !checkoutReady} onClick={() => { const item = heldSales.items.find((entry) => entry.cart_id === selectedHeldId); if (item) setDiscardHeldCart(item); }}>Descartar</Button><Button variant="primary" disabled={busy || !checkoutReady} onClick={() => { const item = heldSales.items.find((entry) => entry.cart_id === selectedHeldId); if (!item) return; if (quote?.items.length) setResumeCart(item); else void resumeHeldSale(item); }}>Retomar venta</Button></footer></> : <div className="pos-held-detail__empty"><Clock3 size={24} aria-hidden="true" /><strong>Selecciona una venta</strong><span>Verás sus partidas y el total recalculado antes de retomarla.</span></div>}
+            </aside>
+          </div>
+        </DataState>
+      </section>}
     </>}
     <Modal open={Boolean(ticket)} onOpenChange={(open) => { if (!open) finishTicket(); }} eyebrow="Venta confirmada" title={`Ticket ${ticket?.folio ?? ""}`} description="El cliente ve precios totales; el desglose fiscal permanece disponible internamente." footer={<><Button variant="secondary" loading={ticketDownloading} onClick={() => void printCompletedTicket()}><Printer size={15} /> Imprimir ticket</Button><Button variant="primary" onClick={finishTicket}>Nueva venta</Button></>}><TicketPreview ticket={ticket?.ticket} /></Modal>
     <Modal className="pos-location-stock-dialog" open={Boolean(stockProduct)} onOpenChange={(open) => { if (!open) { setStockProduct(null); setLocationStock(null); } }} eyebrow="Inventario por sucursal" title={stockProduct?.name ?? "Otras sucursales"} description={`${productWords.singularTitle} ${stockProduct?.code ?? "sin código"} · Sucursal activa: ${selectedLocation?.name ?? selectedRegister?.name ?? "sin seleccionar"}. Solo lectura. La venta sigue usando la existencia de la sucursal activa.`} footer={<Button onClick={() => { setStockProduct(null); setLocationStock(null); }}>Cerrar <kbd>Esc</kbd></Button>}>{locationStockLoading ? <DataState loading error={null} hasData={0} empty="">{null}</DataState> : locationStock ? <section className="pos-location-stock"><header><span>Disponibilidad en otras sucursales</span><strong>{locationStock.total} {locationStock.total === 1 ? "sucursal" : "sucursales"}</strong></header>{otherLocationStockItems.length ? <div className="pos-location-stock__rows">{otherLocationStockItems.map((item) => { const quantity = Number(item.quantity_on_hand); const status = otherLocationStockStatus(quantity); return <article className={`is-${status.tone}`} key={item.location_id}><span className="pos-location-stock__location"><strong>{item.location_name}</strong><small>{item.location_code}</small></span><span className="pos-location-stock__quantity"><small>{status.label}</small><b>{quantity.toLocaleString("es-MX", { maximumFractionDigits: 3 })} <em>{locationStock.unit ?? stockProduct?.unit ?? ""}</em></b></span></article>; })}</div> : <p>No hay otras sucursales autorizadas para consultar.</p>}{locationStock.total > locationStock.page_size && <DataPagination page={locationStock.page} total={locationStock.total} pageSize={locationStock.page_size} label="sucursales" onChange={(page) => { if (stockProduct) void loadLocationStock(stockProduct, page); }} />}</section> : null}</Modal>
     <Drawer open={quickCustomerOpen} onOpenChange={setQuickCustomerOpen} title="Alta rápida de cliente"><form className="sales-form" onSubmit={createQuickCustomer}><p className="settings-note">Solo lo necesario para continuar la venta. Se crea de contado y hereda la lista de precios de esta ubicación.</p><label>Nombre<Input required autoFocus value={quickCustomerName} onChange={(event) => setQuickCustomerName(event.target.value)} /></label><label>Teléfono opcional<Input inputMode="tel" value={quickCustomerPhone} onChange={(event) => setQuickCustomerPhone(event.target.value)} /></label><label>RFC opcional<Input value={quickCustomerTaxId} onChange={(event) => setQuickCustomerTaxId(event.target.value.toUpperCase())} /></label><Button type="submit" variant="primary" loading={busy}>Crear y seleccionar</Button></form></Drawer>
     <Modal open={discountOpen} onOpenChange={setDiscountOpen} title="Solicitar descuento" description="El límite de tu rol se aplica automáticamente; si lo superas, el carrito queda pendiente de aprobación." footer={<Button type="submit" form="sale-discount-form" variant="primary" loading={busy}>Solicitar</Button>}><form id="sale-discount-form" className="sales-form" onSubmit={requestDiscount}><label>Porcentaje<Input required inputMode="decimal" min="0.01" max="100" value={discountPercent} onChange={(event) => setDiscountPercent(event.target.value)} /></label><label>Motivo<Input required value={discountReason} onChange={(event) => setDiscountReason(event.target.value)} placeholder="Motivo comercial" /></label></form></Modal>
     <Modal open={discardCartOpen} onOpenChange={(open) => { if (!busy) setDiscardCartOpen(open); }} eyebrow="Venta en preparación" title="Vaciar venta" description="Se descartarán todas las partidas y cualquier descuento pendiente. La acción quedará auditada." footer={<><Button variant="secondary" disabled={busy} onClick={() => setDiscardCartOpen(false)}>Conservar venta</Button><Button variant="danger" loading={busy} onClick={() => void discardCart()}><Trash2 size={15} aria-hidden="true" /> Vaciar venta</Button></>}></Modal>
+    <Modal open={Boolean(resumeCart)} onOpenChange={(open) => { if (!open && !busy) setResumeCart(null); }} eyebrow="Cambio de atención" title="Retomar venta" description="La venta actual contiene partidas. Se pondrá en espera automáticamente antes de retomar la venta seleccionada; ninguna se sobrescribirá." footer={<><Button variant="secondary" disabled={busy} onClick={() => setResumeCart(null)}>Cancelar</Button><Button variant="primary" loading={busy} onClick={() => { if (resumeCart) void resumeHeldSale(resumeCart); }}>Intercambiar ventas</Button></>}></Modal>
+    <Modal open={Boolean(discardHeldCart)} onOpenChange={(open) => { if (!open && !busy) setDiscardHeldCart(null); }} eyebrow="Venta en espera" title="Descartar venta" description={`Se descartará ${discardHeldCart?.customer_name ?? "la venta de mostrador"} con todas sus partidas. La acción quedará auditada.`} footer={<><Button variant="secondary" disabled={busy} onClick={() => setDiscardHeldCart(null)}>Conservar venta</Button><Button variant="danger" loading={busy} onClick={() => { if (discardHeldCart) void discardHeldSale(discardHeldCart); }}><Trash2 size={15} aria-hidden="true" /> Descartar venta</Button></>}></Modal>
   </div>;
 }
 
@@ -1467,7 +1640,7 @@ export function SalesSettingsView({ companyId, permissions, experience="core" }:
     activeAssortmentCount > 0,
   ];
   const firstSaleCompleted = firstSaleReady.filter(Boolean).length;
-  const resourceRows = resource === "ticket" || resource === "quote" ? [] : resource === "payments" ? payments.filter((item) => matches(`${item.display_name} ${item.code} ${item.settlement_kind}`) && matchesStatus(statusFilter, item.is_active)) : resource === "registers" ? registers.filter((item) => matches(`${item.display_name} ${item.code}`) && matchesStatus(statusFilter, item.is_active)) : resource === "denominations" ? denominations.filter((item) => matches(`${item.display_name} ${item.value}`) && matchesStatus(statusFilter, item.is_active)) : resource === "prices" ? locations.filter((item) => matches(`${item.name} ${item.external_code} ${priceListById.get(item.default_price_list_id ?? "")?.name ?? ""}`) && (statusFilter === "all" || statusFilter === "assigned" ? Boolean(item.default_price_list_id) : !item.default_price_list_id)) : discountLimits.filter((item) => matches(`${roles.find((role) => role.id === item.role_id)?.display_name ?? ""} ${item.scope} ${item.max_percent}`) && (statusFilter === "all" || discountStatus(item) === statusFilter));
+  const resourceRows = resource === "ticket" || resource === "quote" || resource === "volume" ? [] : resource === "payments" ? payments.filter((item) => matches(`${item.display_name} ${item.code} ${item.settlement_kind}`) && matchesStatus(statusFilter, item.is_active)) : resource === "registers" ? registers.filter((item) => matches(`${item.display_name} ${item.code}`) && matchesStatus(statusFilter, item.is_active)) : resource === "denominations" ? denominations.filter((item) => matches(`${item.display_name} ${item.value}`) && matchesStatus(statusFilter, item.is_active)) : resource === "prices" ? locations.filter((item) => matches(`${item.name} ${item.external_code} ${priceListById.get(item.default_price_list_id ?? "")?.name ?? ""}`) && (statusFilter === "all" || statusFilter === "assigned" ? Boolean(item.default_price_list_id) : !item.default_price_list_id)) : discountLimits.filter((item) => matches(`${roles.find((role) => role.id === item.role_id)?.display_name ?? ""} ${item.scope} ${item.max_percent}`) && (statusFilter === "all" || discountStatus(item) === statusFilter));
   const totalPages = Math.max(1, Math.ceil(resourceRows.length / SETTINGS_PAGE_SIZE)); const visibleRows = resourceRows.slice((page - 1) * SETTINGS_PAGE_SIZE, page * SETTINGS_PAGE_SIZE);
   const statusOptions = resource === "discounts" ? [{ value: "all", label: "Todos los estados" }, { value: "vigente", label: "Vigentes" }, { value: "futuro", label: "Futuros" }, { value: "vencido", label: "Vencidos" }] : resource === "prices" ? [{ value: "all", label: "Todas las ubicaciones" }, { value: "assigned", label: "Con lista asignada" }, { value: "unassigned", label: "Sin lista" }] : [{ value: "all", label: "Todos los estados" }, { value: "active", label: "Activos" }, { value: "inactive", label: "Desactivados" }];
   const resourceMeta: Record<SettingsResourceKey, { title: string; description: string; count: number; action: () => void; actionLabel: string }> = {
@@ -1475,6 +1648,7 @@ export function SalesSettingsView({ companyId, permissions, experience="core" }:
     registers: { title: "Cajas", description: "Administra cajas físicas por ubicación y su disponibilidad para abrir turnos.", count: registers.length, action: () => openRegister(), actionLabel: "Nueva caja" },
     denominations: { title: "Denominaciones", description: "Catálogo de valores disponibles para aperturas, cierres y arqueos.", count: denominations.length, action: () => openDenomination(), actionLabel: "Agregar denominación" },
     prices: { title: "Listas y precios", description: "Administra listas canónicas, vigencias de precio y su asignación operativa.", count: priceLists.length, action: () => openAssignment(), actionLabel: "Asignar lista" },
+    volume: { title: "Descuentos por volumen", description: "Define descuentos automáticos por cantidad para esta empresa.", count: 0, action: () => undefined, actionLabel: "" },
     discounts: { title: "Límites de descuento", description: "Políticas append-only por rol. La venta resuelve la vigente en el servidor.", count: discountLimits.length, action: openDiscount, actionLabel: "Nuevo límite" },
     ticket: { title: "Ticket", description: "Configura los datos visibles al imprimir.", count: 1, action: () => undefined, actionLabel: "" },
     quote: { title: "Cotización", description: "Configura la presentación imprimible de propuestas comerciales.", count: 1, action: () => undefined, actionLabel: "" },
@@ -1492,8 +1666,8 @@ export function SalesSettingsView({ companyId, permissions, experience="core" }:
     <p className="first-sale-setup__explanation"><strong>Lista de precios</strong> responde cuánto cuesta. <strong>Productos por sucursal</strong> responde qué se vende y dónde.</p>
   </section>
   <div className="settings-workspace">
-    <nav className="settings-resource-nav" aria-label="Módulos de configuración">{canPayments && <button className={resource === "payments" ? "is-active" : ""} onClick={() => changeResource("payments")}>Formas de pago <span>{payments.length}</span></button>}{canRegisters && <button className={resource === "registers" ? "is-active" : ""} onClick={() => changeResource("registers")}>Cajas <span>{registers.length}</span></button>}{canPayments && <button className={resource === "denominations" ? "is-active" : ""} onClick={() => changeResource("denominations")}>Denominaciones <span>{denominations.length}</span></button>}{canPrices && <button className={resource === "prices" ? "is-active" : ""} onClick={() => changeResource("prices")}>Listas y precios <span>{priceLists.length}</span></button>}{canDiscounts && <button className={resource === "discounts" ? "is-active" : ""} onClick={() => changeResource("discounts")}>Límites de descuento <span>{discountLimits.length}</span></button>}{canTicketBranding && <button className={resource === "ticket" ? "is-active" : ""} onClick={() => changeResource("ticket")}>Ticket</button>}{canQuoteBranding && <button className={resource === "quote" ? "is-active" : ""} onClick={() => changeResource("quote")}>Cotización</button>}</nav>
-    {resource === "ticket" ? <TicketBrandingSettings companyId={companyId} /> : resource === "quote" ? <QuoteBrandingSettings companyId={companyId} /> : resource === "prices" ? <PriceCatalogManagement companyId={companyId} locations={locations} onAssignLocation={openAssignment} onChanged={load} /> : <SettingsResource title={meta.title} description={meta.description} count={meta.count} action={meta.action} actionLabel={meta.actionLabel}>{resource === "denominations" && missingStandardDenominations.length > 0 && <div className="settings-starter"><div><strong>Completa las denominaciones MXN</strong><p>Agrega únicamente las que faltan: {missingStandardDenominations.map((value) => money(value, "MXN")).join(", ")}.</p></div><Button variant="primary" loading={starterBusy} onClick={() => void configureStandardDenominations()}>Completar MXN</Button></div>}<DataToolbar search={query} onSearchChange={setQuery} placeholder={`Buscar en ${meta.title.toLocaleLowerCase("es-MX")}`} filters={<Select ariaLabel="Filtrar registros" value={statusFilter} onValueChange={setStatusFilter} options={statusOptions} />} activeFilters={statusFilter === "all" ? 0 : 1} onClear={() => setStatusFilter("all")} results={resourceRows.length} /><DataState loading={false} error={loadError} hasData={resourceRows.length} empty={emptySettingsMessage(resource)} emptyAction={<Button size="sm" variant="primary" onClick={meta.action}>{meta.actionLabel}</Button>} errorAction={<Button size="sm" variant="secondary" onClick={() => void load()}>Reintentar</Button>}>
+    <nav className="settings-resource-nav" aria-label="Módulos de configuración">{canPayments && <button className={resource === "payments" ? "is-active" : ""} onClick={() => changeResource("payments")}>Formas de pago <span>{payments.length}</span></button>}{canRegisters && <button className={resource === "registers" ? "is-active" : ""} onClick={() => changeResource("registers")}>Cajas <span>{registers.length}</span></button>}{canPayments && <button className={resource === "denominations" ? "is-active" : ""} onClick={() => changeResource("denominations")}>Denominaciones <span>{denominations.length}</span></button>}{canPrices && <button className={resource === "prices" ? "is-active" : ""} onClick={() => changeResource("prices")}>Listas y precios <span>{priceLists.length}</span></button>}{canDiscounts && <button className={resource === "volume" ? "is-active" : ""} onClick={() => changeResource("volume")}>Descuentos por volumen</button>}{canDiscounts && <button className={resource === "discounts" ? "is-active" : ""} onClick={() => changeResource("discounts")}>Límites de descuento <span>{discountLimits.length}</span></button>}{canTicketBranding && <button className={resource === "ticket" ? "is-active" : ""} onClick={() => changeResource("ticket")}>Ticket</button>}{canQuoteBranding && <button className={resource === "quote" ? "is-active" : ""} onClick={() => changeResource("quote")}>Cotización</button>}</nav>
+    {resource === "volume" ? <VolumeDiscountSettings companyId={companyId} /> : resource === "ticket" ? <TicketBrandingSettings companyId={companyId} /> : resource === "quote" ? <QuoteBrandingSettings companyId={companyId} /> : resource === "prices" ? <PriceCatalogManagement companyId={companyId} locations={locations} onAssignLocation={openAssignment} onChanged={load} /> : <SettingsResource title={meta.title} description={meta.description} count={meta.count} action={meta.action} actionLabel={meta.actionLabel}>{resource === "denominations" && missingStandardDenominations.length > 0 && <div className="settings-starter"><div><strong>Completa las denominaciones MXN</strong><p>Agrega únicamente las que faltan: {missingStandardDenominations.map((value) => money(value, "MXN")).join(", ")}.</p></div><Button variant="primary" loading={starterBusy} onClick={() => void configureStandardDenominations()}>Completar MXN</Button></div>}<DataToolbar search={query} onSearchChange={setQuery} placeholder={`Buscar en ${meta.title.toLocaleLowerCase("es-MX")}`} filters={<Select ariaLabel="Filtrar registros" value={statusFilter} onValueChange={setStatusFilter} options={statusOptions} />} activeFilters={statusFilter === "all" ? 0 : 1} onClear={() => setStatusFilter("all")} results={resourceRows.length} /><DataState loading={false} error={loadError} hasData={resourceRows.length} empty={emptySettingsMessage(resource)} emptyAction={<Button size="sm" variant="primary" onClick={meta.action}>{meta.actionLabel}</Button>} errorAction={<Button size="sm" variant="secondary" onClick={() => void load()}>Reintentar</Button>}>
       {resource === "payments" && <SettingsTable><thead><tr><th>Forma de pago</th><th>Liquidación</th><th>Estado</th><th aria-label="Acciones" /></tr></thead><tbody>{(visibleRows as typeof payments).map((item) => <tr key={item.id}><td><strong>{item.display_name}</strong><small className="mono">{item.code}</small></td><td><Badge tone={item.settlement_kind === "cash_drawer" ? "success" : "neutral"}>{item.settlement_kind === "cash_drawer" ? "Afecta caja" : "Externo"}</Badge></td><td><StatusBadge active={item.is_active} /></td><td><RowActions onEdit={() => openPayment(item)} onToggle={() => requestPaymentToggle(item)} active={item.is_active} /></td></tr>)}</tbody></SettingsTable>}
       {resource === "registers" && <SettingsTable><thead><tr><th>Caja</th><th>Ubicación</th><th>Estado</th><th aria-label="Acciones" /></tr></thead><tbody>{(visibleRows as typeof registers).map((item) => <tr key={item.id}><td><strong>{item.display_name}</strong><small className="mono">{item.code} · {item.currency_code}</small></td><td>{locations.find((location) => location.id === item.location_id)?.name ?? "Ubicación no disponible"}</td><td><StatusBadge active={item.is_active} /></td><td><RowActions onEdit={() => openRegister(item)} onToggle={() => requestRegisterToggle(item)} active={item.is_active} /></td></tr>)}</tbody></SettingsTable>}
       {resource === "denominations" && <SettingsTable><thead><tr><th>Denominación</th><th className="number-cell">Valor</th><th>Estado</th><th aria-label="Acciones" /></tr></thead><tbody>{(visibleRows as typeof denominations).map((item) => <tr key={item.id}><td><strong>{item.display_name}</strong><small>{item.currency_code}</small></td><td className="number-cell">{money(item.value, item.currency_code)}</td><td><StatusBadge active={item.is_active} /></td><td><RowActions onEdit={() => openDenomination(item)} onToggle={() => requestDenominationToggle(item)} active={item.is_active} /></td></tr>)}</tbody></SettingsTable>}
@@ -1510,7 +1684,42 @@ export function SalesSettingsView({ companyId, permissions, experience="core" }:
   </div>;
 }
 
-type SettingsResourceKey = "payments" | "registers" | "denominations" | "prices" | "discounts" | "ticket" | "quote";
+function VolumeDiscountSettings({ companyId }: { companyId: string }) {
+  const { toast } = useToast();
+  const defaults: VolumeDiscountTier[] = [
+    { tier_number: 1, min_quantity: 2, max_quantity: 4, discount_percent: 3, is_active: true },
+    { tier_number: 2, min_quantity: 5, max_quantity: 9, discount_percent: 6, is_active: true },
+    { tier_number: 3, min_quantity: 10, max_quantity: null, discount_percent: 12, is_active: true },
+  ];
+  const [tiers, setTiers] = useState<VolumeDiscountTier[]>([]);
+  const [drafting, setDrafting] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void getSupabaseClient().rpc("list_pos_volume_discount_tiers", { p_company_id: companyId }).then(({ data, error }) => {
+      if (!active) return;
+      if (error) setLoadError(rpcError(error, "No se pudo cargar la política."));
+      else { setLoadError(null); setTiers(Array.isArray(data) ? data as VolumeDiscountTier[] : []); }
+      setLoading(false);
+    });
+    return () => { active = false; };
+  }, [companyId]);
+  function updateTier(index: number, field: "min_quantity" | "max_quantity" | "discount_percent", value: string) {
+    setTiers((current) => current.map((tier, tierIndex) => tierIndex === index ? { ...tier, [field]: field === "max_quantity" && value === "" ? null : Number(value) } : tier));
+  }
+  async function save() {
+    setSaving(true);
+    const { data, error } = await getSupabaseClient().rpc("save_pos_volume_discount_tiers", { p_company_id: companyId, p_tiers: tiers });
+    if (error) toast({ title: "No se guardó la política", description: rpcError(error, "Revisa los rangos y porcentajes."), tone: "error" });
+    else { setTiers(data as VolumeDiscountTier[]); setDrafting(false); toast({ title: "Descuentos por volumen actualizados", description: "El POS recalculará las partidas abiertas automáticamente.", tone: "success" }); }
+    setSaving(false);
+  }
+  return <section className="volume-discount-settings" aria-labelledby="volume-discount-title"><header><div><span className="eyebrow">Política automática</span><h2 id="volume-discount-title">Descuentos por volumen</h2><p>Define los descuentos automáticos de esta empresa. Un descuento especial autorizado los sustituye.</p></div>{tiers.length > 0 && <Button variant="primary" loading={saving} disabled={loading} onClick={() => void save()}>Guardar niveles</Button>}</header>{loadError ? <div className="settings-prerequisite" role="alert"><AlertCircle size={18} aria-hidden="true" /><div><strong>No se pudo consultar la política</strong><p>{loadError}</p></div></div> : !loading && tiers.length === 0 ? <div className="volume-discount-empty"><div><strong>Sin descuentos por volumen</strong><p>Esta empresa cobra con sus precios vigentes. Crea niveles solo si forman parte de su política comercial.</p></div><Button variant="secondary" onClick={() => { setTiers(defaults); setDrafting(true); }}>Configurar niveles</Button></div> : <><div className="volume-discount-grid">{tiers.map((tier, index) => <fieldset key={tier.tier_number} disabled={loading || saving}><legend>Nivel {tier.tier_number}</legend><label>Cantidad mínima<Input type="number" min="1" step="1" inputMode="numeric" value={tier.min_quantity} onChange={(event) => updateTier(index, "min_quantity", event.target.value)} /></label><label>Cantidad máxima<Input type="number" min={tier.min_quantity} step="1" inputMode="numeric" value={tier.max_quantity ?? ""} placeholder="Sin límite" onChange={(event) => updateTier(index, "max_quantity", event.target.value)} /></label><label>Descuento %<Input type="number" min="0.01" max="99.99" step="0.01" inputMode="decimal" value={tier.discount_percent} onChange={(event) => updateTier(index, "discount_percent", event.target.value)} /></label></fieldset>)}</div><p className={`volume-discount-note${drafting ? " is-draft" : ""}`}>{drafting ? <AlertCircle size={15} aria-hidden="true" /> : <CheckCircle2 size={15} aria-hidden="true" />} {drafting ? "Borrador sin aplicar. Guarda los niveles para activarlos en esta empresa." : "Política activa. El POS recalcula el descuento al cambiar la cantidad."}</p></>}</section>;
+}
+
+type SettingsResourceKey = "payments" | "registers" | "denominations" | "prices" | "volume" | "discounts" | "ticket" | "quote";
 type SettingsDrawer = "payment" | "register" | "denomination" | "assignment" | "discount";
 type SettingsConfirmation = { title: string; description: string; confirmLabel: string; tone: "primary" | "danger"; onConfirm: () => Promise<void> };
 const SETTINGS_PAGE_SIZE = 12;
