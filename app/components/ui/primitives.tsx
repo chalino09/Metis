@@ -344,16 +344,17 @@ type ModalProps = {
   footer?: ReactNode;
   labelledBy?: string;
   className?: string;
+  closeDisabled?: boolean;
 };
 
-export function Modal({ open, onOpenChange, eyebrow, title, description, children, footer, labelledBy, className }: ModalProps) {
+export function Modal({ open, onOpenChange, eyebrow, title, description, children, footer, labelledBy, className, closeDisabled = false }: ModalProps) {
   const titleId = labelledBy ?? "satrapy-dialog-title";
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="ui-dialog-overlay" />
         <Dialog.Content className={cx("ui-dialog", className)} aria-describedby={description ? `${titleId}-description` : undefined}>
-          <Dialog.Close asChild><button className="ui-dialog__close" aria-label="Cerrar"><X size={17} /></button></Dialog.Close>
+          <Dialog.Close asChild><button className="ui-dialog__close" aria-label="Cerrar" disabled={closeDisabled}><X size={17} aria-hidden="true" /></button></Dialog.Close>
           {eyebrow && <span className="eyebrow">{eyebrow}</span>}
           <Dialog.Title id={titleId}>{title}</Dialog.Title>
           {description && <Dialog.Description id={`${titleId}-description`}>{description}</Dialog.Description>}

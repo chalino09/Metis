@@ -18,6 +18,7 @@ type ActionBody = {
   assortmentIds?: string[];
   sourceDescription?: string;
   sourceUnit?: string | null;
+  chunkSize?: number;
 };
 
 export async function POST(request: NextRequest, context: { params: Promise<{ batchId: string }> }) {
@@ -95,8 +96,12 @@ function rpcForAction(batchId: string, body: ActionBody, importType?: string) {
   }
   if (body.action === "promote_sales_history" && body.reason?.trim()) {
     return {
-      name: "promote_alpha_historical_sales",
-      parameters: { p_import_batch_id: batchId, p_reason: body.reason.trim() },
+      name: "promote_alpha_historical_sales_chunk",
+      parameters: {
+        p_import_batch_id: batchId,
+        p_reason: body.reason.trim(),
+        p_chunk_size: Number.isInteger(body.chunkSize) ? body.chunkSize : 750,
+      },
     };
   }
   if (body.action === "acknowledge_warnings" && body.errorCode && body.reason?.trim()) {

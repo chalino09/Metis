@@ -26,6 +26,7 @@ import {
   ShoppingCart,
   ShoppingBag,
   ShieldAlert,
+  ShieldCheck,
   Target,
   TrendingUp,
   Truck,
@@ -925,6 +926,19 @@ type OperationDialog =
   | { kind: "warning"; code: string }
   | { kind: "discard" }
   | { kind: "retry" };
+type HistoricalPromotionProgress = {
+  status: "processing" | "completed";
+  sales_imported?: number;
+  items_imported?: number;
+  processed_documents: number;
+  total_documents: number;
+  processed_lines: number;
+  total_lines: number;
+  percent: number;
+  excluded_location_documents: number;
+  total_amount: number;
+  message?: string;
+};
 type CustomerMigrationBatch = { id: string; cutoff_date: string; status: string; records_received: number; records_promoted: number; differences: number; summary: { reconciled_customers?: number; customers_with_differences?: number; failure_reason?: string; remaining_customers?: number; receivable_repair?: { status?: string; corrected_total?: number }; receivable_backfill?: { status?: string; total_after?: number }; customer_identity_repair?: { status?: string; ambiguous_customers?: number }; customer_conflict_review?: { status?: string } } };
 type PurchasingMigrationBatch = { id: string; cutoff_date: string; status: "loading" | "staged" | "validation_failed" | "failed"; records_received: number; differences: number; summary: { suppliers?: number; purchase_orders?: number; purchase_order_lines?: number; payable_documents?: number; payable_outstanding_total?: number; supplier_payments?: number; supplier_payment_total?: number; receipt_source_available?: boolean; error_count?: number; warning_count?: number; operational_import_ready?: boolean; failure_reason?: string }; files: Array<{ report_type: string; original_name: string; row_count: number }> };
 type ReceivableBackfillPreview = { batch_id: string; can_apply: boolean; eligible_documents: number; eligible_total: number; documents_to_insert: number; amount_to_insert: number; already_recorded_documents: number; excluded_unresolved_customer_documents: number; excluded_unresolved_customer_amount: number; duplicate_payload_hashes: number; staged_documents_missing_from_source: number; source_documents_not_in_staging: number; existing_document_conflicts: number };
@@ -992,6 +1006,8 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
   const [message, setMessage] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [operationDialog, setOperationDialog] = useState<OperationDialog | null>(null);
+  const [promotionProgress, setPromotionProgress] = useState<HistoricalPromotionProgress | null>(null);
+  const [promotionError, setPromotionError] = useState<string | null>(null);
   const [customerMigrationBatches, setCustomerMigrationBatches] = useState<CustomerMigrationBatch[]>([]);
   const [purchasingMigrationBatches, setPurchasingMigrationBatches] = useState<PurchasingMigrationBatch[]>([]);
   const [customerConflicts, setCustomerConflicts] = useState<CustomerIdentityConflict[]>([]);
@@ -1406,27 +1422,59 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
     if (!operationDialog || !active) return;
     const completedOperation = operationDialog;
     const completedBatchId = active.id;
+    if (completedOperation.kind === "sales_promotion") {
+      if (busy || actionRequestInFlight.current) return;
+      actionRequestInFlight.current = true;
+      setBusy(true);
+      setMessage(null);
+      setPromotionError(null);
+      try {
+        const session = (await getSupabaseClient().auth.getSession()).data.session;
+        if (!session) throw new Error("Sesión no válida.");
+        let result: HistoricalPromotionProgress | null = null;
+        let attempts = 0;
+        do {
+          const response = await fetch(`/api/imports/stage/${completedBatchId}/actions`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${session.access_token}`, "content-type": "application/json" },
+            body: JSON.stringify({ action: "promote_sales_history", reason: payload.reason, chunkSize: 750 }),
+          });
+          result = await response.json() as HistoricalPromotionProgress;
+          if (!response.ok) throw new Error(result.message ?? "No se pudo continuar la importación histórica.");
+          setPromotionProgress(result);
+          attempts += 1;
+          if (attempts > 100) throw new Error("La importación excedió el número seguro de bloques.");
+        } while (result.status !== "completed");
+
+        setOperationDialog(null);
+        setPromotionProgress(null);
+        await loadBatches();
+        const excluded = result.excluded_location_documents ?? 0;
+        setMessage(`${result.sales_imported ?? 0} ventas históricas importadas en Ventas y BI${excluded ? `; ${excluded} documentos con sucursal ambigua permanecen en evidencia` : ""}.`);
+        toast({ title: "Historial de ventas importado", description: `${result.sales_imported ?? 0} ventas y ${result.items_imported ?? 0} partidas quedaron disponibles sin afectar caja, inventario ni CxC.`, tone: "success" });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "No se pudo continuar la importación histórica.";
+        setPromotionError(errorMessage);
+        setMessage(errorMessage);
+        toast({ title: "La importación se pausó", description: "Los bloques confirmados se conservaron y puedes reanudar desde este mismo modal.", tone: "error" });
+      } finally {
+        actionRequestInFlight.current = false;
+        setBusy(false);
+      }
+      return;
+    }
     const body = completedOperation.kind === "product"
       ? { action: "resolve_product", stagingRowId: completedOperation.row.id, productId: payload.productId, reason: payload.reason }
       : completedOperation.kind === "sales_sku"
         ? { action: "resolve_sales_missing_sku", sourceDescription: completedOperation.group.description, sourceUnit: completedOperation.group.unit, productId: payload.productId, reason: payload.reason }
         : completedOperation.kind === "sales_sku_continuations"
           ? { action: "resolve_sales_missing_sku_continuations", reason: payload.reason }
-        : completedOperation.kind === "sales_promotion"
-          ? { action: "promote_sales_history", reason: payload.reason }
       : completedOperation.kind === "warning"
         ? { action: "acknowledge_warnings", errorCode: completedOperation.code, reason: payload.reason }
         : { action: completedOperation.kind, reason: payload.reason };
     const result = await runAction(body);
     if (!result) return;
     setOperationDialog(null);
-    if (completedOperation.kind === "sales_promotion") {
-      await loadBatches();
-      const excluded = result.excluded_location_documents ?? 0;
-      setMessage(`${result.sales_imported ?? 0} ventas históricas importadas en Ventas y BI${excluded ? `; ${excluded} documentos con sucursal ambigua permanecen en evidencia` : ""}.`);
-      toast({ title: "Historial de ventas importado", description: `${result.sales_imported ?? 0} ventas y ${result.items_imported ?? 0} partidas quedaron disponibles sin afectar caja, inventario ni CxC.`, tone: "success" });
-      return;
-    }
     if (completedOperation.kind === "warning") {
       const acknowledgedCount = Math.max(0, result.count ?? 0);
       const acknowledgedAt = new Date().toISOString();
@@ -1542,14 +1590,14 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
           {active && (
             <div className="confirm-bar">
               <div><strong>{active.import_type === "sales" ? preview?.sales_promotion?.can_promote ? "Listo para importar historial" : preview?.sales_evidence?.complete ? "Paquete histórico conciliado" : "Evidencia guardada; falta un archivo" : summaryBatch?.blocking_error_count ? `${summaryBatch.blocking_error_count} errores pendientes` : summaryBatch?.pending_warning_count ? `${summaryBatch.pending_warning_count} alertas por reconocer` : readyForImport ? "Listo para confirmar" : active.status === "failed" ? "Lote fallido" : "Staging con incidencias"}</strong><span>{active.import_type === "sales" ? preview?.sales_promotion?.can_promote ? `${preview.sales_promotion.eligible_documents} ventas · ${preview.sales_promotion.eligible_lines} partidas · ${numberFormat(Number(preview.sales_promotion.total_amount))} MXN${preview.sales_promotion.excluded_location_documents ? ` · ${preview.sales_promotion.excluded_location_documents} documentos ambiguos quedan fuera` : ""}` : preview?.sales_evidence?.complete ? "La conciliación está completa; resuelve o reconoce las incidencias restantes para importar." : "Puedes subir nvtadesg y cob_cte en cualquier orden. Satrapy conservará este paquete 1/2." : `${summaryBatch?.valid_rows ?? 0} válidas · ${summaryBatch?.warning_rows ?? 0} con alerta · ${summaryBatch?.error_rows ?? 0} con error`}</span></div>
-              <div className="confirm-actions">{["staged", "validation_failed"].includes(active.status) && <button className="secondary-button danger-button" disabled={busy} onClick={() => setOperationDialog({ kind: "discard" })}>Descartar</button>}{active.import_type === "sales" && preview?.sales_promotion?.can_promote && <button className="primary-button" disabled={busy || !canImport} onClick={() => setOperationDialog({ kind: "sales_promotion", preview: preview.sales_promotion! })}><ClipboardCheck size={17} /> Importar historial</button>}{active.import_type !== "sales" && <button className="primary-button" disabled={!readyForImport || busy} onClick={() => setConfirming(true)}><ClipboardCheck size={17} /> Confirmar importación</button>}</div>
+              <div className="confirm-actions">{["staged", "validation_failed"].includes(active.status) && <button className="secondary-button danger-button" disabled={busy} onClick={() => setOperationDialog({ kind: "discard" })}>Descartar</button>}{active.import_type === "sales" && preview?.sales_promotion?.can_promote && <button className="primary-button" disabled={busy || !canImport} onClick={() => { setPromotionProgress(null); setPromotionError(null); setOperationDialog({ kind: "sales_promotion", preview: preview.sales_promotion! }); }}><ClipboardCheck size={17} /> Importar historial</button>}{active.import_type !== "sales" && <button className="primary-button" disabled={!readyForImport || busy} onClick={() => setConfirming(true)}><ClipboardCheck size={17} /> Confirmar importación</button>}</div>
             </div>
           )}
           {!canImport && <p className="permission-note">Tu rol no tiene permiso para preparar ni confirmar importaciones.</p>}
         </section>
       )}
       {confirming && active && <ConfirmDialog companyId={companyId} batch={active} busy={busy} onCancel={() => !busy && setConfirming(false)} onConfirm={(assortmentIds) => void confirmImport(assortmentIds)} />}
-      {operationDialog && <StagingOperationDialog operation={operationDialog} companyId={companyId} busy={busy} onCancel={() => !busy && setOperationDialog(null)} onConfirm={(payload) => void completeOperation(payload)} />}
+      {operationDialog && <StagingOperationDialog operation={operationDialog} companyId={companyId} busy={busy} promotionProgress={promotionProgress} promotionError={promotionError} onCancel={() => { if (!busy) { setOperationDialog(null); setPromotionProgress(null); setPromotionError(null); } }} onConfirm={(payload) => void completeOperation(payload)} />}
       {receivableBackfill && <Modal open onOpenChange={(open) => { if (!open && !busy) setReceivableBackfill(null); }} eyebrow="CxC pendiente" title="Revisar incorporación de documentos" description="Solo se agregarán documentos cuya clave y hash coincidan con lis_sal y cuyo cliente de staging ya tenga un cliente canónico promovido." footer={<><Button variant="secondary" disabled={busy} onClick={() => setReceivableBackfill(null)}>Cancelar</Button><Button variant="primary" loading={busy} disabled={!receivableBackfill.can_apply || !receivableBackfillAcknowledged} onClick={() => void applyReceivableBackfill()}>Incorporar documentos auditados</Button></>}><div className="pos-prep-confirm-summary"><span><strong>{receivableBackfill.documents_to_insert}</strong> documentos por <strong>{numberFormat(Number(receivableBackfill.amount_to_insert))} MXN</strong> se agregarán</span><span><strong>{receivableBackfill.already_recorded_documents}</strong> documentos ya existen y no se duplicarán</span><span><strong>{receivableBackfill.excluded_unresolved_customer_documents}</strong> documentos por <strong>{numberFormat(Number(receivableBackfill.excluded_unresolved_customer_amount))} MXN</strong> quedan fuera por clientes sin resolver</span><span><strong>{receivableBackfill.existing_document_conflicts + receivableBackfill.duplicate_payload_hashes + receivableBackfill.staged_documents_missing_from_source + receivableBackfill.source_documents_not_in_staging}</strong> inconsistencias bloqueantes</span></div>{!receivableBackfill.can_apply && <p className="permission-note">No se puede aplicar: el preview detectó una incompatibilidad de hash, staging o documento existente.</p>}<label className="checkbox-label"><input type="checkbox" checked={receivableBackfillAcknowledged} disabled={busy || !receivableBackfill.can_apply} onChange={(event) => setReceivableBackfillAcknowledged(event.target.checked)} /> Confirmo el preview; esta operación no modifica clientes, pagos ni documentos existentes.</label></Modal>}
     </div>
   );
@@ -1698,7 +1746,7 @@ function ConfirmDialog({ companyId, batch, busy, onCancel, onConfirm }: { compan
   </Modal>;
 }
 
-function StagingOperationDialog({ operation, companyId, busy, onCancel, onConfirm }: { operation: OperationDialog; companyId: string; busy: boolean; onCancel: () => void; onConfirm: (payload: { productId?: string; reason: string }) => void }) {
+function StagingOperationDialog({ operation, companyId, busy, promotionProgress, promotionError, onCancel, onConfirm }: { operation: OperationDialog; companyId: string; busy: boolean; promotionProgress: HistoricalPromotionProgress | null; promotionError: string | null; onCancel: () => void; onConfirm: (payload: { productId?: string; reason: string }) => void }) {
   const [reason, setReason] = useState(() => operation.kind === "sales_sku_continuations" ? "Continuación de descripción: SKU canónico de la fila anterior y contexto de venta coincidente." : operation.kind === "sales_promotion" ? "Importación controlada del historial de ventas conciliado." : "");
   const [search, setSearch] = useState("");
   const [products, setProducts] = useState<Array<{ id: string; alpha_sku: string; name: string }>>([]);
@@ -1717,11 +1765,15 @@ function StagingOperationDialog({ operation, companyId, busy, onCancel, onConfir
   const title = operation.kind === "product" ? "Mapear a un producto existente" : operation.kind === "sales_sku" ? "Vincular partidas sin SKU" : operation.kind === "sales_sku_continuations" ? "Vincular continuaciones confirmadas" : operation.kind === "sales_promotion" ? "Importar historial de ventas" : operation.kind === "warning" ? `Reconocer ${operation.code}` : operation.kind === "discard" ? "Descartar lote" : "Reintentar lote fallido";
   const description = operation.kind === "product" ? `El SKU de origen ${textValue(operation.row.normalized_data, "alphaSku") || "sin clave"} quedará conservado permanentemente.` : operation.kind === "sales_sku" ? `“${operation.group.description}” no trae Clave Prod. en el archivo. Se guardará el vínculo con el producto canónico para ${operation.group.row_count} partida${operation.group.row_count === 1 ? "" : "s"}; el dato de origen seguirá vacío y trazable.` : operation.kind === "sales_sku_continuations" ? `Se vincularán ${operation.review.eligible_rows} continuaciones al producto canónico de la fila anterior. Solo se aplicarán coincidencias verificadas; el SKU original seguirá vacío y el detalle quedará auditado.` : operation.kind === "sales_promotion" ? `Se crearán ${operation.preview.eligible_documents} ventas y ${operation.preview.eligible_lines} partidas históricas. Aparecerán en Ventas y BI, sin crear caja, pagos, inventario ni CxC.` : operation.kind === "warning" ? "Este reconocimiento se aplicará a todas las filas pendientes de este tipo y quedará auditado." : operation.kind === "discard" ? "El lote se cerrará sin importar datos. Su resumen, hash y auditoría se conservarán." : "Se creará un lote nuevo usando el staging conservado. El lote fallido seguirá en auditoría.";
   const canSubmit = reason.trim().length > 0 && (!requiresProduct || Boolean(productId));
-  return <Modal open onOpenChange={(open) => { if (!open && !busy) onCancel(); }} eyebrow="Operación controlada" title={title} description={description} footer={<><Button variant="secondary" disabled={busy} onClick={onCancel}>Cancelar</Button><Button variant={operation.kind === "discard" ? "danger" : "primary"} loading={busy} disabled={!canSubmit} onClick={() => onConfirm({ productId: productId || undefined, reason: reason.trim() })}>{operation.kind === "discard" ? "Descartar lote" : operation.kind === "sales_promotion" ? "Importar y auditar" : "Guardar y auditar"}</Button></>}>
+  const promotionPercent = promotionProgress ? Math.min(100, Math.max(0, promotionProgress.percent)) : 0;
+  const promotionButtonLabel = operation.kind === "sales_promotion" && promotionError ? "Reanudar importación" : operation.kind === "sales_promotion" ? "Importar y auditar" : operation.kind === "discard" ? "Descartar lote" : "Guardar y auditar";
+  return <Modal open onOpenChange={(open) => { if (!open && !busy) onCancel(); }} eyebrow="Operación controlada" title={title} description={description} className={operation.kind === "sales_promotion" ? "sales-promotion-dialog" : undefined} closeDisabled={busy} footer={<><Button variant="secondary" disabled={busy} onClick={onCancel}>{promotionProgress || promotionError ? "Cerrar" : "Cancelar"}</Button><Button variant={operation.kind === "discard" ? "danger" : "primary"} loading={busy} disabled={!canSubmit || busy} onClick={() => onConfirm({ productId: productId || undefined, reason: reason.trim() })}>{promotionButtonLabel}</Button></>}>
     {requiresProduct && <div className="product-resolution-search"><label>Buscar producto activo<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="SKU o nombre" /></label><Button variant="secondary" size="sm" disabled={searching || search.trim().length < 2} loading={searching} onClick={() => void searchProducts()}>Buscar</Button><label>Producto seleccionado<Select ariaLabel="Producto seleccionado" value={productId || "unselected"} onValueChange={(value) => setProductId(value === "unselected" ? "" : value)} options={[{ value: "unselected", label: "Seleccionar producto", disabled: true }, ...products.map((product) => ({ value: product.id, label: `${product.alpha_sku} · ${product.name}` }))]} /></label></div>}
     {operation.kind === "sales_sku_continuations" && <div className="sales-missing-sku-continuation-dialog"><strong>Qué se verificó</strong><span>Fila anterior con SKU · mismo contexto de venta · descripción concatenada contra el catálogo activo.</span></div>}
-    {operation.kind === "sales_promotion" && <div className="sales-missing-sku-continuation-dialog"><strong>Sin efectos operativos</strong><span>Caja 0 · pagos 0 · inventario 0 · CxC 0. Los documentos con sucursal ambigua permanecen en staging y auditoría.</span></div>}
-    <label className="operation-reason">Motivo<textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Escribe el motivo para la auditoría" rows={3} /></label>
+    {operation.kind === "sales_promotion" && <section className="sales-promotion-safety" aria-labelledby="sales-promotion-safety-title"><div className="sales-promotion-safety__heading"><span aria-hidden="true"><ShieldCheck size={18} /></span><div><strong id="sales-promotion-safety-title">Importación histórica aislada</strong><small>No genera movimientos operativos</small></div></div><dl><div><dt>Caja</dt><dd>0</dd></div><div><dt>Pagos</dt><dd>0</dd></div><div><dt>Inventario</dt><dd>0</dd></div><div><dt>CxC</dt><dd>0</dd></div></dl><p>Los documentos con sucursal ambigua permanecen en staging y auditoría.</p></section>}
+    {operation.kind === "sales_promotion" && promotionProgress && <section className="sales-promotion-progress" role="status" aria-live="polite" aria-atomic="true"><header><div><strong>{promotionProgress.status === "completed" ? "Importación completada" : "Importando historial"}</strong><span>{promotionProgress.processed_documents} de {promotionProgress.total_documents} ventas</span></div><b>{numberFormat(promotionPercent)}%</b></header><progress max={100} value={promotionPercent} aria-label={`Progreso de importación: ${numberFormat(promotionPercent)}%`} /><footer><span>{promotionProgress.processed_lines} de {promotionProgress.total_lines} partidas</span><span>Los bloques confirmados ya están auditados</span></footer></section>}
+    {operation.kind === "sales_promotion" && promotionError && <div className="sales-promotion-error" role="alert"><strong>La importación se pausó</strong><span>{promotionError} Los bloques ya confirmados se conservaron; puedes reanudar sin duplicar ventas.</span></div>}
+    <label className="operation-reason">Motivo<textarea value={reason} disabled={busy} onChange={(event) => setReason(event.target.value)} placeholder="Escribe el motivo para la auditoría" rows={3} /></label>
   </Modal>;
 }
 

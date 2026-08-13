@@ -2433,3 +2433,37 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .sales-missing-sku-continuation-more { padding: 0 11px; }
 .sales-missing-sku-continuation-dialog { display: grid; gap: 3px; margin-top: 16px; border: 1px solid #d8e9df; border-radius: var(--radius-md); background: #f7fcf9; padding: 10px 11px; color: #4f6b5d; font-size: 10px; line-height: 1.4; }
 .sales-missing-sku-continuation-dialog strong { color: var(--ink); font-size: 11px; }
+
+/* Importación histórica: avance server-side visible y reanudable. */
+.sales-promotion-dialog { width:min(580px,calc(100vw - 32px)); }
+.sales-promotion-dialog .ui-dialog__body { display:grid; gap:16px; margin-top:20px; }
+.sales-promotion-dialog .operation-reason { margin:0; }
+.sales-promotion-dialog .operation-reason textarea:disabled { background:var(--surface-subtle); color:var(--muted); cursor:not-allowed; }
+.sales-promotion-safety { display:grid; gap:12px; border:1px solid var(--line); border-radius:var(--radius-md); background:var(--surface-subtle); padding:14px; }
+.sales-promotion-safety__heading { display:flex; align-items:center; gap:10px; }
+.sales-promotion-safety__heading>span { display:grid; width:34px; height:34px; flex:0 0 34px; place-items:center; border-radius:var(--radius-sm); background:var(--accent-soft); color:var(--accent-strong); }
+.sales-promotion-safety__heading>div { display:grid; gap:2px; }
+.sales-promotion-safety__heading strong { color:var(--ink); font-size:12px; }
+.sales-promotion-safety__heading small,.sales-promotion-safety p { color:var(--muted); font-size:10px; line-height:1.45; }
+.sales-promotion-safety dl { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); margin:0; overflow:hidden; border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--surface); }
+.sales-promotion-safety dl>div { display:grid; gap:2px; padding:8px 9px; border-inline-end:1px solid var(--line); }
+.sales-promotion-safety dl>div:last-child { border-inline-end:0; }
+.sales-promotion-safety dt { color:var(--muted); font-size:9px; }
+.sales-promotion-safety dd { margin:0; color:var(--ink); font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; }
+.sales-promotion-safety p { margin:0; }
+.sales-promotion-progress { display:grid; gap:9px; border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line)); border-radius:var(--radius-md); background:var(--accent-soft); padding:13px 14px; }
+.sales-promotion-progress header,.sales-promotion-progress footer { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.sales-promotion-progress header>div { display:grid; gap:2px; }
+.sales-promotion-progress strong { color:var(--ink); font-size:12px; }
+.sales-promotion-progress header span,.sales-promotion-progress footer { color:var(--muted); font-size:9px; line-height:1.35; }
+.sales-promotion-progress b { color:var(--accent-strong); font-size:13px; font-variant-numeric:tabular-nums; }
+.sales-promotion-progress progress { width:100%; height:7px; overflow:hidden; border:0; border-radius:999px; background:color-mix(in srgb,var(--accent) 15%,var(--surface)); accent-color:var(--accent-strong); }
+.sales-promotion-progress progress::-webkit-progress-bar { border-radius:999px; background:color-mix(in srgb,var(--accent) 15%,var(--surface)); }
+.sales-promotion-progress progress::-webkit-progress-value { border-radius:999px; background:var(--accent-strong); }
+.sales-promotion-progress progress::-moz-progress-bar { border-radius:999px; background:var(--accent-strong); }
+.sales-promotion-error { display:grid; gap:3px; border:1px solid color-mix(in srgb,var(--danger) 28%,var(--line)); border-radius:var(--radius-md); background:var(--danger-soft); padding:11px 12px; }
+.sales-promotion-error strong { color:var(--danger); font-size:11px; }
+.sales-promotion-error span { color:#794743; font-size:10px; line-height:1.45; }
+.ui-dialog__close:disabled { opacity:.42; cursor:not-allowed; }
+.ui-dialog__close:disabled:hover { background:transparent; color:var(--muted); }
+@media(max-width:560px){.sales-promotion-safety dl{grid-template-columns:repeat(2,minmax(0,1fr))}.sales-promotion-safety dl>div:nth-child(2){border-inline-end:0}.sales-promotion-safety dl>div:nth-child(-n+2){border-bottom:1px solid var(--line)}.sales-promotion-progress footer{display:grid;gap:3px}}
