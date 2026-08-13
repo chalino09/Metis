@@ -69,6 +69,7 @@ import { ProductCatalogView } from "@/app/components/ProductCatalogView";
 import { EcommerceModule } from "@/app/components/EcommerceModule";
 import { CollaboratorsDirectoryView, PayrollView } from "@/app/components/CollaboratorsModule";
 import { BiModule } from "@/app/components/BiModule";
+import { CollectionAutomationModule } from "@/app/components/CollectionAutomationModule";
 import type {
   AppRoleCode,
   ImportBatchRow,
@@ -78,7 +79,7 @@ import type {
   RoleOption,
 } from "@/app/lib/types";
 
-type ViewName = "bi_summary" | "bi_explorer" | "bi_reports" | "bi_budgets" | "bi_network" | "settings_home" | "initial_migration" | "migration" | "users_access" | "suppliers" | "procurement" | "purchase_orders" | "purchase_receipts" | "supplier_invoices" | "supplier_paying_accounts" | "products" | "inventory" | "inventory_counts" | "inventory_transfers" | "inventory_replenishment" | "ecommerce_readiness" | "locations" | "audit" | "sales_audit" | "assortments" | "pos" | "sales_history" | "sales_quotes" | "sales_orders" | "customers" | "receivables" | "cash" | "sales_settings" | "collaborators_directory" | "payroll" | "accounting_summary" | "accounting_accounts" | "accounting_periods" | "accounting_reports" | "accounting_journals" | "accounting_events" | "accounting_banking" | "accounting_opening" | "accounting_settings";
+type ViewName = "collection_automation" | "bi_summary" | "bi_explorer" | "bi_reports" | "bi_budgets" | "bi_network" | "settings_home" | "initial_migration" | "migration" | "users_access" | "suppliers" | "procurement" | "purchase_orders" | "purchase_receipts" | "supplier_invoices" | "supplier_paying_accounts" | "products" | "inventory" | "inventory_counts" | "inventory_transfers" | "inventory_replenishment" | "ecommerce_readiness" | "locations" | "audit" | "sales_audit" | "assortments" | "pos" | "sales_history" | "sales_quotes" | "sales_orders" | "customers" | "receivables" | "cash" | "sales_settings" | "collaborators_directory" | "payroll" | "accounting_summary" | "accounting_accounts" | "accounting_periods" | "accounting_reports" | "accounting_journals" | "accounting_events" | "accounting_banking" | "accounting_opening" | "accounting_settings";
 type AreaName = "bi" | "sales" | "ecommerce" | "purchasing" | "inventory" | "collaborators" | "accounting" | "settings";
 
 const ALL_ROLES: RoleOption[] = [
@@ -289,6 +290,13 @@ const VIEW_META: Record<ViewName, {
     area: "sales",
     requirement: { all: ["view_customer_credit", "record_receivable_payment"] },
   },
+  collection_automation: {
+    label: "Gestiones de cobranza",
+    icon: ClipboardCheck,
+    href: "/satrapy/ventas/cuentas-por-cobrar/automatizacion",
+    area: "sales",
+    requirement: { all: ["view_collection_automation"] },
+  },
   cash: {
     label: "Caja",
     icon: WalletCards,
@@ -357,6 +365,7 @@ const SETTINGS_GROUPS: Partial<Record<ViewName, string>> = {
 };
 
 const DATA_PAGE_SIZE = 50;
+const INTERNAL_VIEWS: ViewName[] = ["collection_automation"];
 
 function viewLabel(name: ViewName, experience: ProductExperience) {
   return experienceViewLabel(name, VIEW_META[name].label, experience);
@@ -368,7 +377,7 @@ function getAllowedNavigation(permissions: string[], previewRole: AppRoleCode | 
     && ((!previewRole && isSuperAdmin) || matchesNavigationRequirement(effectivePermissions, VIEW_META[name].requirement));
   const navigation = NAVIGATION_SECTIONS.map((section) => ({ ...section, label: experienceSectionLabel(section.id, section.label, experience), views: section.views.filter(isAllowed) }))
     .filter((section) => section.views.length > 0);
-  return { navigation, views: navigation.flatMap((section) => section.views) };
+  return { navigation, views: [...navigation.flatMap((section) => section.views), ...INTERNAL_VIEWS.filter(isAllowed)] };
 }
 
 export function SatrapyShell({ children }: { children: ReactNode }) {
@@ -598,7 +607,8 @@ export function SatrapyRouteContent() {
   if (activeView === "sales_quotes") return <SalesQuotesView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "sales_orders") return <SalesOrdersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "customers") return <CustomersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} initialCustomerId={selectedCustomerId} initialCreateOpen={creatingCustomer} />;
-  if (activeView === "receivables") return <ReceivablesView companyId={appState.membership.companyId} />;
+  if (activeView === "receivables") return <ReceivablesView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
+  if (activeView === "collection_automation") return <CollectionAutomationModule companyId={appState.membership.companyId} />;
   if (activeView === "cash") return <CashDeskView companyId={appState.membership.companyId} />;
   if (activeView === "sales_settings") return <SalesSettingsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} experience={experience} />;
   if (activeView === "collaborators_directory") return <CollaboratorsDirectoryView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
