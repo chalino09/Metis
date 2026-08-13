@@ -8,6 +8,7 @@ test("clasifica todos los nombres de archivo Alpha admitidos", () => {
   assert.equal(classifyAlphaUpload("reexic2_CORTE.xlsx"), "inventory");
   assert.equal(classifyAlphaUpload("rprecprd_LISTAS.xls"), "prices");
   assert.equal(classifyAlphaUpload("rcostprd_COSTOS.xlsx"), "costs");
+  assert.equal(classifyAlphaUpload("nvtadesg_20260708_0016RD.XLS"), "sales");
   assert.equal(classifyAlphaUpload("cata_cte_CLIENTES.xls"), "customers");
   assert.equal(classifyAlphaUpload("cat_ctee_CONDICIONES.xlsx"), "credit_terms");
   assert.equal(classifyAlphaUpload("lis_sal_SALDOS.xls"), "ledger");
@@ -20,6 +21,8 @@ test("clasifica todos los nombres de archivo Alpha admitidos", () => {
 
 test("separa archivos estándar, paquete de clientes y nombres desconocidos", () => {
   assert.equal(isStandardAlphaUpload(classifyAlphaUpload("rprecprd_LISTAS.xls")), true);
+  assert.equal(isStandardAlphaUpload(classifyAlphaUpload("nvtadesg_20260708_0016RD.XLS")), true);
+  assert.equal(alphaUploadLabel("sales"), "Ventas históricas y cobranza");
   assert.equal(isCustomerAlphaUpload(classifyAlphaUpload("lis_sal_SALDOS.xls")), true);
   assert.equal(isPurchasingAlphaUpload(classifyAlphaUpload("rpcon2_ORDENES.xls")), true);
   assert.equal(classifyAlphaUpload("productos-final.xlsx"), "unrecognized");

@@ -72,10 +72,38 @@ export type CostRecord = {
   adValorem: number | null;
 };
 
+/** Evidence-only representation of an Alpha nvtadesg line. It deliberately
+ * does not infer payment, cash-register or fiscal posting information. */
+export type SaleRecord = {
+  rowNumber: number;
+  rawData: Array<string | number>;
+  saleDate: string;
+  sourceFolio: string;
+  locationCode: string;
+  customerExternalCode: string | null;
+  customerName: string | null;
+  warehouseName: string | null;
+  canonicalLocationId?: string | null;
+  canonicalLocationCode?: string | null;
+  sourceStatus: string | null;
+  sourceInvoice: string | null;
+  alphaSku: string;
+  description: string | null;
+  unit: string | null;
+  quantity: number;
+  unitPrice: number | null;
+  taxAmount: number | null;
+  discountAmount: number | null;
+  lineAmount: number | null;
+  lineTotal: number | null;
+  discountPercent: number | null;
+  lot: string | null;
+};
+
 export type RejectedImportRow = {
   rowNumber: number;
   rawData: Array<string | number>;
-  detectedType: "products" | "inventory" | "prices" | "costs";
+  detectedType: "products" | "inventory" | "prices" | "costs" | "sales";
   normalizedData: Record<string, unknown>;
 };
 
@@ -86,6 +114,7 @@ export type ImportIssue = {
     | "SKU_DUPLICADO"
     | "PRODUCTO_INEXISTENTE"
     | "UBICACION_DESCONOCIDA"
+    | "UBICACION_CONFLICTO"
     | "CANTIDAD_NO_VALIDA"
     | "COSTO_NO_VALIDO"
     | "TOTAL_NO_CUADRA"
@@ -100,7 +129,12 @@ export type ImportIssue = {
     | "HOJA_PRODUCTOS_FALTANTE"
     | "HOJA_PRODUCTOS_CONFLICTIVA"
     | "IMPUESTO_FALTANTE"
-    | "IMPUESTO_NO_COMPATIBLE";
+    | "IMPUESTO_NO_COMPATIBLE"
+    | "VENTA_ESTRUCTURA_NO_COMPATIBLE"
+    | "VENTA_FECHA_NO_VALIDA"
+    | "VENTA_FOLIO_FALTANTE"
+    | "VENTA_SUCURSAL_FALTANTE"
+    | "VENTA_TOTAL_NO_VALIDO";
   message: string;
   rowNumber?: number;
   alphaSku?: string;
@@ -108,7 +142,7 @@ export type ImportIssue = {
   contextKey?: string;
 };
 
-export type ImportKind = "products" | "inventory" | "prices" | "costs" | "unsupported";
+export type ImportKind = "products" | "inventory" | "prices" | "costs" | "sales" | "unsupported";
 
 export type ParsedAlphaFile = {
   fileName: string;
@@ -120,6 +154,7 @@ export type ParsedAlphaFile = {
   inventory: InventoryRecord[];
   prices: PriceRecord[];
   costs: CostRecord[];
+  sales: SaleRecord[];
   rejectedRows: RejectedImportRow[];
   locations: Array<{
     externalCode: string;

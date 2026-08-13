@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { alphaUploadLabel, classifyAlphaUpload, isCollaboratorAlphaUpload, isCustomerAlphaUpload, isPurchasingAlphaUpload } from "@/app/lib/alpha-upload-routing";
-import { stageCollaboratorAlphaUpload, stageCustomerAlphaUploads, stagePurchasingAlphaUploads, stageStandardAlphaUpload } from "@/app/lib/import-upload-staging";
+import { stageAlphaSalesCollectionUpload, stageCollaboratorAlphaUpload, stageCustomerAlphaUploads, stagePurchasingAlphaUploads, stageStandardAlphaUpload } from "@/app/lib/import-upload-staging";
 import { purchasingUploadPackageState } from "@/app/lib/purchasing-upload-package";
 import { getRequestSupabaseClient } from "@/app/lib/supabase-server";
 import { detectAndStageAccountingUpload } from "@/app/lib/accounting-import";
@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
     if (typeof companyId !== "string" || !files.length) return response({ message: "Selecciona al menos un archivo para preparar la migración." }, 400);
 
     const customerFiles: File[] = [];
+    const salesCollectionFiles: File[] = [];
     const purchasingFiles: File[] = [];
     const standardFiles: Array<{ file: File; kind: ReturnType<typeof classifyAlphaUpload> }> = [];
     const results: UploadResult[] = [];
@@ -43,6 +44,7 @@ export async function POST(request: NextRequest) {
       const kind = classifyAlphaUpload(file.name);
       if (isCustomerAlphaUpload(kind)) {
         customerFiles.push(file);
+        if (kind === "collections") salesCollectionFiles.push(file);
         continue;
       }
       if (isPurchasingAlphaUpload(kind)) {
@@ -110,13 +112,23 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (customerFiles.length) {
+    const hasCustomerPackageContext = customerFiles.some((file) => !/^cob_cte_.+\.xlsx?$/i.test(file.name));
+    if (customerFiles.length && hasCustomerPackageContext) {
       try {
         const staged = await stageCustomerAlphaUploads(supabase, companyId, customerFiles);
         results.push({ files: customerFiles.map((file) => file.name), kind: "customers", label: "Clientes y CxC", status: normalizeStatus(staged.status), batch_id: staged.batch_id, message: staged.message });
       } catch (error) {
         const detail = error instanceof Error ? error.message : "No se pudo preparar el paquete de Clientes/CxC.";
         results.push({ files: customerFiles.map((file) => file.name), kind: "customers", label: "Clientes y CxC", status: "validation_failed", message: `Estructura incompatible: ${detail}` });
+      }
+    }
+
+    for (const file of salesCollectionFiles) {
+      try {
+        const staged = await stageAlphaSalesCollectionUpload(supabase, companyId, file);
+        results.push({ files: [file.name], kind: "sales", label: "Ventas históricas y cobranza", status: normalizeStatus(staged.status), batch_id: staged.batch_id, message: staged.message });
+      } catch (error) {
+        results.push({ files: [file.name], kind: "sales", label: "Ventas históricas y cobranza", status: "validation_failed", message: error instanceof Error ? error.message : "No se pudo preparar la cobranza para conciliación." });
       }
     }
 
