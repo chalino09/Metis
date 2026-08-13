@@ -1,7 +1,8 @@
 "use client";
 
-import { AlertCircle, AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight, CheckCircle2, Inbox, LoaderCircle } from "lucide-react";
+import { AlertCircle, AlertTriangle, ArrowDown, ArrowDownRight, ArrowRight, ArrowUp, ArrowUpRight, CheckCircle2, ChevronsUpDown, Inbox, LoaderCircle } from "lucide-react";
 import {
+  type CSSProperties,
   type HTMLAttributes,
   type ReactNode,
 } from "react";
@@ -119,14 +120,49 @@ export function AnalyticsTable({
   children,
   caption,
   className,
+  ariaLabel,
+  busy = false,
 }: {
   children: ReactNode;
   caption?: string;
   className?: string;
+  ariaLabel?: string;
+  busy?: boolean;
 }) {
   return <div className="bi-analytics-table">
-    <Table className={className}>{caption && <caption>{caption}</caption>}{children}</Table>
+    <Table className={className} ariaLabel={ariaLabel ?? caption} ariaBusy={busy}>{caption && <caption>{caption}</caption>}{children}</Table>
   </div>;
+}
+
+export type AnalyticsSortDirection = "asc" | "desc";
+
+export function AnalyticsSortHeader({
+  label,
+  sortKey,
+  activeSort,
+  direction,
+  onSort,
+  numeric = false,
+}: {
+  label: string;
+  sortKey: string;
+  activeSort: string;
+  direction: AnalyticsSortDirection;
+  onSort: (sortKey: string, direction: AnalyticsSortDirection) => void;
+  numeric?: boolean;
+}) {
+  const active=activeSort===sortKey;
+  const Icon=!active?ChevronsUpDown:direction==="asc"?ArrowUp:ArrowDown;
+  return <th scope="col" className={numeric?"number-cell":undefined} aria-sort={active?(direction==="asc"?"ascending":"descending"):"none"}>
+    <button type="button" className="bi-table-sort" onClick={()=>onSort(sortKey,active&&direction==="desc"?"asc":"desc")}>
+      <span>{label}</span><Icon size={13} aria-hidden="true" />
+    </button>
+  </th>;
+}
+
+export function AnalyticsCellBar({ value, children, max = 100 }: { value: number | null; children: ReactNode; max?: number }) {
+  const size=value==null?0:Math.min(100,Math.abs(value)/Math.max(max,0.0001)*100);
+  return <span className={cx("bi-cell-bar",value!=null&&value<0&&"is-negative")}><i aria-hidden="true"><b style={{"--bi-cell-bar-size":`${size}%`} as CSSProperties}/></i><span>{children}</span></span>;
 }
 
 export function BiDrawer({

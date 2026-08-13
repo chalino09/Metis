@@ -79,7 +79,7 @@ import type {
   RoleOption,
 } from "@/app/lib/types";
 
-type ViewName = "collection_automation" | "bi_summary" | "bi_explorer" | "bi_reports" | "bi_budgets" | "bi_network" | "settings_home" | "initial_migration" | "migration" | "users_access" | "suppliers" | "procurement" | "purchase_orders" | "purchase_receipts" | "supplier_invoices" | "supplier_paying_accounts" | "products" | "inventory" | "inventory_counts" | "inventory_transfers" | "inventory_replenishment" | "ecommerce_readiness" | "locations" | "audit" | "sales_audit" | "assortments" | "pos" | "sales_history" | "sales_quotes" | "sales_orders" | "customers" | "receivables" | "cash" | "sales_settings" | "collaborators_directory" | "payroll" | "accounting_summary" | "accounting_accounts" | "accounting_periods" | "accounting_reports" | "accounting_journals" | "accounting_events" | "accounting_banking" | "accounting_opening" | "accounting_settings";
+type ViewName = "collection_automation" | "bi_summary" | "bi_alerts" | "bi_explorer" | "bi_reports" | "bi_budgets" | "bi_network" | "settings_home" | "initial_migration" | "migration" | "users_access" | "suppliers" | "procurement" | "purchase_orders" | "purchase_receipts" | "supplier_invoices" | "supplier_paying_accounts" | "products" | "inventory" | "inventory_counts" | "inventory_transfers" | "inventory_replenishment" | "ecommerce_readiness" | "locations" | "audit" | "sales_audit" | "assortments" | "pos" | "sales_history" | "sales_quotes" | "sales_orders" | "customers" | "receivables" | "cash" | "sales_settings" | "collaborators_directory" | "payroll" | "accounting_summary" | "accounting_accounts" | "accounting_periods" | "accounting_reports" | "accounting_journals" | "accounting_events" | "accounting_banking" | "accounting_opening" | "accounting_settings";
 type AreaName = "bi" | "sales" | "ecommerce" | "purchasing" | "inventory" | "collaborators" | "accounting" | "settings";
 
 const ALL_ROLES: RoleOption[] = [
@@ -104,8 +104,9 @@ const VIEW_META: Record<ViewName, {
   requirement?: NavigationRequirement;
 }> = {
   bi_summary: { label: "Resumen ejecutivo", icon: BarChart3, href: "/satrapy/bi", area: "bi", requirement: { all: ["view_bi"] } },
-  bi_explorer: { label: "Explorador", icon: TrendingUp, href: "/satrapy/bi/explorador", area: "bi", requirement: { all: ["view_bi"] } },
-  bi_reports: { label: "Reportes", icon: FileSpreadsheet, href: "/satrapy/bi/reportes", area: "bi", requirement: { all: ["view_bi"] } },
+  bi_alerts: { label: "Alertas", icon: ShieldAlert, href: "/satrapy/bi/alertas", area: "bi", requirement: { all: ["view_bi_alerts"] } },
+  bi_explorer: { label: "Análisis", icon: TrendingUp, href: "/satrapy/bi/explorador", area: "bi", requirement: { all: ["view_bi"] } },
+  bi_reports: { label: "Vistas y reportes", icon: FileSpreadsheet, href: "/satrapy/bi/reportes", area: "bi", requirement: { all: ["view_bi"] } },
   bi_budgets: { label: "Metas y presupuestos", icon: Target, href: "/satrapy/bi/metas-presupuestos", area: "bi", requirement: { all: ["view_bi_budgets"] } },
   bi_network: { label: "Red", icon: ArrowRightLeft, href: "/satrapy/bi/red", area: "bi", requirement: { all: ["view_bi"] } },
   settings_home: {
@@ -346,7 +347,7 @@ const NAVIGATION_SECTIONS: Array<{ id: AreaName; label: string; views: ViewName[
   { id: "inventory", label: "Inventario", views: ["products", "inventory", "inventory_counts", "inventory_transfers", "inventory_replenishment"] },
   { id: "collaborators", label: "Colaboradores", views: ["collaborators_directory", "payroll"] },
   { id: "accounting", label: "Contabilidad", views: ["accounting_summary", "accounting_accounts", "accounting_reports", "accounting_periods", "accounting_journals", "accounting_events", "accounting_banking", "accounting_opening"] },
-  { id: "bi", label: "BI", views: ["bi_summary", "bi_explorer", "bi_reports", "bi_budgets", "bi_network"] },
+  { id: "bi", label: "BI", views: ["bi_summary", "bi_alerts", "bi_explorer", "bi_reports", "bi_budgets", "bi_network"] },
   { id: "ecommerce", label: "Ecommerce", views: ["ecommerce_readiness"] },
   { id: "settings", label: "Configuración", views: ["settings_home", "locations", "users_access", "initial_migration", "migration", "audit", "assortments", "supplier_paying_accounts", "sales_settings", "sales_audit", "accounting_settings"] },
 ];
@@ -614,6 +615,7 @@ export function SatrapyRouteContent() {
   if (activeView === "collaborators_directory") return <CollaboratorsDirectoryView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "payroll") return <PayrollView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "bi_summary") return <BiModule companyId={appState.membership.companyId} view="summary" />;
+  if (activeView === "bi_alerts") return <BiModule companyId={appState.membership.companyId} view="alerts" />;
   if (activeView === "bi_explorer") return <BiModule companyId={appState.membership.companyId} view="explorer" />;
   if (activeView === "bi_reports") return <BiModule companyId={appState.membership.companyId} view="reports" />;
   if (activeView === "bi_budgets") return <BiModule companyId={appState.membership.companyId} view="budgets" />;
