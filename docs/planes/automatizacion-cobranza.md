@@ -359,7 +359,8 @@ llamadas ni otros canales.
 `codex/cobranza-fase-2`, validada contra la base local desechable y comprobada
 en la empresa QA conectada. Las migraciones de Fase 2 y el parche de lectura
 (`202608120003`, `202608130005` y `202608130006`) ya fueron aplicados al QA;
-no se modificaron datos de Teza ni se aprobó su política operativa.
+el usuario confirmó su ejecución posterior en el Supabase de producción. No se
+configuró ni aprobó automáticamente la política operativa de ninguna empresa.
 
 **Backend**
 
@@ -425,10 +426,11 @@ no se modificaron datos de Teza ni se aprobó su política operativa.
   `DO` y `ROLLBACK`, incluyendo una cartera de 501 clientes para comprobar el
   cursor; ESLint y el build de producción aprobaron.
 
-**Criterio de salida técnico:** cumplido en código, base local y QA conectado.
-Para producción falta aplicar las migraciones aprobadas en ese entorno y que un
-responsable de Teza configure y apruebe su política real; esas acciones no se
-infieren ni se ejecutaron desde esta rama.
+**Criterio de salida técnico:** cumplido en código, base local, QA conectado y
+Supabase de producción. Las migraciones `202608120003`, `202608130005` y
+`202608130006` fueron ejecutadas en producción por el usuario el 2026-08-13.
+La activación operativa por empresa permanece separada: un responsable debe
+configurar y aprobar explícitamente su política real antes de generar trabajo.
 
 ### Fase 3 — Agente asistido y aprobaciones
 
