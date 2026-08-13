@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type ActionBody = {
-  action?: "resolve_product" | "acknowledge_warnings" | "discard" | "retry" | "confirm" | "map_currency" | "map_price_list";
+  action?: "resolve_product" | "resolve_sales_missing_sku" | "resolve_sales_missing_sku_continuations" | "promote_sales_history" | "acknowledge_warnings" | "discard" | "retry" | "confirm" | "map_currency" | "map_price_list";
   stagingRowId?: string;
   productId?: string;
   errorCode?: string;
@@ -16,6 +16,9 @@ type ActionBody = {
   semanticCode?: string;
   isDefault?: boolean;
   assortmentIds?: string[];
+  sourceDescription?: string;
+  sourceUnit?: string | null;
+  chunkSize?: number;
 };
 
 export async function POST(request: NextRequest, context: { params: Promise<{ batchId: string }> }) {
@@ -45,6 +48,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ ba
 
 function rpcForAction(batchId: string, body: ActionBody, importType?: string) {
   if (body.action === "confirm") {
+    if (importType === "sales") return null;
     if (importType === "products") {
       return {
         name: "confirm_product_import_with_assortments",
@@ -69,6 +73,34 @@ function rpcForAction(batchId: string, body: ActionBody, importType?: string) {
         p_staging_row_id: body.stagingRowId,
         p_product_id: body.productId,
         p_reason: body.reason.trim(),
+      },
+    };
+  }
+  if (body.action === "resolve_sales_missing_sku" && body.sourceDescription?.trim() && body.productId && body.reason?.trim()) {
+    return {
+      name: "resolve_alpha_sales_missing_sku",
+      parameters: {
+        p_import_batch_id: batchId,
+        p_source_description: body.sourceDescription.trim(),
+        p_source_unit: body.sourceUnit?.trim() || null,
+        p_product_id: body.productId,
+        p_reason: body.reason.trim(),
+      },
+    };
+  }
+  if (body.action === "resolve_sales_missing_sku_continuations" && body.reason?.trim()) {
+    return {
+      name: "resolve_alpha_sales_missing_sku_continuations",
+      parameters: { p_import_batch_id: batchId, p_reason: body.reason.trim() },
+    };
+  }
+  if (body.action === "promote_sales_history" && body.reason?.trim()) {
+    return {
+      name: "promote_alpha_historical_sales_chunk",
+      parameters: {
+        p_import_batch_id: batchId,
+        p_reason: body.reason.trim(),
+        p_chunk_size: Number.isInteger(body.chunkSize) ? body.chunkSize : 750,
       },
     };
   }

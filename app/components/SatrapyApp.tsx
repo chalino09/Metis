@@ -26,6 +26,7 @@ import {
   ShoppingCart,
   ShoppingBag,
   ShieldAlert,
+  ShieldCheck,
   Target,
   TrendingUp,
   Truck,
@@ -78,7 +79,7 @@ import type {
   RoleOption,
 } from "@/app/lib/types";
 
-type ViewName = "collection_automation" | "bi_summary" | "bi_explorer" | "bi_reports" | "bi_budgets" | "bi_network" | "settings_home" | "initial_migration" | "migration" | "users_access" | "suppliers" | "procurement" | "purchase_orders" | "purchase_receipts" | "supplier_invoices" | "supplier_paying_accounts" | "products" | "inventory" | "inventory_counts" | "inventory_transfers" | "inventory_replenishment" | "ecommerce_readiness" | "locations" | "audit" | "sales_audit" | "assortments" | "pos" | "sales_history" | "sales_quotes" | "sales_orders" | "customers" | "receivables" | "cash" | "sales_settings" | "collaborators_directory" | "payroll" | "accounting_summary" | "accounting_accounts" | "accounting_periods" | "accounting_reports" | "accounting_journals" | "accounting_events" | "accounting_banking" | "accounting_opening" | "accounting_settings";
+type ViewName = "collection_automation" | "bi_summary" | "bi_alerts" | "bi_explorer" | "bi_reports" | "bi_budgets" | "bi_network" | "settings_home" | "initial_migration" | "migration" | "users_access" | "suppliers" | "procurement" | "purchase_orders" | "purchase_receipts" | "supplier_invoices" | "supplier_paying_accounts" | "products" | "inventory" | "inventory_counts" | "inventory_transfers" | "inventory_replenishment" | "ecommerce_readiness" | "locations" | "audit" | "sales_audit" | "assortments" | "pos" | "sales_history" | "sales_quotes" | "sales_orders" | "customers" | "receivables" | "cash" | "sales_settings" | "collaborators_directory" | "payroll" | "accounting_summary" | "accounting_accounts" | "accounting_periods" | "accounting_reports" | "accounting_journals" | "accounting_events" | "accounting_banking" | "accounting_opening" | "accounting_settings";
 type AreaName = "bi" | "sales" | "ecommerce" | "purchasing" | "inventory" | "collaborators" | "accounting" | "settings";
 
 const ALL_ROLES: RoleOption[] = [
@@ -103,8 +104,9 @@ const VIEW_META: Record<ViewName, {
   requirement?: NavigationRequirement;
 }> = {
   bi_summary: { label: "Resumen ejecutivo", icon: BarChart3, href: "/satrapy/bi", area: "bi", requirement: { all: ["view_bi"] } },
-  bi_explorer: { label: "Explorador", icon: TrendingUp, href: "/satrapy/bi/explorador", area: "bi", requirement: { all: ["view_bi"] } },
-  bi_reports: { label: "Reportes", icon: FileSpreadsheet, href: "/satrapy/bi/reportes", area: "bi", requirement: { all: ["view_bi"] } },
+  bi_alerts: { label: "Alertas", icon: ShieldAlert, href: "/satrapy/bi/alertas", area: "bi", requirement: { all: ["view_bi_alerts"] } },
+  bi_explorer: { label: "Análisis", icon: TrendingUp, href: "/satrapy/bi/explorador", area: "bi", requirement: { all: ["view_bi"] } },
+  bi_reports: { label: "Vistas y reportes", icon: FileSpreadsheet, href: "/satrapy/bi/reportes", area: "bi", requirement: { all: ["view_bi"] } },
   bi_budgets: { label: "Metas y presupuestos", icon: Target, href: "/satrapy/bi/metas-presupuestos", area: "bi", requirement: { all: ["view_bi_budgets"] } },
   bi_network: { label: "Red", icon: ArrowRightLeft, href: "/satrapy/bi/red", area: "bi", requirement: { all: ["view_bi"] } },
   settings_home: {
@@ -345,7 +347,7 @@ const NAVIGATION_SECTIONS: Array<{ id: AreaName; label: string; views: ViewName[
   { id: "inventory", label: "Inventario", views: ["products", "inventory", "inventory_counts", "inventory_transfers", "inventory_replenishment"] },
   { id: "collaborators", label: "Colaboradores", views: ["collaborators_directory", "payroll"] },
   { id: "accounting", label: "Contabilidad", views: ["accounting_summary", "accounting_accounts", "accounting_reports", "accounting_periods", "accounting_journals", "accounting_events", "accounting_banking", "accounting_opening"] },
-  { id: "bi", label: "BI", views: ["bi_summary", "bi_explorer", "bi_reports", "bi_budgets", "bi_network"] },
+  { id: "bi", label: "BI", views: ["bi_summary", "bi_alerts", "bi_explorer", "bi_reports", "bi_budgets", "bi_network"] },
   { id: "ecommerce", label: "Ecommerce", views: ["ecommerce_readiness"] },
   { id: "settings", label: "Configuración", views: ["settings_home", "locations", "users_access", "initial_migration", "migration", "audit", "assortments", "supplier_paying_accounts", "sales_settings", "sales_audit", "accounting_settings"] },
 ];
@@ -613,6 +615,7 @@ export function SatrapyRouteContent() {
   if (activeView === "collaborators_directory") return <CollaboratorsDirectoryView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "payroll") return <PayrollView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "bi_summary") return <BiModule companyId={appState.membership.companyId} view="summary" />;
+  if (activeView === "bi_alerts") return <BiModule companyId={appState.membership.companyId} view="alerts" />;
   if (activeView === "bi_explorer") return <BiModule companyId={appState.membership.companyId} view="explorer" />;
   if (activeView === "bi_reports") return <BiModule companyId={appState.membership.companyId} view="reports" />;
   if (activeView === "bi_budgets") return <BiModule companyId={appState.membership.companyId} view="budgets" />;
@@ -808,7 +811,7 @@ function AccessDeniedScreen({ onGoHome }: { onGoHome: () => void }) {
 
 type StagedBatch = {
   id: string;
-  import_type: "products" | "inventory" | "prices" | "costs" | "collaborators" | "unsupported";
+  import_type: "products" | "inventory" | "prices" | "costs" | "collaborators" | "sales" | "unsupported";
   status: "staged" | "validation_failed" | "failed" | "completed" | "processing" | "discarded" | "expired";
   source: string;
   file_sha256: string;
@@ -827,7 +830,7 @@ type StagedRow = {
   id: string;
   row_number: number;
   source_file: string;
-  detected_type: "products" | "inventory" | "prices" | "costs" | "collaborators";
+  detected_type: "products" | "inventory" | "prices" | "costs" | "collaborators" | "sales";
   raw_data: { cells?: unknown[] };
   normalized_data: Record<string, unknown>;
   validation_status: "valid" | "warning" | "error";
@@ -846,7 +849,18 @@ type StagedIssue = {
   acknowledged_at: string | null;
 };
 
-type StagingErrorGroup = { error_code: string; severity: "error" | "warning"; total: number; pending: number };
+type StagingErrorGroup = {
+  error_code: string;
+  severity: "error" | "warning";
+  total: number;
+  pending: number;
+  acknowledgement?: {
+    acknowledged_at: string;
+    acknowledgement_note: string | null;
+    acknowledged_by: string | null;
+    actor_name: string | null;
+  };
+};
 type PendingLocation = { external_code: string; name: string; row_count: number };
 type StagingPreviewData = {
   batch: StagedBatch;
@@ -860,12 +874,83 @@ type StagingPreviewData = {
     price_lists: Array<{ external_code: string; semantic_code: string | null; is_default: boolean; rows: number }>;
   };
   tax_summary?: Array<{ tax_category_code: string; total: number }>;
+  sales_evidence?: {
+    has_sales: boolean;
+    has_collections: boolean;
+    complete: boolean;
+    files: Array<{ name: string; row_count: number }>;
+    sales: number;
+    collections: number;
+    exact_matches: number;
+    amount_mismatches: number;
+    sales_without_collection: number;
+    collections_without_sale: number;
+    promotion_enabled: false;
+  };
+  sales_promotion?: {
+    can_promote: boolean;
+    eligible_documents: number;
+    eligible_lines: number;
+    excluded_location_documents: number;
+    excluded_location_lines: number;
+    linked_customer_documents: number;
+    unlinked_customer_documents: number;
+    taxable_amount: number;
+    tax_amount: number;
+    total_amount: number;
+  } | null;
+  sales_missing_sku_review?: {
+    total_rows: number;
+    groups: Array<{
+      description: string;
+      unit: string | null;
+      row_count: number;
+      amount: number;
+      row_numbers: number[];
+      source_invoices: string[];
+      can_map: boolean;
+    }>;
+  };
+  sales_missing_sku_continuation_review?: {
+    total_rows: number;
+    eligible_rows: number;
+    items: Array<{
+      row_number: number;
+      previous_row_number: number;
+      fragment: string;
+      previous_description: string;
+      full_description: string;
+      product_id: string;
+      product_alpha_sku: string;
+      product_name: string;
+      product_unit: string | null;
+      catalog_match: boolean;
+      source_invoice: string | null;
+      source_folio: string | null;
+    }>;
+  };
 };
 type OperationDialog =
   | { kind: "product"; row: StagedRow }
+  | { kind: "sales_sku"; group: NonNullable<StagingPreviewData["sales_missing_sku_review"]>["groups"][number] }
+  | { kind: "sales_sku_continuations"; review: NonNullable<StagingPreviewData["sales_missing_sku_continuation_review"]> }
+  | { kind: "sales_promotion"; preview: NonNullable<StagingPreviewData["sales_promotion"]> }
   | { kind: "warning"; code: string }
   | { kind: "discard" }
   | { kind: "retry" };
+type HistoricalPromotionProgress = {
+  status: "processing" | "completed";
+  sales_imported?: number;
+  items_imported?: number;
+  processed_documents: number;
+  total_documents: number;
+  processed_lines: number;
+  total_lines: number;
+  percent: number;
+  excluded_location_documents: number;
+  total_amount: number;
+  message?: string;
+};
 type CustomerMigrationBatch = { id: string; cutoff_date: string; status: string; records_received: number; records_promoted: number; differences: number; summary: { reconciled_customers?: number; customers_with_differences?: number; failure_reason?: string; remaining_customers?: number; receivable_repair?: { status?: string; corrected_total?: number }; receivable_backfill?: { status?: string; total_after?: number }; customer_identity_repair?: { status?: string; ambiguous_customers?: number }; customer_conflict_review?: { status?: string } } };
 type PurchasingMigrationBatch = { id: string; cutoff_date: string; status: "loading" | "staged" | "validation_failed" | "failed"; records_received: number; differences: number; summary: { suppliers?: number; purchase_orders?: number; purchase_order_lines?: number; payable_documents?: number; payable_outstanding_total?: number; supplier_payments?: number; supplier_payment_total?: number; receipt_source_available?: boolean; error_count?: number; warning_count?: number; operational_import_ready?: boolean; failure_reason?: string }; files: Array<{ report_type: string; original_name: string; row_count: number }> };
 type ReceivableBackfillPreview = { batch_id: string; can_apply: boolean; eligible_documents: number; eligible_total: number; documents_to_insert: number; amount_to_insert: number; already_recorded_documents: number; excluded_unresolved_customer_documents: number; excluded_unresolved_customer_amount: number; duplicate_payload_hashes: number; staged_documents_missing_from_source: number; source_documents_not_in_staging: number; existing_document_conflicts: number };
@@ -933,6 +1018,8 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
   const [message, setMessage] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [operationDialog, setOperationDialog] = useState<OperationDialog | null>(null);
+  const [promotionProgress, setPromotionProgress] = useState<HistoricalPromotionProgress | null>(null);
+  const [promotionError, setPromotionError] = useState<string | null>(null);
   const [customerMigrationBatches, setCustomerMigrationBatches] = useState<CustomerMigrationBatch[]>([]);
   const [purchasingMigrationBatches, setPurchasingMigrationBatches] = useState<PurchasingMigrationBatch[]>([]);
   const [customerConflicts, setCustomerConflicts] = useState<CustomerIdentityConflict[]>([]);
@@ -945,6 +1032,7 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
   const [pendingPurchasingFileCount, setPendingPurchasingFileCount] = useState(0);
   const [linkedAlphaFolderAvailable, setLinkedAlphaFolderAvailable] = useState(false);
   const pendingPurchasingFiles = useRef(new Map<string, File>());
+  const actionRequestInFlight = useRef(false);
   const canImport = permissions.some((permission) => ["import_data", "import_prices", "import_costs", "import_accounting_opening", "import_bank_statements"].includes(permission));
   const canImportBudgets = permissions.includes("*") || permissions.includes("import_bi_budgets");
   const canUploadAny = canImport || canImportBudgets;
@@ -1120,6 +1208,9 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
         setBudgetPreview(null);
       }
       await Promise.all([loadBatches(batchId, 1), loadCustomerMigrationBatches(), loadPurchasingMigrationBatches(), loadCustomerConflicts()]);
+      // A complementary evidence file is appended to the same sales batch.
+      // Reload explicitly because activeBatchId does not change from 1/2 to 2/2.
+      if (batchId) await loadPreview(batchId, batchId === activeBatchId ? page : 1);
       const prepared = results.filter((item) => item.status === "staged").length;
       const rejected = results.filter((item) => item.status === "unrecognized" || item.status === "failed").length;
       const pendingSuffix = purchasingState.detected && !purchasingState.complete ? ` Compras/CxP conserva ${purchasingState.detected}/4 archivos en espera.` : "";
@@ -1301,7 +1392,8 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
   }
 
   async function runAction(body: Record<string, unknown>) {
-    if (!active || busy) return null;
+    if (!active || busy || actionRequestInFlight.current) return null;
+    actionRequestInFlight.current = true;
     setBusy(true);
     setMessage(null);
     try {
@@ -1312,13 +1404,14 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
         headers: { Authorization: `Bearer ${session.access_token}`, "content-type": "application/json" },
         body: JSON.stringify(body),
       });
-      const result = await response.json() as { status?: string; batch_id?: string; records_imported?: number; count?: number; message?: string };
+      const result = await response.json() as { status?: string; batch_id?: string; records_imported?: number; count?: number; rows?: number; sales_imported?: number; items_imported?: number; excluded_location_documents?: number; total_amount?: number; message?: string };
       if (!response.ok) throw new Error(result.message ?? "No se pudo completar la operación.");
       return result;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No se pudo completar la operación.");
       return null;
     } finally {
+      actionRequestInFlight.current = false;
       setBusy(false);
     }
   }
@@ -1339,28 +1432,102 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
 
   async function completeOperation(payload: { productId?: string; reason: string }) {
     if (!operationDialog || !active) return;
-    const body = operationDialog.kind === "product"
-      ? { action: "resolve_product", stagingRowId: operationDialog.row.id, productId: payload.productId, reason: payload.reason }
-      : operationDialog.kind === "warning"
-        ? { action: "acknowledge_warnings", errorCode: operationDialog.code, reason: payload.reason }
-        : { action: operationDialog.kind, reason: payload.reason };
+    const completedOperation = operationDialog;
+    const completedBatchId = active.id;
+    if (completedOperation.kind === "sales_promotion") {
+      if (busy || actionRequestInFlight.current) return;
+      actionRequestInFlight.current = true;
+      setBusy(true);
+      setMessage(null);
+      setPromotionError(null);
+      try {
+        const session = (await getSupabaseClient().auth.getSession()).data.session;
+        if (!session) throw new Error("Sesión no válida.");
+        let result: HistoricalPromotionProgress | null = null;
+        let attempts = 0;
+        do {
+          const response = await fetch(`/api/imports/stage/${completedBatchId}/actions`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${session.access_token}`, "content-type": "application/json" },
+            body: JSON.stringify({ action: "promote_sales_history", reason: payload.reason, chunkSize: 750 }),
+          });
+          result = await response.json() as HistoricalPromotionProgress;
+          if (!response.ok) throw new Error(result.message ?? "No se pudo continuar la importación histórica.");
+          setPromotionProgress(result);
+          attempts += 1;
+          if (attempts > 100) throw new Error("La importación excedió el número seguro de bloques.");
+        } while (result.status !== "completed");
+
+        setOperationDialog(null);
+        setPromotionProgress(null);
+        await loadBatches();
+        const excluded = result.excluded_location_documents ?? 0;
+        setMessage(`${result.sales_imported ?? 0} ventas históricas importadas en Ventas y BI${excluded ? `; ${excluded} documentos con sucursal ambigua permanecen en evidencia` : ""}.`);
+        toast({ title: "Historial de ventas importado", description: `${result.sales_imported ?? 0} ventas y ${result.items_imported ?? 0} partidas quedaron disponibles sin afectar caja, inventario ni CxC.`, tone: "success" });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "No se pudo continuar la importación histórica.";
+        setPromotionError(errorMessage);
+        setMessage(errorMessage);
+        toast({ title: "La importación se pausó", description: "Los bloques confirmados se conservaron y puedes reanudar desde este mismo modal.", tone: "error" });
+      } finally {
+        actionRequestInFlight.current = false;
+        setBusy(false);
+      }
+      return;
+    }
+    const body = completedOperation.kind === "product"
+      ? { action: "resolve_product", stagingRowId: completedOperation.row.id, productId: payload.productId, reason: payload.reason }
+      : completedOperation.kind === "sales_sku"
+        ? { action: "resolve_sales_missing_sku", sourceDescription: completedOperation.group.description, sourceUnit: completedOperation.group.unit, productId: payload.productId, reason: payload.reason }
+        : completedOperation.kind === "sales_sku_continuations"
+          ? { action: "resolve_sales_missing_sku_continuations", reason: payload.reason }
+      : completedOperation.kind === "warning"
+        ? { action: "acknowledge_warnings", errorCode: completedOperation.code, reason: payload.reason }
+        : { action: completedOperation.kind, reason: payload.reason };
     const result = await runAction(body);
     if (!result) return;
     setOperationDialog(null);
-    if (operationDialog.kind === "retry" && result.batch_id) {
+    if (completedOperation.kind === "warning") {
+      const acknowledgedCount = Math.max(0, result.count ?? 0);
+      const acknowledgedAt = new Date().toISOString();
+      setPreview((current) => current?.batch.id === completedBatchId ? {
+        ...current,
+        batch: { ...current.batch, pending_warning_count: Math.max(0, current.batch.pending_warning_count - acknowledgedCount) },
+        error_groups: current.error_groups.map((group) => group.error_code === completedOperation.code ? {
+          ...group,
+          pending: 0,
+          acknowledgement: {
+            acknowledged_at: acknowledgedAt,
+            acknowledgement_note: payload.reason,
+            acknowledged_by: null,
+            actor_name: "Usuario actual",
+          },
+        } : group),
+      } : current);
+      setBatches((current) => current.map((batch) => batch.id === completedBatchId
+        ? { ...batch, pending_warning_count: Math.max(0, batch.pending_warning_count - acknowledgedCount) }
+        : batch));
+      setMessage("Alertas reconocidas y auditadas.");
+      toast({ title: "Operación registrada", description: "El reconocimiento quedó trazable en la auditoría.", tone: "success" });
+      void loadBatches(completedBatchId);
+      return;
+    }
+    if (completedOperation.kind === "retry" && result.batch_id) {
       await loadBatches(result.batch_id);
       setMessage("Se creó un nuevo lote de reintento con el staging conservado.");
       return;
     }
-    await loadBatches(active.id);
-    if (operationDialog.kind !== "discard") await loadPreview(active.id, page);
-    setMessage(operationDialog.kind === "product" ? "Mapeo de producto registrado." : operationDialog.kind === "warning" ? "Alertas reconocidas y auditadas." : "Lote descartado y conservado en auditoría.");
+    await Promise.all([
+      loadBatches(completedBatchId),
+      completedOperation.kind === "discard" ? Promise.resolve() : loadPreview(completedBatchId, page),
+    ]);
+    setMessage(completedOperation.kind === "product" ? "Mapeo de producto registrado." : completedOperation.kind === "sales_sku" || completedOperation.kind === "sales_sku_continuations" ? `${result.rows ?? 0} partida${result.rows === 1 ? "" : "s"} vinculada${result.rows === 1 ? "" : "s"} y auditada${result.rows === 1 ? "" : "s"}.` : "Lote descartado y conservado en auditoría.");
     toast({ title: "Operación registrada", description: "El cambio quedó trazable en la auditoría.", tone: "success" });
   }
 
   const summaryBatch = preview?.batch ?? active;
   const locationsPendingReview = preview?.pending_locations ?? [];
-  const readyForImport = Boolean(summaryBatch && summaryBatch.status === "staged" && summaryBatch.blocking_error_count === 0
+  const readyForImport = Boolean(summaryBatch && summaryBatch.import_type !== "sales" && summaryBatch.status === "staged" && summaryBatch.blocking_error_count === 0
     && summaryBatch.pending_warning_count === 0 && locationsPendingReview.length === 0 && canImport);
 
   return (
@@ -1376,6 +1543,7 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
           </label>
           {pendingPurchasingFileCount > 0 && <p className="permission-note">Compras/CxP: {pendingPurchasingFileCount}/4 archivos detectados. No se creará staging hasta completar el paquete.</p>}
           {uploadResults.length > 0 && <section className="upload-results" aria-label="Resultado de la carga">{uploadResults.map((result) => <article key={`${result.kind}:${result.files.join("|")}`}><div><strong>{result.label}</strong><small>{result.files.join(", ")}{result.message ? ` · ${presentImportedSourceText(result.message)}` : ""}</small></div><Badge tone={result.status === "staged" || result.status === "promoted" ? "success" : result.status === "duplicate" ? "neutral" : result.status === "awaiting_configuration" || result.status === "validation_failed" ? "warning" : "danger"}>{uploadResultStatusLabel(result.status)}</Badge></article>)}</section>}
+          {busy && <div className="inline-status upload-processing" role="status"><LoaderCircle className="spin" size={17} /> Procesando archivos…</div>}
         </div>
         <div className="import-rules">
           <span className="eyebrow">Antes de confirmar</span>
@@ -1415,8 +1583,8 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
 
       {customerConflicts.length > 0 && <CustomerConflictInbox conflicts={customerConflicts} busy={busy || !canImportCustomers} onDecide={decideCustomerConflict} />}
 
-      {(busy || loadingPreview) && <div className="inline-status"><LoaderCircle className="spin" size={17} /> {busy ? "Procesando…" : "Cargando staging…"}</div>}
-      {message && <div className={`inline-status ${message.includes("falló") || message.includes("bloqueó") || message.includes("pudo") ? "is-error" : "is-success"}`}>{message.includes("finalizada") || message.includes("generado") || message.includes("guardada") ? <Check size={17} /> : <AlertCircle size={17} />}{presentImportedSourceText(message)}</div>}
+      {loadingPreview && !busy && <div className="inline-status" role="status"><LoaderCircle className="spin" size={17} /> Cargando staging…</div>}
+      {message && <div role="status" aria-live="polite" className={`inline-status ${message.includes("falló") || message.includes("bloqueó") || message.includes("pudo") ? "is-error" : "is-success"}`}>{message.includes("finalizada") || message.includes("generado") || message.includes("guardada") ? <Check size={17} /> : <AlertCircle size={17} />}{presentImportedSourceText(message)}</div>}
 
       {visibleBatches.length > 0 && (
         <section className="import-preview-shell">
@@ -1427,21 +1595,21 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
           {active?.status === "failed" && <div className="staging-lifecycle"><div><strong>Este lote falló sin aplicar datos parciales.</strong><span>El staging sigue disponible para un reintento controlado.</span></div><button className="secondary-button" disabled={busy || Boolean(active.staging_purged_at)} onClick={() => setOperationDialog({ kind: "retry" })}>Reintentar</button></div>}
           {preview && <StagingPreview preview={preview} statusFilter={statusFilter} errorCodeFilter={errorCodeFilter}
             onStatusChange={(value) => { setPage(1); setStatusFilter(value); }} onErrorCodeChange={(value) => { setPage(1); setErrorCodeFilter(value); }}
-            onResolve={(row) => setOperationDialog({ kind: "product", row })} onAcknowledge={(code) => setOperationDialog({ kind: "warning", code })} />}
+            onResolve={(row) => setOperationDialog({ kind: "product", row })} onResolveSalesMissingSku={(group) => setOperationDialog({ kind: "sales_sku", group })} onResolveSalesMissingSkuContinuations={(review) => setOperationDialog({ kind: "sales_sku_continuations", review })} onAcknowledge={(code) => setOperationDialog({ kind: "warning", code })} />}
           {preview?.commercial_requirements && <CommercialReview requirements={preview.commercial_requirements} busy={busy} onAction={async (body) => { const result = await runAction(body); if (result && active) { await loadBatches(active.id); await loadPreview(active.id, page); } }} />}
           {active && active.import_type === "inventory" && locationsPendingReview.length > 0 && <LocationReview locations={locationsPendingReview.map((location) => ({ externalCode: location.external_code, name: location.name }))} onReview={reviewLocation} />}
           {preview && preview.pagination.total > preview.pagination.page_size && <div className="staging-pagination"><span>Página {preview.pagination.page} de {Math.max(1, Math.ceil(preview.pagination.total / preview.pagination.page_size))} · {preview.pagination.total} filas</span><div><button className="secondary-button" disabled={page <= 1 || busy} onClick={() => setPage((value) => Math.max(1, value - 1))}>Anterior</button><button className="secondary-button" disabled={page * preview.pagination.page_size >= preview.pagination.total || busy} onClick={() => setPage((value) => value + 1)}>Siguiente</button></div></div>}
           {active && (
             <div className="confirm-bar">
-              <div><strong>{summaryBatch?.blocking_error_count ? `${summaryBatch.blocking_error_count} errores pendientes` : summaryBatch?.pending_warning_count ? `${summaryBatch.pending_warning_count} alertas por reconocer` : readyForImport ? "Listo para confirmar" : active.status === "failed" ? "Lote fallido" : "Staging con incidencias"}</strong><span>{summaryBatch?.valid_rows ?? 0} válidas · {summaryBatch?.warning_rows ?? 0} con alerta · {summaryBatch?.error_rows ?? 0} con error</span></div>
-              <div className="confirm-actions">{["staged", "validation_failed"].includes(active.status) && <button className="secondary-button danger-button" disabled={busy} onClick={() => setOperationDialog({ kind: "discard" })}>Descartar</button>}<button className="primary-button" disabled={!readyForImport || busy} onClick={() => setConfirming(true)}><ClipboardCheck size={17} /> Confirmar importación</button></div>
+              <div><strong>{active.import_type === "sales" ? preview?.sales_promotion?.can_promote ? "Listo para importar historial" : preview?.sales_evidence?.complete ? "Paquete histórico conciliado" : "Evidencia guardada; falta un archivo" : summaryBatch?.blocking_error_count ? `${summaryBatch.blocking_error_count} errores pendientes` : summaryBatch?.pending_warning_count ? `${summaryBatch.pending_warning_count} alertas por reconocer` : readyForImport ? "Listo para confirmar" : active.status === "failed" ? "Lote fallido" : "Staging con incidencias"}</strong><span>{active.import_type === "sales" ? preview?.sales_promotion?.can_promote ? `${preview.sales_promotion.eligible_documents} ventas · ${preview.sales_promotion.eligible_lines} partidas · ${numberFormat(Number(preview.sales_promotion.total_amount))} MXN${preview.sales_promotion.excluded_location_documents ? ` · ${preview.sales_promotion.excluded_location_documents} documentos ambiguos quedan fuera` : ""}` : preview?.sales_evidence?.complete ? "La conciliación está completa; resuelve o reconoce las incidencias restantes para importar." : "Puedes subir nvtadesg y cob_cte en cualquier orden. Satrapy conservará este paquete 1/2." : `${summaryBatch?.valid_rows ?? 0} válidas · ${summaryBatch?.warning_rows ?? 0} con alerta · ${summaryBatch?.error_rows ?? 0} con error`}</span></div>
+              <div className="confirm-actions">{["staged", "validation_failed"].includes(active.status) && <button className="secondary-button danger-button" disabled={busy} onClick={() => setOperationDialog({ kind: "discard" })}>Descartar</button>}{active.import_type === "sales" && preview?.sales_promotion?.can_promote && <button className="primary-button" disabled={busy || !canImport} onClick={() => { setPromotionProgress(null); setPromotionError(null); setOperationDialog({ kind: "sales_promotion", preview: preview.sales_promotion! }); }}><ClipboardCheck size={17} /> Importar historial</button>}{active.import_type !== "sales" && <button className="primary-button" disabled={!readyForImport || busy} onClick={() => setConfirming(true)}><ClipboardCheck size={17} /> Confirmar importación</button>}</div>
             </div>
           )}
           {!canImport && <p className="permission-note">Tu rol no tiene permiso para preparar ni confirmar importaciones.</p>}
         </section>
       )}
       {confirming && active && <ConfirmDialog companyId={companyId} batch={active} busy={busy} onCancel={() => !busy && setConfirming(false)} onConfirm={(assortmentIds) => void confirmImport(assortmentIds)} />}
-      {operationDialog && <StagingOperationDialog operation={operationDialog} companyId={companyId} busy={busy} onCancel={() => !busy && setOperationDialog(null)} onConfirm={(payload) => void completeOperation(payload)} />}
+      {operationDialog && <StagingOperationDialog operation={operationDialog} companyId={companyId} busy={busy} promotionProgress={promotionProgress} promotionError={promotionError} onCancel={() => { if (!busy) { setOperationDialog(null); setPromotionProgress(null); setPromotionError(null); } }} onConfirm={(payload) => void completeOperation(payload)} />}
       {receivableBackfill && <Modal open onOpenChange={(open) => { if (!open && !busy) setReceivableBackfill(null); }} eyebrow="CxC pendiente" title="Revisar incorporación de documentos" description="Solo se agregarán documentos cuya clave y hash coincidan con lis_sal y cuyo cliente de staging ya tenga un cliente canónico promovido." footer={<><Button variant="secondary" disabled={busy} onClick={() => setReceivableBackfill(null)}>Cancelar</Button><Button variant="primary" loading={busy} disabled={!receivableBackfill.can_apply || !receivableBackfillAcknowledged} onClick={() => void applyReceivableBackfill()}>Incorporar documentos auditados</Button></>}><div className="pos-prep-confirm-summary"><span><strong>{receivableBackfill.documents_to_insert}</strong> documentos por <strong>{numberFormat(Number(receivableBackfill.amount_to_insert))} MXN</strong> se agregarán</span><span><strong>{receivableBackfill.already_recorded_documents}</strong> documentos ya existen y no se duplicarán</span><span><strong>{receivableBackfill.excluded_unresolved_customer_documents}</strong> documentos por <strong>{numberFormat(Number(receivableBackfill.excluded_unresolved_customer_amount))} MXN</strong> quedan fuera por clientes sin resolver</span><span><strong>{receivableBackfill.existing_document_conflicts + receivableBackfill.duplicate_payload_hashes + receivableBackfill.staged_documents_missing_from_source + receivableBackfill.source_documents_not_in_staging}</strong> inconsistencias bloqueantes</span></div>{!receivableBackfill.can_apply && <p className="permission-note">No se puede aplicar: el preview detectó una incompatibilidad de hash, staging o documento existente.</p>}<label className="checkbox-label"><input type="checkbox" checked={receivableBackfillAcknowledged} disabled={busy || !receivableBackfill.can_apply} onChange={(event) => setReceivableBackfillAcknowledged(event.target.checked)} /> Confirmo el preview; esta operación no modifica clientes, pagos ni documentos existentes.</label></Modal>}
     </div>
   );
@@ -1472,20 +1640,59 @@ function CustomerConflictInbox({ conflicts, busy, onDecide }: {
   </section>;
 }
 
-function StagingPreview({ preview, statusFilter, errorCodeFilter, onStatusChange, onErrorCodeChange, onResolve, onAcknowledge }: { preview: StagingPreviewData; statusFilter: string; errorCodeFilter: string; onStatusChange: (value: string) => void; onErrorCodeChange: (value: string) => void; onResolve: (row: StagedRow) => void; onAcknowledge: (code: string) => void }) {
+function StagingPreview({ preview, statusFilter, errorCodeFilter, onStatusChange, onErrorCodeChange, onResolve, onResolveSalesMissingSku, onResolveSalesMissingSkuContinuations, onAcknowledge }: { preview: StagingPreviewData; statusFilter: string; errorCodeFilter: string; onStatusChange: (value: string) => void; onErrorCodeChange: (value: string) => void; onResolve: (row: StagedRow) => void; onResolveSalesMissingSku: (group: NonNullable<StagingPreviewData["sales_missing_sku_review"]>["groups"][number]) => void; onResolveSalesMissingSkuContinuations: (review: NonNullable<StagingPreviewData["sales_missing_sku_continuation_review"]>) => void; onAcknowledge: (code: string) => void }) {
   const { batch, rows, error_groups: groups } = preview;
-  const label = batch.import_type === "products" ? "Catálogo de productos" : batch.import_type === "inventory" ? "Inventario por ubicación" : batch.import_type === "prices" ? "Listas de precios" : batch.import_type === "costs" ? "Costos de reposición" : batch.import_type === "collaborators" ? "Colaboradores" : "Archivo no compatible";
+  const [auditGroup, setAuditGroup] = useState<StagingErrorGroup | null>(null);
+  const auditTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const closeAudit = () => {
+    setAuditGroup(null);
+    requestAnimationFrame(() => auditTriggerRef.current?.focus());
+  };
+  const label = batch.import_type === "products" ? "Catálogo de productos" : batch.import_type === "inventory" ? "Inventario por ubicación" : batch.import_type === "prices" ? "Listas de precios" : batch.import_type === "costs" ? "Costos de reposición" : batch.import_type === "collaborators" ? "Colaboradores" : batch.import_type === "sales" ? "Ventas históricas y cobranza · evidencia" : "Archivo no compatible";
   const taxSummaryLabel = (preview.tax_summary ?? []).map(({ tax_category_code: code, total }) => `${code === "IVA16" ? "IVA 16%" : code === "IVA0" ? "IVA tasa 0%" : code}: ${total}`).join(" · ");
+  const salesEvidence = preview.sales_evidence;
   return <div className="import-preview"><div className="preview-summary"><span className="file-kind">{label}</span><span>{batch.records_received} filas leídas</span>{["inventory", "prices", "costs"].includes(batch.import_type) && <span>Fecha efectiva: {batch.snapshot_date ? dateOnlyFormat(batch.snapshot_date) : "pendiente de validación"}</span>}{taxSummaryLabel && <span>Fiscal: {taxSummaryLabel}</span>}<span>{batch.valid_rows} válidas · {batch.warning_rows} alertas · {batch.error_rows} errores</span></div>
+    {salesEvidence && <section className="sales-evidence-package" aria-labelledby="sales-evidence-package-title"><div className="sales-evidence-copy"><span className="eyebrow">Paquete histórico</span><h3 id="sales-evidence-package-title">{salesEvidence.complete ? "2/2 archivos conciliados" : "1/2 archivos detectado"}</h3><p>{!salesEvidence.has_sales ? "Falta nvtadesg para incorporar ventas y partidas." : !salesEvidence.has_collections ? "Falta cob_cte para incorporar cobranza y métodos de pago." : "La conciliación usa cliente Alpha + número de factura. No crea caja, inventario ni ventas operativas."}</p></div><div className="sales-evidence-files" aria-label="Archivos requeridos"><span className={salesEvidence.has_sales ? "is-ready" : "is-missing"}>{salesEvidence.has_sales ? <Check size={14} /> : <AlertCircle size={14} />} nvtadesg</span><span className={salesEvidence.has_collections ? "is-ready" : "is-missing"}>{salesEvidence.has_collections ? <Check size={14} /> : <AlertCircle size={14} />} cob_cte</span></div>{salesEvidence.complete && <dl className="sales-evidence-metrics"><div><dt>Coincidencias exactas</dt><dd>{salesEvidence.exact_matches}</dd></div><div><dt>Importe diferente</dt><dd>{salesEvidence.amount_mismatches}</dd></div><div><dt>Ventas sin cobranza</dt><dd>{salesEvidence.sales_without_collection}</dd></div><div><dt>Cobros sin venta</dt><dd>{salesEvidence.collections_without_sale}</dd></div></dl>}</section>}
+    {preview.sales_missing_sku_continuation_review && preview.sales_missing_sku_continuation_review.eligible_rows > 0 && <SalesMissingSkuContinuationReview review={preview.sales_missing_sku_continuation_review} onResolve={onResolveSalesMissingSkuContinuations} />}
+    {preview.sales_missing_sku_review && preview.sales_missing_sku_review.total_rows > 0 && <SalesMissingSkuReview review={preview.sales_missing_sku_review} onResolve={onResolveSalesMissingSku} />}
     <div className="staging-filters"><label>Estado<Select ariaLabel="Filtrar filas por estado" value={statusFilter || "all"} onValueChange={(value) => onStatusChange(value === "all" ? "" : value)} options={[{ value: "all", label: "Todos" }, { value: "valid", label: "Válidas" }, { value: "warning", label: "Alertas" }, { value: "error", label: "Errores" }]} /></label><label>Incidencia<Select ariaLabel="Filtrar filas por incidencia" value={errorCodeFilter || "all"} onValueChange={(value) => onErrorCodeChange(value === "all" ? "" : value)} options={[{ value: "all", label: "Todas" }, ...groups.map((group) => ({ value: group.error_code, label: `${group.error_code} (${group.total})` }))]} /></label></div>
-    {groups.length > 0 && <div className="staging-groups">{groups.map((group) => <div key={`${group.error_code}:${group.severity}`}><span className={`status-pill ${group.severity === "error" ? "failed" : "validation_failed"}`}>{group.error_code}</span><span>{group.total} fila{group.total === 1 ? "" : "s"} · {group.pending} pendiente{group.pending === 1 ? "" : "s"}</span>{group.severity === "warning" && group.pending > 0 && <button className="text-button" onClick={() => onAcknowledge(group.error_code)}>Reconocer</button>}</div>)}</div>}
-    <div className="table-wrap">{batch.import_type === "products" ? <table><thead><tr><th>Fila</th><th>SKU de origen</th><th>Nombre</th><th>Unidad</th><th>Clase</th><th>Fiscal</th><th>Estado</th></tr></thead><tbody>{rows.map((row) => <StagingProductRow row={row} key={row.id} />)}</tbody></table> : batch.import_type === "inventory" ? <table><thead><tr><th>Fila</th><th>SKU de origen</th><th>Producto</th><th>Ubicación</th><th>Existencia</th><th>Unidad</th><th>Estado</th><th></th></tr></thead><tbody>{rows.map((row) => <StagingInventoryRow row={row} onResolve={onResolve} key={row.id} />)}</tbody></table> : batch.import_type === "collaborators" ? <table><thead><tr><th>Fila</th><th>Código de origen</th><th>Colaborador</th><th>Puesto</th><th>Ingreso</th><th>Periodicidad</th><th>Pago base</th><th>Estado</th></tr></thead><tbody>{rows.map((row) => <StagingCollaboratorRow row={row} key={row.id} />)}</tbody></table> : <table><thead><tr><th>Fila</th><th>SKU de origen</th><th>Producto</th><th>{batch.import_type === "prices" ? "Lista" : "Tipo"}</th><th>{batch.import_type === "prices" ? "Precio" : "Costo"}</th><th>Moneda</th><th>Estado</th></tr></thead><tbody>{rows.map((row) => <StagingCommercialRow row={row} kind={batch.import_type as "prices" | "costs"} key={row.id} />)}</tbody></table>}</div>
-    {rows.length === 0 && <div className="empty-state"><PackageSearch size={18} /> No hay filas para los filtros seleccionados.</div>}</div>;
+    {groups.length > 0 && <div className="staging-groups">{groups.map((group) => <div key={`${group.error_code}:${group.severity}`}><span className={`status-pill ${group.severity === "error" ? "failed" : group.pending > 0 ? "validation_failed" : "staged"}`}>{group.error_code}</span><span>{group.total} fila{group.total === 1 ? "" : "s"} · {group.severity === "warning" && group.pending === 0 ? <span className="staging-group-recognized"><Check size={12} aria-hidden="true" /> Reconocida</span> : `${group.pending} pendiente${group.pending === 1 ? "" : "s"}`}</span>{group.severity === "warning" && (group.pending > 0 ? <button className="text-button" onClick={() => onAcknowledge(group.error_code)}>Reconocer</button> : <button className="text-button" onClick={(event) => { auditTriggerRef.current = event.currentTarget; setAuditGroup(group); }}>Ver auditoría</button>)}</div>)}</div>}
+    <div className="table-wrap">{batch.import_type === "products" ? <table><thead><tr><th>Fila</th><th>SKU de origen</th><th>Nombre</th><th>Unidad</th><th>Clase</th><th>Fiscal</th><th>Estado</th></tr></thead><tbody>{rows.map((row) => <StagingProductRow row={row} key={row.id} />)}</tbody></table> : batch.import_type === "inventory" ? <table><thead><tr><th>Fila</th><th>SKU de origen</th><th>Producto</th><th>Ubicación</th><th>Existencia</th><th>Unidad</th><th>Estado</th><th></th></tr></thead><tbody>{rows.map((row) => <StagingInventoryRow row={row} onResolve={onResolve} key={row.id} />)}</tbody></table> : batch.import_type === "collaborators" ? <table><thead><tr><th>Fila</th><th>Código de origen</th><th>Colaborador</th><th>Puesto</th><th>Ingreso</th><th>Periodicidad</th><th>Pago base</th><th>Estado</th></tr></thead><tbody>{rows.map((row) => <StagingCollaboratorRow row={row} key={row.id} />)}</tbody></table> : batch.import_type === "sales" ? <table><thead><tr><th>Fecha</th><th>Documento</th><th>Tipo</th><th>Cliente</th><th>Sucursal</th><th>Detalle</th><th>Importe</th><th>Estado</th></tr></thead><tbody>{rows.map((row) => <StagingSaleRow row={row} key={row.id} />)}</tbody></table> : <table><thead><tr><th>Fila</th><th>SKU de origen</th><th>Producto</th><th>{batch.import_type === "prices" ? "Lista" : "Tipo"}</th><th>{batch.import_type === "prices" ? "Precio" : "Costo"}</th><th>Moneda</th><th>Estado</th></tr></thead><tbody>{rows.map((row) => <StagingCommercialRow row={row} kind={batch.import_type as "prices" | "costs"} key={row.id} />)}</tbody></table>}</div>
+    {rows.length === 0 && <div className="empty-state"><PackageSearch size={18} /> No hay filas para los filtros seleccionados.</div>}
+    {auditGroup && <Modal open onOpenChange={(open) => { if (!open) closeAudit(); }} eyebrow="Evidencia conservada" title={`Auditoría de ${auditGroup.error_code}`} description="La advertencia permanece en el lote como evidencia, pero ya no requiere otra decisión." footer={<Button variant="primary" onClick={closeAudit}>Cerrar</Button>}><dl className="staging-audit-summary"><div><dt>Estado</dt><dd><Check size={14} aria-hidden="true" /> Reconocida</dd></div><div><dt>Filas cubiertas</dt><dd>{auditGroup.total}</dd></div><div><dt>Registrada</dt><dd>{auditGroup.acknowledgement?.acknowledged_at ? dateTimeFormat(auditGroup.acknowledgement.acknowledged_at) : "Fecha conservada en auditoría"}</dd></div><div><dt>Responsable</dt><dd>{auditGroup.acknowledgement?.actor_name ?? "Usuario registrado"}</dd></div><div className="is-wide"><dt>Motivo</dt><dd>{auditGroup.acknowledgement?.acknowledgement_note ?? "Reconocimiento registrado sin detalle disponible en este preview."}</dd></div></dl></Modal>}
+  </div>;
 }
 
 function StagingCommercialRow({ row, kind }: { row: StagedRow; kind: "prices" | "costs" }) {
   const amount = Number(row.normalized_data[kind === "prices" ? "amount" : "replacementCost"] ?? 0);
   return <tr className={row.validation_status === "error" ? "staging-rejected-row" : ""}><td>{row.normalized_data.sourceRowNumber ? Number(row.normalized_data.sourceRowNumber) : row.row_number}</td><td className="mono">{textValue(row.normalized_data, "alphaSku") || "—"}</td><td>{textValue(row.normalized_data, "description") || "—"}{row.validation_status === "error" && <RawRowDetails row={row} />}</td><td>{kind === "prices" ? textValue(row.normalized_data, "listExternalCode") : "Reposición"}</td><td>{Number.isFinite(amount) ? numberFormat(amount) : "—"}</td><td>{textValue(row.normalized_data, "currencyCode") || textValue(row.normalized_data, "currencyLabel") || "—"}</td><td>{validationLabel(row.validation_status)}</td></tr>;
+}
+
+function SalesMissingSkuReview({ review, onResolve }: { review: NonNullable<StagingPreviewData["sales_missing_sku_review"]>; onResolve: (group: NonNullable<StagingPreviewData["sales_missing_sku_review"]>["groups"][number]) => void }) {
+  return <section className="sales-missing-sku-review" aria-labelledby="sales-missing-sku-title">
+    <header><div><span className="eyebrow">Revisión requerida</span><h3 id="sales-missing-sku-title">Partidas sin SKU de origen</h3><p>{review.total_rows} partida{review.total_rows === 1 ? "" : "s"} no trae{review.total_rows === 1 ? "" : "n"} “Clave Prod.” en Alpha. Vincúlalas a un producto activo sin inventar ni modificar el dato original.</p></div><Badge tone="danger">{review.total_rows} pendientes</Badge></header>
+    <div className="sales-missing-sku-review__list">{review.groups.map((group) => <article key={`${group.description}:${group.unit ?? ""}`}><div><strong>{group.description || "Sin descripción de origen"}</strong><small>{group.unit ? `${group.unit} · ` : ""}{group.row_count} fila{group.row_count === 1 ? "" : "s"} · {numberFormat(Number(group.amount))} MXN{group.source_invoices.length ? ` · Factura${group.source_invoices.length === 1 ? "" : "s"} ${group.source_invoices.slice(0, 3).join(", ")}${group.source_invoices.length > 3 ? "…" : ""}` : ""}</small></div>{group.can_map ? <button className="secondary-button" onClick={() => onResolve(group)}>Vincular producto</button> : <span className="sales-missing-sku-review__blocked">Sin descripción para vincular</span>}</article>)}</div>
+  </section>;
+}
+
+function SalesMissingSkuContinuationReview({ review, onResolve }: { review: NonNullable<StagingPreviewData["sales_missing_sku_continuation_review"]>; onResolve: (review: NonNullable<StagingPreviewData["sales_missing_sku_continuation_review"]>) => void }) {
+  const exactCount = review.items.filter((item) => item.catalog_match).length;
+  return <section className="sales-missing-sku-review sales-missing-sku-continuation-review" aria-labelledby="sales-missing-sku-continuation-title">
+    <header><div><span className="eyebrow">Vínculo verificable</span><h3 id="sales-missing-sku-continuation-title">Continuaciones de descripción detectadas</h3><p>{review.eligible_rows} de {review.total_rows} filas pendientes completan la descripción de la fila anterior. El SKU canónico ya existe en esa fila y {exactCount} descripciones también coinciden con el catálogo activo.</p></div><Badge tone="success">{review.eligible_rows} listas</Badge></header>
+    <div className="sales-missing-sku-continuation-summary"><span>Se conservará vacío el SKU original de la fila de continuación.</span><span>Se asignará el producto canónico de la fila anterior.</span><span>La operación es transaccional y queda auditada.</span></div>
+    <div className="sales-missing-sku-review__list">{review.items.slice(0, 6).map((item) => <article key={item.row_number}><div><strong>{item.product_alpha_sku} · {item.product_name}</strong><small>Fila {item.row_number} continúa a la {item.previous_row_number} · “{item.fragment}” · Factura {item.source_invoice || "—"}</small></div><span className="sales-missing-sku-continuation-match">{item.catalog_match ? "Catálogo coincide" : "SKU anterior coincide"}</span></article>)}{review.items.length > 6 && <p className="sales-missing-sku-continuation-more">+ {review.items.length - 6} continuaciones más</p>}</div>
+    <button className="primary-button" onClick={() => onResolve(review)}>Vincular continuaciones confirmadas</button>
+  </section>;
+}
+
+function StagingSaleRow({ row }: { row: StagedRow }) {
+  const isCollection = textValue(row.normalized_data, "evidenceKind") === "collection";
+  const amount = Number(row.normalized_data[isCollection ? "amount" : "lineTotal"] ?? 0);
+  const date = textValue(row.normalized_data, isCollection ? "appliedDate" : "saleDate");
+  const document = isCollection ? textValue(row.normalized_data, "reference") : textValue(row.normalized_data, "sourceInvoice");
+  const branch = textValue(row.normalized_data, isCollection ? "branchCode" : "locationCode");
+  const detail = isCollection ? `Folio ${textValue(row.normalized_data, "sourceFolio") || "—"}` : `${textValue(row.normalized_data, "alphaSku") || "—"} · ${textValue(row.normalized_data, "description") || "Sin descripción"}`;
+  return <tr className={row.validation_status === "error" ? "staging-rejected-row" : ""}><td>{date ? dateOnlyFormat(date) : "—"}</td><td className="mono">{document || "—"}</td><td>{isCollection ? textValue(row.normalized_data, "paymentSubtype") || "Cobranza" : "Venta"}</td><td className="mono">{textValue(row.normalized_data, "customerExternalCode") || "—"}</td><td><span className="location-chip">{branch || "—"}</span></td><td>{detail}{row.validation_status !== "valid" && <RawRowDetails row={row} />}</td><td>{Number.isFinite(amount) ? `${numberFormat(amount)} MXN` : "—"}</td><td>{validationLabel(row.validation_status)}</td></tr>;
 }
 
 function StagingCollaboratorRow({ row }: { row: StagedRow }) {
@@ -1551,8 +1758,8 @@ function ConfirmDialog({ companyId, batch, busy, onCancel, onConfirm }: { compan
   </Modal>;
 }
 
-function StagingOperationDialog({ operation, companyId, busy, onCancel, onConfirm }: { operation: OperationDialog; companyId: string; busy: boolean; onCancel: () => void; onConfirm: (payload: { productId?: string; reason: string }) => void }) {
-  const [reason, setReason] = useState("");
+function StagingOperationDialog({ operation, companyId, busy, promotionProgress, promotionError, onCancel, onConfirm }: { operation: OperationDialog; companyId: string; busy: boolean; promotionProgress: HistoricalPromotionProgress | null; promotionError: string | null; onCancel: () => void; onConfirm: (payload: { productId?: string; reason: string }) => void }) {
+  const [reason, setReason] = useState(() => operation.kind === "sales_sku_continuations" ? "Continuación de descripción: SKU canónico de la fila anterior y contexto de venta coincidente." : operation.kind === "sales_promotion" ? "Importación controlada del historial de ventas conciliado." : "");
   const [search, setSearch] = useState("");
   const [products, setProducts] = useState<Array<{ id: string; alpha_sku: string; name: string }>>([]);
   const [productId, setProductId] = useState("");
@@ -1566,12 +1773,19 @@ function StagingOperationDialog({ operation, companyId, busy, onCancel, onConfir
       .or(`alpha_sku.ilike.%${safe}%,name.ilike.%${safe}%`).order("name").limit(30);
     setProducts((data ?? []) as Array<{ id: string; alpha_sku: string; name: string }>); setSearching(false);
   }
-  const title = operation.kind === "product" ? "Mapear a un producto existente" : operation.kind === "warning" ? `Reconocer ${operation.code}` : operation.kind === "discard" ? "Descartar lote" : "Reintentar lote fallido";
-  const description = operation.kind === "product" ? `El SKU de origen ${textValue(operation.row.normalized_data, "alphaSku") || "sin clave"} quedará conservado permanentemente.` : operation.kind === "warning" ? "Este reconocimiento se aplicará a todas las filas pendientes de este tipo y quedará auditado." : operation.kind === "discard" ? "El lote se cerrará sin importar datos. Su resumen, hash y auditoría se conservarán." : "Se creará un lote nuevo usando el staging conservado. El lote fallido seguirá en auditoría.";
-  const canSubmit = reason.trim().length > 0 && (operation.kind !== "product" || Boolean(productId));
-  return <Modal open onOpenChange={(open) => { if (!open && !busy) onCancel(); }} eyebrow="Operación controlada" title={title} description={description} footer={<><Button variant="secondary" disabled={busy} onClick={onCancel}>Cancelar</Button><Button variant={operation.kind === "discard" ? "danger" : "primary"} loading={busy} disabled={!canSubmit} onClick={() => onConfirm({ productId: productId || undefined, reason: reason.trim() })}>{operation.kind === "discard" ? "Descartar lote" : "Guardar y auditar"}</Button></>}>
-    {operation.kind === "product" && <div className="product-resolution-search"><label>Buscar producto activo<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="SKU o nombre" /></label><Button variant="secondary" size="sm" disabled={searching || search.trim().length < 2} loading={searching} onClick={() => void searchProducts()}>Buscar</Button><label>Producto seleccionado<Select ariaLabel="Producto seleccionado" value={productId || "unselected"} onValueChange={(value) => setProductId(value === "unselected" ? "" : value)} options={[{ value: "unselected", label: "Seleccionar producto", disabled: true }, ...products.map((product) => ({ value: product.id, label: `${product.alpha_sku} · ${product.name}` }))]} /></label></div>}
-    <label className="operation-reason">Motivo<textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Escribe el motivo para la auditoría" rows={3} /></label>
+  const requiresProduct = operation.kind === "product" || operation.kind === "sales_sku";
+  const title = operation.kind === "product" ? "Mapear a un producto existente" : operation.kind === "sales_sku" ? "Vincular partidas sin SKU" : operation.kind === "sales_sku_continuations" ? "Vincular continuaciones confirmadas" : operation.kind === "sales_promotion" ? "Importar historial de ventas" : operation.kind === "warning" ? `Reconocer ${operation.code}` : operation.kind === "discard" ? "Descartar lote" : "Reintentar lote fallido";
+  const description = operation.kind === "product" ? `El SKU de origen ${textValue(operation.row.normalized_data, "alphaSku") || "sin clave"} quedará conservado permanentemente.` : operation.kind === "sales_sku" ? `“${operation.group.description}” no trae Clave Prod. en el archivo. Se guardará el vínculo con el producto canónico para ${operation.group.row_count} partida${operation.group.row_count === 1 ? "" : "s"}; el dato de origen seguirá vacío y trazable.` : operation.kind === "sales_sku_continuations" ? `Se vincularán ${operation.review.eligible_rows} continuaciones al producto canónico de la fila anterior. Solo se aplicarán coincidencias verificadas; el SKU original seguirá vacío y el detalle quedará auditado.` : operation.kind === "sales_promotion" ? `Se crearán ${operation.preview.eligible_documents} ventas y ${operation.preview.eligible_lines} partidas históricas. Aparecerán en Ventas y BI, sin crear caja, pagos, inventario ni CxC.` : operation.kind === "warning" ? "Este reconocimiento se aplicará a todas las filas pendientes de este tipo y quedará auditado." : operation.kind === "discard" ? "El lote se cerrará sin importar datos. Su resumen, hash y auditoría se conservarán." : "Se creará un lote nuevo usando el staging conservado. El lote fallido seguirá en auditoría.";
+  const canSubmit = reason.trim().length > 0 && (!requiresProduct || Boolean(productId));
+  const promotionPercent = promotionProgress ? Math.min(100, Math.max(0, promotionProgress.percent)) : 0;
+  const promotionButtonLabel = operation.kind === "sales_promotion" && promotionError ? "Reanudar importación" : operation.kind === "sales_promotion" ? "Importar y auditar" : operation.kind === "discard" ? "Descartar lote" : "Guardar y auditar";
+  return <Modal open onOpenChange={(open) => { if (!open && !busy) onCancel(); }} eyebrow="Operación controlada" title={title} description={description} className={operation.kind === "sales_promotion" ? "sales-promotion-dialog" : undefined} closeDisabled={busy} footer={<><Button variant="secondary" disabled={busy} onClick={onCancel}>{promotionProgress || promotionError ? "Cerrar" : "Cancelar"}</Button><Button variant={operation.kind === "discard" ? "danger" : "primary"} loading={busy} disabled={!canSubmit || busy} onClick={() => onConfirm({ productId: productId || undefined, reason: reason.trim() })}>{promotionButtonLabel}</Button></>}>
+    {requiresProduct && <div className="product-resolution-search"><label>Buscar producto activo<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="SKU o nombre" /></label><Button variant="secondary" size="sm" disabled={searching || search.trim().length < 2} loading={searching} onClick={() => void searchProducts()}>Buscar</Button><label>Producto seleccionado<Select ariaLabel="Producto seleccionado" value={productId || "unselected"} onValueChange={(value) => setProductId(value === "unselected" ? "" : value)} options={[{ value: "unselected", label: "Seleccionar producto", disabled: true }, ...products.map((product) => ({ value: product.id, label: `${product.alpha_sku} · ${product.name}` }))]} /></label></div>}
+    {operation.kind === "sales_sku_continuations" && <div className="sales-missing-sku-continuation-dialog"><strong>Qué se verificó</strong><span>Fila anterior con SKU · mismo contexto de venta · descripción concatenada contra el catálogo activo.</span></div>}
+    {operation.kind === "sales_promotion" && <section className="sales-promotion-safety" aria-labelledby="sales-promotion-safety-title"><div className="sales-promotion-safety__heading"><span aria-hidden="true"><ShieldCheck size={18} /></span><div><strong id="sales-promotion-safety-title">Importación histórica aislada</strong><small>No genera movimientos operativos</small></div></div><dl><div><dt>Caja</dt><dd>0</dd></div><div><dt>Pagos</dt><dd>0</dd></div><div><dt>Inventario</dt><dd>0</dd></div><div><dt>CxC</dt><dd>0</dd></div></dl><p>Los documentos con sucursal ambigua permanecen en staging y auditoría.</p></section>}
+    {operation.kind === "sales_promotion" && promotionProgress && <section className="sales-promotion-progress" role="status" aria-live="polite" aria-atomic="true"><header><div><strong>{promotionProgress.status === "completed" ? "Importación completada" : "Importando historial"}</strong><span>{promotionProgress.processed_documents} de {promotionProgress.total_documents} ventas</span></div><b>{numberFormat(promotionPercent)}%</b></header><progress max={100} value={promotionPercent} aria-label={`Progreso de importación: ${numberFormat(promotionPercent)}%`} /><footer><span>{promotionProgress.processed_lines} de {promotionProgress.total_lines} partidas</span><span>Los bloques confirmados ya están auditados</span></footer></section>}
+    {operation.kind === "sales_promotion" && promotionError && <div className="sales-promotion-error" role="alert"><strong>La importación se pausó</strong><span>{promotionError} Los bloques ya confirmados se conservaron; puedes reanudar sin duplicar ventas.</span></div>}
+    <label className="operation-reason">Motivo<textarea value={reason} disabled={busy} onChange={(event) => setReason(event.target.value)} placeholder="Escribe el motivo para la auditoría" rows={3} /></label>
   </Modal>;
 }
 
@@ -2684,7 +2898,7 @@ function AuditView({ companyId }: { companyId: string }) {
   useEffect(() => { void Promise.resolve().then(load); }, [load]);
   function clearFilters() { setStatusFilter("all"); setTypeFilter("all"); setPage(1); }
   function refresh() { queryCache.invalidate(`audit:${companyId}:`); void load(); }
-  return <section className="import-audit-panel"><div className="import-audit-panel-heading"><div><h2>Archivos y lotes</h2><p>Cada lote conserva actor, archivo, resultado e incidencias.</p></div><Button variant="secondary" onClick={refresh}><RefreshCw size={16} /> Actualizar</Button></div><DataToolbar filters={<><Select value={typeFilter} onValueChange={(value) => { setTypeFilter(value); setPage(1); }} ariaLabel="Filtrar por tipo de importación" options={[{ value: "all", label: "Todos los tipos" }, { value: "products", label: "Productos" }, { value: "inventory", label: "Inventario" }, { value: "prices", label: "Precios" }, { value: "costs", label: "Costos" }, { value: "collaborators", label: "Colaboradores" }]} /><Select value={statusFilter} onValueChange={(value) => { setStatusFilter(value); setPage(1); }} ariaLabel="Filtrar por estado de importación" options={[{ value: "all", label: "Todos los estados" }, { value: "completed", label: "Completado" }, { value: "staged", label: "En staging" }, { value: "validation_failed", label: "Validación fallida" }, { value: "failed", label: "Fallido" }, { value: "discarded", label: "Descartado" }, { value: "expired", label: "Vencido" }]} /></>} activeFilters={(typeFilter !== "all" ? 1 : 0) + (statusFilter !== "all" ? 1 : 0)} onClear={clearFilters} results={total} /><DataState loading={loading && rows.length === 0} error={error} errorAction={<Button variant="secondary" size="sm" onClick={refresh}>Reintentar</Button>} hasData={rows.length} empty="Aún no hay lotes de importación para auditar."><div className="table-wrap surface-table"><table><thead><tr><th>Tipo</th><th>Archivo</th><th>Estado</th><th>Actor</th><th className="number-cell">Registros</th><th>Fecha</th><th>Incidencias</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td><strong>{importTypeLabel(row.import_type)}</strong></td><td>{row.files.map((file) => file.original_name).join(", ") || "Archivo no disponible"}</td><td><Badge tone={auditStatusTone(row.status)}>{statusLabel(row.status)}</Badge></td><td>{row.actor_name}</td><td className="number-cell">{row.records_imported}/{row.records_received}</td><td>{dateTimeFormat(row.started_at)}</td><td>{row.issue_count > 0 ? <Badge tone="warning">{row.issue_count} incidencia{row.issue_count === 1 ? "" : "s"}</Badge> : <span>—</span>}</td></tr>)}</tbody></table></div></DataState><DataPagination page={page} total={total} pageSize={DATA_PAGE_SIZE} onChange={setPage} /></section>;
+  return <section className="import-audit-panel"><div className="import-audit-panel-heading"><div><h2>Archivos y lotes</h2><p>Cada lote conserva actor, archivo, resultado e incidencias.</p></div><Button variant="secondary" onClick={refresh}><RefreshCw size={16} /> Actualizar</Button></div><DataToolbar filters={<><Select value={typeFilter} onValueChange={(value) => { setTypeFilter(value); setPage(1); }} ariaLabel="Filtrar por tipo de importación" options={[{ value: "all", label: "Todos los tipos" }, { value: "products", label: "Productos" }, { value: "inventory", label: "Inventario" }, { value: "prices", label: "Precios" }, { value: "costs", label: "Costos" }, { value: "collaborators", label: "Colaboradores" }, { value: "sales", label: "Ventas históricas" }]} /><Select value={statusFilter} onValueChange={(value) => { setStatusFilter(value); setPage(1); }} ariaLabel="Filtrar por estado de importación" options={[{ value: "all", label: "Todos los estados" }, { value: "completed", label: "Completado" }, { value: "staged", label: "En staging" }, { value: "validation_failed", label: "Validación fallida" }, { value: "failed", label: "Fallido" }, { value: "discarded", label: "Descartado" }, { value: "expired", label: "Vencido" }]} /></>} activeFilters={(typeFilter !== "all" ? 1 : 0) + (statusFilter !== "all" ? 1 : 0)} onClear={clearFilters} results={total} /><DataState loading={loading && rows.length === 0} error={error} errorAction={<Button variant="secondary" size="sm" onClick={refresh}>Reintentar</Button>} hasData={rows.length} empty="Aún no hay lotes de importación para auditar."><div className="table-wrap surface-table"><table><thead><tr><th>Tipo</th><th>Archivo</th><th>Estado</th><th>Actor</th><th className="number-cell">Registros</th><th>Fecha</th><th>Incidencias</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td><strong>{importTypeLabel(row.import_type)}</strong></td><td>{row.files.map((file) => file.original_name).join(", ") || "Archivo no disponible"}</td><td><Badge tone={auditStatusTone(row.status)}>{statusLabel(row.status)}</Badge></td><td>{row.actor_name}</td><td className="number-cell">{row.records_imported}/{row.records_received}</td><td>{dateTimeFormat(row.started_at)}</td><td>{row.issue_count > 0 ? <Badge tone="warning">{row.issue_count} incidencia{row.issue_count === 1 ? "" : "s"}</Badge> : <span>—</span>}</td></tr>)}</tbody></table></div></DataState><DataPagination page={page} total={total} pageSize={DATA_PAGE_SIZE} onChange={setPage} /></section>;
 }
 
 function SupplierPromotionAudit({ companyId }: { companyId: string }) {
@@ -2707,14 +2921,14 @@ function validationLabel(status: StagedRow["validation_status"]) {
 }
 
 function fileNameForBatch(batch: StagedBatch) {
-  return batch.import_files[0]?.original_name ?? "Archivo en staging";
+  return batch.import_files.map((file) => file.original_name).join(" + ") || "Archivo en staging";
 }
 function roleLabel(code: AppRoleCode, experience: ProductExperience) { const fallback=roleDisplayName(code, ALL_ROLES.find((role) => role.code === code)?.display_name);return experienceRoleLabel(code,fallback,experience); }
 function numberFormat(value: number) { return new Intl.NumberFormat("es-MX", { maximumFractionDigits: 3 }).format(value); }
 function dateOnlyFormat(value: string) { return new Intl.DateTimeFormat("es-MX", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`)); }
 function dateTimeFormat(value: string) { return new Intl.DateTimeFormat("es-MX", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)); }
 function statusLabel(status: string) { return status === "completed" ? "Completado" : status === "failed" ? "Fallido" : status === "discarded" ? "Descartado" : status === "expired" ? "Vencido" : status === "validation_failed" ? "Validación fallida" : status === "staged" ? "En staging" : "Procesando"; }
-function importTypeLabel(type: string) { return type === "products" ? "Productos" : type === "inventory" ? "Inventario" : type === "prices" ? "Precios" : type === "costs" ? "Costos" : type === "collaborators" ? "Colaboradores" : type; }
+function importTypeLabel(type: string) { return type === "products" ? "Productos" : type === "inventory" ? "Inventario" : type === "prices" ? "Precios" : type === "costs" ? "Costos" : type === "collaborators" ? "Colaboradores" : type === "sales" ? "Ventas históricas" : type; }
 function inventoryMovementLabel(type: string) { return type === "opening_snapshot" ? "Saldo inicial importado" : type === "opening_manual" ? "Inventario inicial" : type === "sale" ? "Venta" : type === "sale_reversal" ? "Cancelación de venta" : type === "sale_return" ? "Devolución de venta" : type === "controlled_adjustment" ? "Ajuste controlado" : type === "physical_count_adjustment" ? "Conteo físico" : type === "transfer_out" ? "Salida por transferencia" : type === "transfer_in" ? "Entrada por transferencia" : type === "purchase_receipt" ? "Recepción de compra" : type === "purchase_receipt_reversal" ? "Reversa de recepción" : type; }
 function inventoryTransferStatusLabel(status: InventoryTransferStatus) { return status === "sent" ? "Preparada" : status === "in_transit" ? "En tránsito" : "Recibida"; }
 function inventoryTransferTone(status: InventoryTransferStatus): "primary" | "warning" | "success" { return status === "sent" ? "primary" : status === "in_transit" ? "warning" : "success"; }

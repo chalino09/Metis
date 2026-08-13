@@ -15,7 +15,10 @@ export const maxDuration = 60;
 
 type FolderMode = "catalog" | "commercial" | "inventory" | "customers" | "purchasing";
 type Candidate = { fileName: string; modifiedAt: number; parsed: ParsedAlphaFile };
-type SupportedImportKind = Exclude<ImportKind, "unsupported">;
+// Historical sales evidence is deliberately accepted only through the visible
+// Centro de Migración uploader; the development folder utility must not stage
+// it implicitly.
+type SupportedImportKind = Exclude<ImportKind, "unsupported" | "sales">;
 
 const families: Record<SupportedImportKind, RegExp> = {
   products: /^cata_prd_.+\.xlsx?$/i,

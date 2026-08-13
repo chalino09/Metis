@@ -19,7 +19,7 @@ test("BI tiene permiso propio y no se expone a roles operativos", () => {
 
 test("las áreas de BI conservan Resumen como portada y agregan Metas", () => {
   assert.match(app, /href: "\/satrapy\/bi"/);
-  assert.match(app, /views: \["bi_summary", "bi_explorer", "bi_reports", "bi_budgets", "bi_network"\]/);
+  assert.match(app, /views: \["bi_summary", "bi_alerts", "bi_explorer", "bi_reports", "bi_budgets", "bi_network"\]/);
   assert.match(app, /<BiModule companyId=.*view="summary"/);
   assert.match(ui, /view !== "summary"/);
   assert.match(ui, /className="content-frame module-page bi-module"/);
@@ -40,7 +40,7 @@ test("las consultas son server-side, acotadas, auditadas y respetan ubicación",
   assert.doesNotMatch(migration, /::date\s+day\b/);
   assert.doesNotMatch(migration, /\bd\.day\b/);
   assert.doesNotMatch(ui, /\.from\("sales"\)/);
-  assert.match(ui, /\.rpc\("bi_get_executive_summary"/);
+  assert.match(ui, /\.rpc\("bi_get_executive_summary(?:_compared)?"/);
   assert.match(ui, /\.rpc\("bi_get_drilldown"/);
 });
 
