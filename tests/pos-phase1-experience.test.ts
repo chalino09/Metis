@@ -16,6 +16,14 @@ test("el POS muestra precios totales y permite cantidades directas", () => {
   assert.match(sales, /max=\{item\.inventory_tracked \? item\.quantity_on_hand/);
 });
 
+test("el descuento por volumen queda visible en la cabecera sin crear otra fila", () => {
+  assert.match(sales, /volumeDiscountLabel/);
+  assert.match(sales, /className="pos-cart-discount"/);
+  assert.match(sales, /por volumen/);
+  assert.doesNotMatch(sales, /pos-volume-discounts/);
+  assert.match(css, /pos-cart-discount/);
+});
+
 test("el cobro evita faltantes, muestra cambio y distingue tarjeta", () => {
   assert.match(sales, /Falta por recibir/);
   assert.match(sales, /pos-change-summary/);

@@ -52,6 +52,7 @@ import {
 type PosLocation = { id: string; name: string; code: string };
 type PosRegister = { id: string; location_id: string; name: string; code: string; currency_code: string };
 type PaymentMethod = { id: string; code: string; name: string; settlement_kind: "cash_drawer" | "external" };
+type PosPriceList = { id: string; name: string; currency_code: string };
 type ReceivableFinancialAccount = { id: string; alias: string; institution_name: string; currency_code: string; masked_ending: string };
 type CashSession = { id: string; cash_register_id: string; location_id: string; status: string; opening_amount: number; opened_at?: string };
 type PosContext = { locations: PosLocation[]; registers: PosRegister[]; payment_methods: PaymentMethod[]; own_open_session: CashSession | null };
@@ -87,7 +88,7 @@ type ReceivableCustomerContext = { customer: { id: string; code: string; display
 type CustomerMaster = { id: string; code: string; display_name: string; tax_id: string | null; customer_type: "persona_fisica" | "persona_moral" | null; notes: string | null; is_active: boolean; is_imported: boolean; source_reference: string | null; migration_status: string; addresses: CustomerAddress[]; contacts: CustomerContact[]; commercial: { price_list_id: string | null; price_list_name: string | null; payment_manager: string | null; sales_agent: string | null; credit_enabled: boolean | null; credit_limit: number | null; credit_term_days: number | null; outstanding_amount: number | null; available_credit: number | null }; receivables_summary: ReceivablesSummary | null; open_receivables: CustomerReceivable[] };
 type CartItem = { cart_item_id: string; product_id: string; code: string | null; name: string; unit: string | null; quantity: number; quantity_on_hand: number; inventory_tracked: boolean; unit_price_amount: number; discount_percent: number; gross_amount: number; discount_amount: number; tax_amount: number; total_amount: number };
 type VolumeDiscountTier = { tier_number: number; min_quantity: number; max_quantity: number | null; discount_percent: number; is_active: boolean };
-type CartQuote = { cart_id: string; revision: number; customer_id: string | null; currency_code: string | null; items: CartItem[]; subtotal_amount: number; discount_amount: number; tax_amount: number; total_amount: number; can_checkout: boolean; pending_discount_approval: boolean };
+type CartQuote = { cart_id: string; revision: number; customer_id: string | null; currency_code: string | null; price_list_id: string | null; price_list_name: string | null; price_list_override_id: string | null; price_list_overridden: boolean; items: CartItem[]; subtotal_amount: number; discount_amount: number; tax_amount: number; total_amount: number; can_checkout: boolean; pending_discount_approval: boolean };
 type HeldSaleCart = { cart_id: string; revision: number; customer_id: string | null; customer_name: string | null; held_at: string; item_count: number; unit_count: number; preview_items: string[]; pending_discount_approval: boolean };
 type HeldSaleCartPage = { items: HeldSaleCart[]; total: number; page: number; page_size: number };
 type SaleRow = { sale_id: string; folio: string; location_id: string; sale_type: "cash" | "credit"; source_kind: "operational" | "alpha_historical"; customer_name: string | null; currency_code: string; total_amount: number; returned_amount: number; cancelled: boolean; completed_at: string };
@@ -105,6 +106,15 @@ type SaleReturnContext = {
 function money(value: number | string | null | undefined, currency?: string | null) {
   const currencyCode = /^[A-Z]{3}$/.test(currency ?? "") ? currency! : "MXN";
   return new Intl.NumberFormat("es-MX", { style: "currency", currency: currencyCode, minimumFractionDigits: 2 }).format(Number(value ?? 0));
+}
+
+function volumeDiscountLabel(items: CartItem[]) {
+  const discounts = [...new Set(items.map((item) => Number(item.discount_percent ?? 0)).filter((percent) => percent > 0))].sort((a, b) => a - b);
+  if (!discounts.length) return null;
+  const formatPercent = (percent: number) => new Intl.NumberFormat("es-MX", { maximumFractionDigits: 2 }).format(percent);
+  return discounts.length === 1
+    ? `−${formatPercent(discounts[0])}% por volumen`
+    : `−${formatPercent(discounts[0])}–${formatPercent(discounts[discounts.length - 1])}% por volumen`;
 }
 
 function dateTime(value: string) {
@@ -140,7 +150,7 @@ async function printCompanyTicket(companyId: string, ticket: Record<string, unkn
 }
 
 function posBlockerLabel(code: string) {
-  const labels: Record<string, string> = { outside_assortment: "Fuera del surtido de esta sucursal", inactive: "Producto inactivo", not_sellable: "No habilitado para venta", commercial_review_required: "Revisión comercial pendiente", missing_sales_unit: "Falta unidad de venta", missing_tax_category: "Falta categoría fiscal", missing_current_tax_rate: "Falta impuesto vigente", missing_or_zero_price: "Falta precio vigente", out_of_stock: "Sin existencia en esta sucursal" };
+  const labels: Record<string, string> = { outside_assortment: "Fuera del surtido de esta sucursal", inactive: "Producto inactivo", not_sellable: "No habilitado para venta", commercial_review_required: "Revisión comercial pendiente", inventory_setup_required: "Inventario pendiente de preparar", missing_sales_unit: "Falta unidad de venta", missing_tax_category: "Falta categoría fiscal", missing_current_tax_rate: "Falta impuesto vigente", missing_or_zero_price: "Falta precio vigente", out_of_stock: "Sin existencia en esta sucursal" };
   return labels[code] ?? code.replaceAll("_", " ");
 }
 
@@ -189,14 +199,14 @@ function searchCachedProducts(products: ProductSearchItem[], query: string) {
 function optimisticCartChange(current: CartQuote, product: ProductSearchItem, delta: number): CartQuote {
   const existing = current.items.find((item) => item.product_id === product.product_id);
   const nextQuantity = Math.max(0, Number(existing?.quantity ?? 0) + delta);
-  let items = current.items.filter((item) => item.product_id !== product.product_id);
+  let items = current.items;
   if (nextQuantity > 0) {
     const originalQuantity = Number(existing?.quantity ?? 0);
     const grossUnit = existing && originalQuantity > 0 ? existing.gross_amount / originalQuantity : Number(product.base_price_amount ?? Math.max(0, product.price_amount - Number(product.tax_amount ?? 0)));
     const discountUnit = existing && originalQuantity > 0 ? existing.discount_amount / originalQuantity : 0;
     const taxUnit = existing && originalQuantity > 0 ? existing.tax_amount / originalQuantity : Number(product.tax_amount ?? Math.max(0, product.price_amount - grossUnit));
     const totalUnit = existing && originalQuantity > 0 ? existing.total_amount / originalQuantity : Number(product.price_amount);
-    items = [...items, {
+    const updatedItem = {
       cart_item_id: existing?.cart_item_id ?? `pending:${product.product_id}`,
       product_id: product.product_id,
       code: existing?.code ?? product.code,
@@ -211,7 +221,10 @@ function optimisticCartChange(current: CartQuote, product: ProductSearchItem, de
       discount_amount: discountUnit * nextQuantity,
       tax_amount: taxUnit * nextQuantity,
       total_amount: totalUnit * nextQuantity,
-    }];
+    };
+    items = existing ? current.items.map((item) => item.product_id === product.product_id ? updatedItem : item) : [...current.items, updatedItem];
+  } else if (existing) {
+    items = current.items.filter((item) => item.product_id !== product.product_id);
   }
   const subtotal = items.reduce((total, item) => total + Number(item.gross_amount ?? 0), 0);
   const discount = items.reduce((total, item) => total + Number(item.discount_amount ?? 0), 0);
@@ -281,6 +294,8 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
   const [customerResults, setCustomerResults] = useState<Customer[]>([]);
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
   const [customer, setCustomer] = useState<Customer | null>(null);
+  const [priceLists, setPriceLists] = useState<PosPriceList[]>([]);
+  const [priceListsLoading, setPriceListsLoading] = useState(false);
   const [saleType, setSaleType] = useState<"cash" | "credit" | "deferred">("cash");
   const [paymentMethodId, setPaymentMethodId] = useState("");
   const [received, setReceived] = useState("");
@@ -329,6 +344,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
   const selectedPayment = paymentMethods.find((method) => method.id === paymentMethodId) ?? null;
   const receivedAmount = Number(received.replace(",", "."));
   const saleTotal = Number(quote?.total_amount ?? 0);
+  const discountLabel = useMemo(() => volumeDiscountLabel(quote?.items ?? []), [quote?.items]);
   const isCashPayment = saleType === "cash" && selectedPayment?.settlement_kind === "cash_drawer";
   const validReceivedAmount = Number.isFinite(receivedAmount) && receivedAmount >= saleTotal;
   const changeAmount = isCashPayment && validReceivedAmount ? receivedAmount - saleTotal : 0;
@@ -476,6 +492,20 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
   useEffect(() => { void Promise.resolve().then(ensureCart); }, [ensureCart]);
 
   useEffect(() => {
+    if (!cartId || !online) { void Promise.resolve().then(() => setPriceLists([])); return; }
+    let active = true;
+    void Promise.resolve().then(async () => {
+      setPriceListsLoading(true);
+      const { data, error } = await getSupabaseClient().rpc("list_pos_price_lists", { p_cart_id: cartId });
+      if (!active) return;
+      setPriceLists(error ? [] : (data as PosPriceList[] ?? []));
+      setPriceListsLoading(false);
+      if (error) toast({ title: "No se pudieron cargar las listas de precios", description: rpcError(error, "Intenta nuevamente."), tone: "error" });
+    });
+    return () => { active = false; };
+  }, [cartId, online, toast]);
+
+  useEffect(() => {
     if (!cartId || !selectedRegister) {
       productRequestRef.current += 1;
       void Promise.resolve().then(() => { setProducts([]); setProductTotal(0); setProductPage(1); setProductLoading(false); setProductLoadingMore(false); });
@@ -486,7 +516,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
       setProductLoading(true);
       setProductLoadingMore(false);
       const startedAt = performance.now();
-      const catalogKey = `catalog:${selectedRegister.location_id}:${customer?.id ?? "default"}`;
+      const catalogKey = `catalog:${selectedRegister.location_id}:${quote?.price_list_id ?? customer?.id ?? "default"}`;
       if (!online && storageScope) {
         const cached = (await readPosCachedValue<ProductSearchItem[]>(storageScope, catalogKey)) ?? [];
         if (request !== productRequestRef.current) return;
@@ -494,10 +524,8 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
         setProducts(matches); setProductTotal(matches.length); setProductPage(1); setProductLoading(false);
         return;
       }
-      const { data, error } = await getSupabaseClient().rpc("search_pos_sale_products", {
-        p_company_id: companyId,
-        p_location_id: selectedRegister.location_id,
-        p_customer_id: customer?.id ?? null,
+      const { data, error } = await getSupabaseClient().rpc("search_pos_cart_products", {
+        p_cart_id: cartId,
         p_query: search || null,
         p_page: 1,
         p_page_size: 30,
@@ -523,17 +551,15 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
       setProductLoading(false);
     }, search.trim() ? 120 : 0);
     return () => window.clearTimeout(timer);
-  }, [cartId, companyId, customer?.id, online, productWords.plural, search, selectedRegister, storageScope, toast]);
+  }, [cartId, companyId, customer?.id, online, productWords.plural, quote?.price_list_id, search, selectedRegister, storageScope, toast]);
 
   async function loadMoreProducts() {
     if (!online || !cartId || !selectedRegister || productLoading || productLoadingMore || products.length >= productTotal) return;
     const request = ++productRequestRef.current;
     const nextPage = productPage + 1;
     setProductLoadingMore(true);
-    const { data, error } = await getSupabaseClient().rpc("search_pos_sale_products", {
-      p_company_id: companyId,
-      p_location_id: selectedRegister.location_id,
-      p_customer_id: customer?.id ?? null,
+    const { data, error } = await getSupabaseClient().rpc("search_pos_cart_products", {
+      p_cart_id: cartId,
       p_query: search || null,
       p_page: nextPage,
       p_page_size: 30,
@@ -563,7 +589,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
     const request = ++blockedRequestRef.current;
     const timer = window.setTimeout(async () => {
       setBlockedLoading(true);
-      const { data, error } = await getSupabaseClient().rpc("search_pos_blocked_products", { p_company_id: companyId, p_location_id: selectedRegister.location_id, p_customer_id: customer?.id ?? null, p_query: search.trim(), p_page: 1, p_page_size: 30 });
+      const { data, error } = await getSupabaseClient().rpc("search_pos_cart_blocked_products", { p_cart_id: cartId, p_query: search.trim(), p_page: 1, p_page_size: 30 });
       if (request !== blockedRequestRef.current) return;
       if (error) {
         setBlockedProducts([]); setBlockedTotal(0); setBlockedOpen(false);
@@ -575,7 +601,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
       setBlockedLoading(false);
     }, 120);
     return () => window.clearTimeout(timer);
-  }, [companyId, customer?.id, online, productWords.plural, search, selectedRegister, toast]);
+  }, [cartId, online, productWords.plural, quote?.price_list_id, search, selectedRegister, toast]);
 
   useEffect(() => {
     if (!online || !customerQuery.trim()) { void Promise.resolve().then(() => { setCustomerResults([]); setCustomerPickerOpen(false); }); return; }
@@ -643,8 +669,10 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
         authoritativeQuoteRef.current = authoritative;
         const serverItem = authoritative.items.find((item) => item.product_id === group.productId);
         const serverUnitTotal = serverItem && serverItem.quantity > 0 ? serverItem.total_amount / serverItem.quantity : null;
-        if (serverUnitTotal !== null && Math.abs(serverUnitTotal - group.expectedUnitTotal) > 0.01) {
-          setSyncConflict({ message: `${group.product.name} cambió de ${money(group.expectedUnitTotal, authoritative.currency_code)} a ${money(serverUnitTotal, authoritative.currency_code)}. Revisa el carrito antes de cobrar.` });
+        const configuredDiscountFactor = serverItem && serverItem.discount_percent > 0 && serverItem.discount_percent < 100 ? 1 - serverItem.discount_percent / 100 : 1;
+        const comparableServerUnitTotal = serverUnitTotal === null ? null : serverUnitTotal / configuredDiscountFactor;
+        if (comparableServerUnitTotal !== null && Math.abs(comparableServerUnitTotal - group.expectedUnitTotal) > 0.01) {
+          setSyncConflict({ message: `${group.product.name} cambió de ${money(group.expectedUnitTotal, authoritative.currency_code)} a ${money(comparableServerUnitTotal, authoritative.currency_code)}. Revisa el carrito antes de cobrar.` });
         }
         const remaining = await removePosQueueItems<ProductSearchItem>(storageScope, group.ids);
         setPendingChanges(remaining.length);
@@ -724,7 +752,9 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
     scannerBatchRef.current = { cartId, productId, requestId, lastAt: now };
     const change: PosQueuedCartChange<ProductSearchItem> = {
       id: crypto.randomUUID(), requestId, companyId, cartId, productId, quantityDelta: delta, product,
-      expectedUnitTotal: existing && existing.quantity > 0 ? existing.total_amount / existing.quantity : product.price_amount,
+      expectedUnitTotal: existing && existing.quantity > 0
+        ? (existing.total_amount / existing.quantity) / (existing.discount_percent > 0 && existing.discount_percent < 100 ? 1 - existing.discount_percent / 100 : 1)
+        : product.price_amount,
       createdAt: new Date().toISOString(),
     };
     const optimistic = optimisticCartChange(currentQuote, product, delta);
@@ -785,6 +815,25 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
     const { error } = await getSupabaseClient().rpc("set_sale_cart_customer", { p_cart_id: cartId, p_customer_id: next?.id ?? null, p_expected_revision: quote.revision });
     if (error) toast({ title: "No se pudo asignar el cliente", description: rpcError(error, "Intenta nuevamente."), tone: "error" });
     else { setCustomer(next); setCustomerQuery(""); setCustomerResults([]); setCustomerPickerOpen(false); await loadQuote(cartId); }
+    setBusy(false);
+  }
+
+  async function selectPriceList(value: string) {
+    if (!cartId || !quote || !online || value === (quote.price_list_override_id ?? "automatic")) return;
+    setBusy(true);
+    const selected = value === "automatic" ? null : priceLists.find((item) => item.id === value) ?? null;
+    const { error } = await getSupabaseClient().rpc("set_sale_cart_price_list", {
+      p_cart_id: cartId,
+      p_price_list_id: selected?.id ?? null,
+      p_expected_revision: quote.revision,
+    });
+    if (error) {
+      toast({ title: "No se pudo cambiar la lista", description: rpcError(error, "La venta conserva sus precios anteriores."), tone: "error" });
+    } else {
+      setReceived("");
+      await loadQuote(cartId);
+      toast({ title: "Lista de precios actualizada", description: selected ? `${selected.name}: se recalculó toda la venta.` : "Se restauró la lista automática y se recalculó toda la venta.", tone: "success" });
+    }
     setBusy(false);
   }
 
@@ -1086,8 +1135,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
   if (!context.registers.length) return <div className="content-frame"><PosEmpty title="No hay cajas configuradas" description="Crea una caja activa y asígnala a una ubicación antes de vender." /></div>;
 
   return <div className="content-frame pos-page">
-    <div className="pos-page__heading"><div><span className="eyebrow">Venta transaccional</span><h1>Punto de venta</h1><p>Precios, impuestos y existencias se validan al cobrar.</p></div><Link className="pos-exit-link" href="/satrapy/ventas/historial">Salir del POS</Link></div>
-    {ownSession && selectedRegister && <div className="pos-context-strip"><span><small>Empresa</small><strong>{companyName}</strong></span><span><small>Sucursal</small><strong>{selectedLocation?.name ?? selectedRegister.code}</strong></span><span><small>Caja</small><strong>{selectedRegister.name}</strong></span><span><small>Cajero</small><strong>{cashierName}</strong></span><span><small>Sesión</small><strong>{ownSession.opened_at ? `Desde ${new Date(ownSession.opened_at).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}` : "Abierta"}</strong></span></div>}
+    <div className="pos-page__heading"><div><h1>Punto de venta</h1><p>{ownSession && selectedRegister ? `${selectedLocation?.name ?? selectedRegister.code} · ${selectedRegister.name} · ${cashierName}` : companyName}</p></div><Link className="pos-exit-link" href="/satrapy/ventas/historial">Salir del POS</Link></div>
     {(connectionDegraded || showSlowSyncStatus) && <div className="pos-connection-status" role="status" aria-live="polite"><CloudOff size={18} aria-hidden="true" /><div className="pos-connection-status__content"><strong>{connectionDegraded ? "Sin conexión: venta pendiente de sincronizar" : syncing ? "Sincronizando cambios pendientes" : "Venta pendiente de sincronizar"}</strong><small>{connectionDegraded ? "Puedes buscar en caché y preparar el carrito. El cobro, inventario y ticket se habilitan al recuperar la conexión." : `${pendingChanges} cambio${pendingChanges === 1 ? "" : "s"} en cola; el cobro se habilitará al terminar.`}</small></div>{connectionDegraded && <Button size="sm" variant="secondary" onClick={() => { setOnline(navigator.onLine); void reloadContext(); setQueueVersion((current) => current + 1); }}>Reintentar conexión</Button>}</div>}
     {syncConflict && <div className="pos-sync-conflict" role="alert"><AlertCircle size={18} aria-hidden="true" /><div className="pos-connection-status__content"><strong>Revisa el carrito</strong><small>{syncConflict.message}</small></div><Button size="sm" variant="secondary" onClick={() => void resolveSyncConflict()}>{syncConflict.discardIds?.length ? "Descartar cambio pendiente" : "Confirmar revisión"}</Button></div>}
     {!ownSession ? <section className="pos-start-card"><Banknote size={22} /><div><strong>Abre tu caja para iniciar.</strong><span>La apertura requiere un conteo formal por denominación. Si hay varias cajas, la selección se hace explícitamente en Caja.</span></div><Link href="/satrapy/ventas/caja" className="button button--primary">Ir a Caja</Link></section> : <>
@@ -1109,11 +1157,10 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
           </div>
         </section>
         <aside className="pos-cart" id="pos-checkout">
-          <div className="pos-cart__top"><div><span className="eyebrow">Venta actual</span><h2>{quote?.items.length ?? 0} {(quote?.items.length ?? 0) === 1 ? "partida" : "partidas"}</h2></div><span className="pos-cart__actions">{permissions.includes("apply_discount") && (quote?.pending_discount_approval || Number(quote?.discount_amount ?? 0) > 0) ? <Button variant="ghost" size="sm" loading={busy} disabled={!checkoutReady} onClick={() => void cancelDiscount()}>Quitar descuento</Button> : permissions.includes("apply_discount") ? <Button variant="ghost" size="sm" disabled={!checkoutReady || !quote?.items.length} onClick={() => setDiscountOpen(true)}>Aplicar descuento</Button> : null}{Boolean(quote?.items.length) && <Button variant="ghost" size="sm" disabled={!checkoutReady || busy} onClick={() => void holdCurrentSale()}><Clock3 size={14} aria-hidden="true" /> Poner en espera</Button>}{Boolean(quote?.items.length) && <Button variant="ghost" size="sm" disabled={!checkoutReady || busy} onClick={() => setDiscardCartOpen(true)}><Trash2 size={14} aria-hidden="true" /> Vaciar venta</Button>}<Badge tone={pendingChanges ? "warning" : "success"}>{pendingChanges ? `${pendingChanges} pendiente${pendingChanges === 1 ? "" : "s"}` : "Caja abierta"}</Badge></span></div>
+          <div className="pos-cart__top"><div className="pos-cart__heading"><span className="eyebrow">Venta actual</span><div className="pos-cart__title-row"><h2>{quote?.items.length ?? 0} {(quote?.items.length ?? 0) === 1 ? "partida" : "partidas"}</h2><Select className="pos-price-list-select" ariaLabel="Lista de precios de la venta" value={quote?.price_list_override_id ?? "automatic"} onValueChange={(value) => void selectPriceList(value)} disabled={busy || priceListsLoading || !online || saleType === "deferred"} options={[{ value: "automatic", label: `Automática${quote?.price_list_name ? ` · ${quote.price_list_name}` : ""}` }, ...priceLists.map((list) => ({ value: list.id, label: list.name }))]} />{discountLabel && <span className="pos-cart-discount">{discountLabel}</span>}</div></div><span className="pos-cart__actions">{permissions.includes("apply_discount") && (quote?.pending_discount_approval || Number(quote?.discount_amount ?? 0) > 0) ? <Button variant="ghost" size="sm" loading={busy} disabled={!checkoutReady} onClick={() => void cancelDiscount()}>Quitar descuento</Button> : permissions.includes("apply_discount") ? <Button variant="ghost" size="sm" disabled={!checkoutReady || !quote?.items.length} onClick={() => setDiscountOpen(true)}>Aplicar descuento</Button> : null}{Boolean(quote?.items.length) && <Button variant="ghost" size="sm" disabled={!checkoutReady || busy} onClick={() => void holdCurrentSale()}><Clock3 size={14} aria-hidden="true" /> Poner en espera</Button>}{Boolean(quote?.items.length) && <Button variant="ghost" size="sm" disabled={!checkoutReady || busy} onClick={() => setDiscardCartOpen(true)}><Trash2 size={14} aria-hidden="true" /> Vaciar venta</Button>}<Badge tone={pendingChanges ? "warning" : "success"}>{pendingChanges ? `${pendingChanges} pendiente${pendingChanges === 1 ? "" : "s"}` : "Caja abierta"}</Badge></span></div>
           <div ref={customerPickerRef} className="pos-customer-picker"><div className="pos-customer-picker__heading"><span>Cliente</span>{permissions.includes("manage_customers") && <button type="button" onClick={() => setQuickCustomerOpen(true)}><UserPlus size={13} aria-hidden="true" /> Crear cliente</button>}</div><Input ref={customerRef} role="combobox" aria-expanded={customerPickerOpen && customerResults.length > 0} value={customerQuery} onFocus={() => setCustomerPickerOpen(customerResults.length > 0)} onClick={() => setCustomerPickerOpen(customerResults.length > 0)} onChange={(event) => setCustomerQuery(event.target.value)} placeholder={customer ? customer.display_name : "Buscar cliente (F2)"} aria-label="Buscar cliente" aria-controls="pos-customer-options" aria-describedby="pos-customer-status" /><span id="pos-customer-status" className="sr-only" role="status" aria-live="polite">{customerQuery && customerResults.length ? `${customerResults.length} clientes disponibles.` : ""}</span>{customer && <button className="pos-customer-chip" aria-label={`Quitar cliente ${customer.display_name}`} onClick={() => void selectCustomer(null)}><span>{customer.display_name}</span><X size={14} aria-hidden="true" /></button>}{customerPickerOpen && customerResults.length > 0 && <div id="pos-customer-options" className="pos-customer-results" role="listbox">{customerResults.map((item) => <button role="option" aria-selected={customer?.id === item.id} key={item.id} disabled={saleType === "credit" && (!item.credit_enabled || Boolean(item.alpha_external_code && item.migration_status !== "promoted"))} onClick={() => void selectCustomer(item)}><strong>{item.display_name}</strong><small>{item.code}{saleType === "credit" && item.available_credit !== undefined ? ` · crédito disponible ${money(item.available_credit)}` : ""}{item.alpha_external_code && item.migration_status !== "promoted" ? " · migración pendiente" : ""}</small></button>)}</div>}</div>
           {customer && saleType === "credit" && customer.available_credit !== undefined && <div className="pos-credit-alert"><CircleDollarSign size={18} /><div><strong>Crédito disponible</strong><span>{money(customer.available_credit)} · plazo {customer.credit_term_days} días</span></div></div>}
-          <div className="pos-cart-lines" role="region" aria-label={`${productWords.pluralTitle} en la venta`} tabIndex={(quote?.items.length ?? 0) > 2 ? 0 : undefined}>{quote?.items.length ? quote.items.map((item) => <article key={item.cart_item_id} tabIndex={0} aria-label={`${item.name}, cantidad ${item.quantity}. Usa más o menos para ajustar la partida.`} onKeyDown={(event) => { if (busy || event.target !== event.currentTarget) return; if (event.key === "+") { event.preventDefault(); void changeItem(item.product_id, 1); } if (event.key === "-") { event.preventDefault(); void changeItem(item.product_id, -1); } }}><div><strong>{item.name}</strong><small>{item.code ?? ""} · {money(item.total_amount / item.quantity, quote.currency_code ?? "MXN")} por unidad</small></div><div className="pos-line-controls"><button aria-label={`Restar ${item.name}`} disabled={busy} onClick={() => void changeItem(item.product_id, -1)}><Minus size={14} aria-hidden="true" /></button><Input key={`${item.cart_item_id}:${quote.revision}`} className="pos-quantity-input" type="number" min="0" max={item.inventory_tracked ? item.quantity_on_hand : undefined} step="any" inputMode="decimal" defaultValue={item.quantity} aria-label={`Cantidad de ${item.name}`} disabled={busy} onBlur={(event) => setItemQuantity(item.product_id, item.quantity, event.currentTarget)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); if (event.key === "Escape") { event.currentTarget.value = String(item.quantity); event.currentTarget.blur(); } }} /><button aria-label={`Sumar ${item.name}`} disabled={busy} onClick={() => void changeItem(item.product_id, 1)}><Plus size={14} aria-hidden="true" /></button><strong>{money(item.total_amount, quote.currency_code ?? "MXN")}</strong></div></article>) : <div className="pos-cart-empty"><ShoppingCart size={22} aria-hidden="true" /><strong>Carrito vacío</strong><span>Busca o escanea un {productWords.singular} para comenzar.</span></div>}</div>
-          {quote?.items.some((item) => item.discount_percent > 0) && <div className="pos-volume-discounts" role="status" aria-live="polite">{quote.items.filter((item) => item.discount_percent > 0).map((item) => <span key={item.cart_item_id}><CircleDollarSign size={13} aria-hidden="true" /><strong>{item.name}</strong> · {item.discount_percent}% · {item.quantity >= 10 ? "10 o más piezas" : item.quantity >= 5 ? "5–9 piezas" : "2–4 piezas"}</span>)}</div>}
+          <div className="pos-cart-lines" role="region" aria-label={`${productWords.pluralTitle} en la venta`} tabIndex={(quote?.items.length ?? 0) > 2 ? 0 : undefined}>{quote?.items.length ? quote.items.map((item) => <article key={item.cart_item_id} tabIndex={0} aria-label={`${item.name}, cantidad ${item.quantity}. Usa más o menos para ajustar la partida.`} onKeyDown={(event) => { if (busy || event.target !== event.currentTarget) return; if (event.key === "+") { event.preventDefault(); void changeItem(item.product_id, 1); } if (event.key === "-") { event.preventDefault(); void changeItem(item.product_id, -1); } }}><div><strong title={item.name}>{item.name}</strong><small>{item.code ?? ""} · {money(item.total_amount / item.quantity, quote.currency_code ?? "MXN")} por unidad{item.discount_percent > 0 ? ` · −${item.discount_percent}%` : ""}</small></div><div className="pos-line-controls"><button aria-label={`Restar ${item.name}`} disabled={busy} onClick={() => void changeItem(item.product_id, -1)}><Minus size={14} aria-hidden="true" /></button><Input key={`${item.cart_item_id}:${quote.revision}`} className="pos-quantity-input" type="number" min="0" max={item.inventory_tracked ? item.quantity_on_hand : undefined} step="any" inputMode="decimal" defaultValue={item.quantity} aria-label={`Cantidad de ${item.name}`} disabled={busy} onBlur={(event) => setItemQuantity(item.product_id, item.quantity, event.currentTarget)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); if (event.key === "Escape") { event.currentTarget.value = String(item.quantity); event.currentTarget.blur(); } }} /><button aria-label={`Sumar ${item.name}`} disabled={busy} onClick={() => void changeItem(item.product_id, 1)}><Plus size={14} aria-hidden="true" /></button><strong>{money(item.total_amount, quote.currency_code ?? "MXN")}</strong></div></article>) : <div className="pos-cart-empty"><ShoppingCart size={22} aria-hidden="true" /><strong>Carrito vacío</strong><span>Busca o escanea un {productWords.singular} para comenzar.</span></div>}</div>
           <div className="pos-settlement">
             <div className="pos-cart-summary"><dl><div><dt>Subtotal</dt><dd>{money(quote?.subtotal_amount, quote?.currency_code ?? "MXN")}</dd></div><div><dt>Descuentos</dt><dd>−{money(quote?.discount_amount, quote?.currency_code ?? "MXN")}</dd></div><div><dt>Impuestos</dt><dd>{money(quote?.tax_amount, quote?.currency_code ?? "MXN")}</dd></div><div className="pos-cart-summary__total"><dt>Total</dt><dd>{money(quote?.total_amount, quote?.currency_code ?? "MXN")}</dd></div></dl></div>
             {quote?.pending_discount_approval && <div className="pos-credit-alert is-blocked"><AlertCircle size={18} /><div><strong>Descuento pendiente</strong><span>Otro usuario autorizado debe aprobarlo antes de cobrar.</span></div></div>}
@@ -1121,7 +1168,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
             <div className="pos-sale-type" role="group" aria-label="Tipo de venta">
               <button aria-pressed={saleType === "cash"} className={saleType === "cash" ? "is-active" : ""} onClick={() => setSaleType("cash")}>Contado</button>
               {permissions.includes("sell_credit") && <button aria-pressed={saleType === "credit"} className={saleType === "credit" ? "is-active" : ""} onClick={() => setSaleType("credit")}>Crédito</button>}
-              {permissions.includes("manage_sales_orders") && <button aria-pressed={saleType === "deferred"} className={saleType === "deferred" ? "is-active" : ""} onClick={() => { setSaleType("deferred"); setReceived(""); setPaymentReference(""); }}>Entrega posterior</button>}
+              {permissions.includes("manage_sales_orders") && <button aria-pressed={saleType === "deferred"} className={saleType === "deferred" ? "is-active" : ""} disabled={Boolean(quote?.price_list_overridden)} title={quote?.price_list_overridden ? "Restaura la lista automática para crear una orden." : undefined} onClick={() => { setSaleType("deferred"); setReceived(""); setPaymentReference(""); }}>Entrega posterior</button>}
             </div>
             {saleType === "cash" && <>
               <Select ariaLabel="Forma de pago" value={paymentMethodId} onValueChange={(value) => { setPaymentMethodId(value); setReceived(""); setPaymentReference(""); }} options={paymentMethods.map((method) => ({ value: method.id, label: method.name }))} />
@@ -1144,7 +1191,6 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
               <div className="pos-deferred-balance"><span>Saldo después del pago</span><strong>{money(Math.max(0, saleTotal - Number(received || 0)), quote?.currency_code ?? "MXN")}</strong></div>
             </section>}
             <Button variant="primary" size="lg" loading={busy} disabled={!checkoutReady || !quote?.can_checkout || (saleType === "cash" && (!paymentMethodId || (isCashPayment && !validReceivedAmount) || (selectedPayment?.settlement_kind === "external" && !paymentReference.trim()))) || (saleType === "credit" && (!customer?.credit_enabled || Boolean(customer.alpha_external_code && customer.migration_status !== "promoted"))) || (saleType === "deferred" && (!customer || !validOrderPayment))} onClick={() => void complete()}>{saleType === "cash" ? "Cobrar" : saleType === "credit" ? "Confirmar crédito" : "Crear orden"} <kbd>F8</kbd></Button>
-            <small className="pos-performance-note">p95 cobro {metricP95.checkout === null ? "—" : `${Math.round(metricP95.checkout)} ms`} · meta agregar &lt;300 ms con red normal</small>
           </div>
           </div>
         </aside>

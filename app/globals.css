@@ -371,7 +371,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .pos-connection-status strong,.pos-sync-conflict strong { color:var(--ink); font-size:12px; }
 .pos-connection-status small,.pos-sync-conflict small { color:var(--muted); font-size:10px; line-height:1.4; }
 .pos-sync-conflict { border-color:#e7b4ae; background:var(--danger-soft); color:var(--danger); }
-.pos-performance-note { color:var(--muted); font-size:9px; line-height:1.4; text-align:center; }
 .ticket-preview__payment { margin-top:4px !important; border-top:1px dashed var(--line); padding-top:8px; }
 .ticket-preview__change { color:var(--ink) !important; font-size:13px !important; font-weight:650; }
 
@@ -2825,3 +2824,151 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .ticket-automatic-data dt { color:var(--muted); font-size:9px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; }
 .ticket-automatic-data dd { overflow-wrap:anywhere; margin:0; color:var(--ink); font-size:10px; line-height:1.4; }
 @media (max-width:760px) { .ticket-automatic-data dl { grid-template-columns:1fr; } }
+/* POS · ajuste puntual: encabezado simple, catálogo lineal y carrito amplio */
+.app-shell--pos .pos-page__heading { align-items:center; margin-bottom:10px; }
+.app-shell--pos .pos-page__heading h1 { margin:0 0 3px; font-size:24px; }
+.app-shell--pos .pos-page__heading p { margin:0; font-size:11px; }
+.app-shell--pos .pos-shell { min-height:calc(100vh - 126px); }
+.app-shell--pos .pos-product-list { display:grid; grid-template-columns:1fr; }
+.app-shell--pos .pos-cart { grid-template-rows:auto auto minmax(220px,1fr) auto; }
+.app-shell--pos .pos-cart-lines { min-height:220px; }
+.app-shell--pos .pos-cart-lines article > div:first-child strong {
+  display:-webkit-box;
+  overflow:hidden;
+  white-space:normal;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+  line-height:1.3;
+}
+.app-shell--pos .pos-cart-summary { padding:8px 10px; }
+.app-shell--pos .pos-cart-summary dl > div:not(.pos-cart-summary__total) { display:none; }
+.app-shell--pos .pos-cart-summary__total { margin:0; border-top:0; padding-top:0; }
+.app-shell--pos .pos-settlement { gap:7px; padding-top:9px; }
+.app-shell--pos .pos-sale-type button { min-height:36px; }
+.app-shell--pos .pos-payment-context { min-height:40px; padding-block:7px; }
+.app-shell--pos .pos-payment-context small { display:none; }
+.app-shell--pos .pos-change-summary { min-height:40px; }
+.app-shell--pos .pos-quick-cash { display:none; }
+.app-shell--pos .pos-checkout > .ui-button--primary { min-height:46px; }
+
+/* POS · ventas en espera como lista operativa, no tarjetas genéricas */
+.app-shell--pos .pos-held-workspace {
+  border:0;
+  border-radius:0;
+  background:transparent;
+  padding:4px;
+  box-shadow:none;
+}
+.app-shell--pos .pos-held-list {
+  gap:0;
+  border-block:1px solid #dedad3;
+  background:#fff;
+  padding:0 14px;
+}
+.app-shell--pos .pos-held-list > button {
+  min-height:82px;
+  border:0;
+  border-bottom:1px solid #e5e1da;
+  border-radius:0;
+  background:transparent;
+  padding:14px 4px;
+  transition-property:background-color,color;
+  transition-duration:120ms;
+}
+.app-shell--pos .pos-held-list > button:last-of-type { border-bottom:0; }
+.app-shell--pos .pos-held-list > button:hover { border-color:#e5e1da; background:#faf9f7; }
+.app-shell--pos .pos-held-list > button.is-selected {
+  margin:4px -8px;
+  border:0;
+  border-radius:10px;
+  background:#eeeae1;
+  padding-inline:12px;
+  box-shadow:none;
+}
+.app-shell--pos .pos-held-list > button.is-selected + button { border-top-color:transparent; }
+.app-shell--pos .pos-held-detail { border-radius:14px; background:#efede8; }
+.app-shell--pos .pos-held-detail__lines { border-radius:10px; box-shadow:0 1px 2px rgb(20 20 18 / .04); }
+
+/* POS · descuento de volumen visible sin añadir una fila al carrito */
+.app-shell--pos .pos-cart__heading { display:grid; min-width:0; gap:3px; }
+.app-shell--pos .pos-cart__title-row { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.app-shell--pos .pos-price-list-select {
+  min-height:28px;
+  min-width:112px;
+  max-width:168px;
+  border-color:#4b4945;
+  border-radius:8px;
+  background:#2a2a28;
+  padding:5px 8px;
+  box-shadow:none;
+  color:#f4f1eb;
+  font-size:10px;
+  font-weight:650;
+}
+.app-shell--pos .pos-price-list-select:hover:not(:disabled),
+.app-shell--pos .pos-price-list-select[data-state="open"] { border-color:#706d66; background:#343432; }
+.app-shell--pos .pos-price-list-select > span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.app-shell--pos .pos-price-list-select > svg { flex:0 0 auto; color:#bdb9b0; }
+.app-shell--pos .pos-cart-discount {
+  display:inline-flex;
+  min-height:22px;
+  align-items:center;
+  border:1px solid rgb(159 207 183 / .48);
+  border-radius:999px;
+  background:#dfeee4;
+  padding:3px 8px;
+  color:#246343;
+  font-size:10px;
+  font-weight:700;
+  letter-spacing:.01em;
+  white-space:nowrap;
+}
+@media (max-width:700px) {
+  .app-shell--pos .pos-cart__title-row { align-items:flex-start; flex-direction:column; gap:4px; }
+}
+
+/* POS · superficies blancas, conservando estados semánticos */
+.app-shell--pos {
+  --canvas:#fff;
+  --surface-subtle:#fff;
+  --surface-strong:#fff;
+  --accent-soft:#f7f7f7;
+  background:#fff;
+}
+.app-shell--pos .global-header,
+.app-shell--pos .global-session-switchers,
+.app-shell--pos .pos-exit-link,
+.app-shell--pos .pos-search,
+.app-shell--pos .pos-search kbd,
+.app-shell--pos .pos-shortcuts kbd,
+.app-shell--pos .pos-product::after,
+.app-shell--pos .pos-list-empty,
+.app-shell--pos .pos-customer-picker .ui-input,
+.app-shell--pos .pos-cart-lines article,
+.app-shell--pos .pos-line-controls button,
+.app-shell--pos .pos-cart-empty,
+.app-shell--pos .pos-cart-summary,
+.app-shell--pos .pos-payment-context,
+.app-shell--pos .pos-held-detail {
+  background:#fff;
+}
+.app-shell--pos .pos-product:hover,
+.app-shell--pos .pos-product:focus-visible,
+.app-shell--pos .pos-product:hover::after,
+.app-shell--pos .pos-product-stock:hover:not(:disabled),
+.app-shell--pos .pos-customer-results button:hover,
+.app-shell--pos .pos-line-controls button:hover,
+.app-shell--pos .pos-quick-cash button:hover,
+.app-shell--pos .pos-held-list > button:hover,
+.app-shell--pos .pos-held-list > button.is-selected,
+.app-shell--pos .pos-held-detail__lines {
+  background:#f7f7f7;
+}
+.app-shell--pos .pos-product mark,
+.app-shell--pos .pos-blocked-results mark,
+.app-shell--pos .pos-customer-chip,
+.app-shell--pos .pos-sale-type,
+.app-shell--pos .ui-badge--primary,
+.app-shell--pos .pos-held-list > button.is-selected {
+  background:#f7f7f7;
+}

@@ -33,5 +33,5 @@ test("se instrumentan p95 de búsqueda, partida y cobro", () => {
   assert.match(sales, /name: "search"/);
   assert.match(sales, /name: "add_item"/);
   assert.match(sales, /name: "checkout"/);
-  assert.match(sales, /meta agregar &lt;300 ms/);
+  assert.doesNotMatch(sales, /p95 cobro|meta agregar &lt;300 ms/);
 });

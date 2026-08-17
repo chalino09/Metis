@@ -2,6 +2,7 @@ export const PRODUCT_READINESS_LABELS: Record<string, string> = {
   inactive: "Producto inactivo",
   not_sellable: "No marcado como vendible",
   commercial_review_required: "Clasificación comercial pendiente",
+  inventory_setup_required: "Inventario pendiente de preparar",
   missing_sales_unit: "Sin unidad de venta",
   missing_tax_category: "Sin categoría fiscal",
   missing_current_tax_rate: "Sin tasa fiscal vigente",
