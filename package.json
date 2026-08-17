@@ -21,6 +21,7 @@
     "worker:collection": "node --env-file=.env --experimental-strip-types scripts/collection-worker.ts"
   },
   "dependencies": {
+    "@openai/agents": "^0.16.1",
     "@radix-ui/react-dialog": "^1.1.19",
     "@radix-ui/react-select": "^2.3.3",
     "@radix-ui/react-tabs": "^1.1.17",
@@ -35,7 +36,8 @@
     "react-dom": "19.2.6",
     "recharts": "^3.10.1",
     "sharp": "^0.35.3",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.2.1",

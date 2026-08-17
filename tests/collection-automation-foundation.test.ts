@@ -29,17 +29,17 @@ test("una política incompleta bloquea generación y reclamación",()=>{
   assert.match(migration,/Automatización de cobranza no configurada/);
   assert.match(migration,/public\.collection_policy_is_complete\(p\)/);
   assert.match(migration,/p\.status='approved'/);
-  assert.match(ui,/Automatización no configurada/);
+  assert.match(ui,/No configurada/);
   assert.match(migration,/collection_save_policy_draft/);assert.match(migration,/collection_approve_policy/);assert.match(migration,/collection\.policy_approved/);
 });
 
-test("el worker de Fase 1 es separado y no integra proveedores",()=>{
+test("el worker conserva tareas deterministas sin depender de proveedores",()=>{
   assert.match(worker,/collection_claim_tasks/);assert.match(worker,/internal_healthcheck/);assert.match(worker,/provider: null/);
-  assert.doesNotMatch(worker,/openai|twilio/i);assert.match(plan,/El flujo funciona sin OpenAI ni Twilio/);
+  assert.doesNotMatch(worker,/twilio/i);assert.match(plan,/El flujo funciona sin OpenAI ni Twilio/);
 });
 
 test("la bandeja es paginada, semántica y no consulta tablas directamente",()=>{
-  assert.match(ui,/collection_list_tasks/);assert.match(ui,/DataPagination/);assert.match(ui,/<main/);assert.match(ui,/aria-labelledby/);
+  assert.match(ui,/collection_list_cases/);assert.match(ui,/DataPagination/);assert.match(ui,/<main/);assert.match(ui,/aria-labelledby/);
   assert.doesNotMatch(ui,/\.from\(/);
   assert.match(sales,/Vistas de cuentas por cobrar/);assert.match(ui,/Vistas de cuentas por cobrar/);
   assert.doesNotMatch(app,/views: \["pos", "sales_history", "sales_quotes", "sales_orders", "customers", "receivables", "collection_automation"/);
