@@ -2,7 +2,8 @@ import ExcelJS from "exceljs";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 export type BiExportMetric = {
-  code:string;name:string;formula:string;unit:string;source:string;grain:string;kind:string;limitations:string;
+  code:string;metric_id?:string;name:string;formula:string;unit:string;source:string;grain:string;kind:string;limitations:string;
+  contract_version?:string;responsible_rpc?:string;favorable_direction?:string;
 };
 export type BiExportSection = {
   title:string;widgetType:"kpi"|"chart"|"table";definition:Record<string,unknown>;
@@ -16,7 +17,9 @@ const green="1C6656",ink="17211E",muted="64716C";
 export function createBiCsv(report:BiExportReport){
   const lines:string[]=[`Satrapy BI,${csv(report.companyName)}`,`Reporte,${csv(report.targetLabel)}`,`Generado,${csv(report.generatedAt)}`,""];
   for(const section of report.sections){
-    lines.push(csv(section.title),`Periodo,${csv(String(section.definition.date_from??""))},${csv(String(section.definition.date_to??""))}`);
+    lines.push(csv(section.title),`Periodo,${csv(String(section.definition.date_from??""))},${csv(String(section.definition.date_to??""))}`,
+      `Filtros,${csv(JSON.stringify(section.definition))}`);
+    for(const metric of section.metrics)lines.push(`metric_id,${csv(metric.metric_id??metric.code)}`,`Versión de contrato,${csv(metric.contract_version??"sin versión")}`,`RPC responsable,${csv(metric.responsible_rpc??metric.source)}`);
     if(isOperational(section)){
       lines.push(`Dimensión,${csv(section.definition.dimension)}`,`Búsqueda,${csv(section.definition.search??"")}`,`Orden,${csv(section.definition.sort_by??"")},${csv(section.definition.sort_direction??"")}`);
       lines.push("Entidad,Valor actual,Valor anterior,Variación absoluta,Variación porcentual,Participación en el total,Contribución al cambio,Ranking,Estado,Disponible,Motivo");
