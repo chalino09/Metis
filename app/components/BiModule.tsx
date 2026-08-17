@@ -65,6 +65,7 @@ type ExecutiveBudgetSummary = {
 };
 type BiOperationalAlert={
   id:string;condition_key:string;rule_code:string;rule_version:number;alert_type:string;metric_code:string;
+  metric_contract_version?:string;
   period_from:string;period_to:string;comparison_from?:string|null;comparison_to?:string|null;comparison_mode:"previous_period"|"previous_year";
   filters:Record<string,string>;dimension?:string|null;entity_id?:string|null;entity_label?:string|null;
   severity:"critical"|"warning"|"informational";observed_value?:number|null;comparison_value?:number|null;threshold_value?:number|null;
@@ -115,6 +116,8 @@ type ExplorerMetric = {
   source:string;grain:string;dimensions:string[];kind:"accrual"|"cash"|"operational";
   visualizations:Array<"line"|"bar"|"area"|"scatter">;drilldown:boolean;available:boolean;
   unavailable_reason?:string|null;limitations:string;
+  metric_id?:string;description?:string;contract_version?:string;responsible_rpc?:string;favorable_direction?:"up"|"down"|"completeness";
+  compatible_filters?:string[];time_granularities?:string[];supported_comparisons?:string[];
 };
 type ExplorerCatalog = {
   updated_at:string;currency_code:string|null;
@@ -550,7 +553,7 @@ function ExplorerChart({result,metrics,visualization,dimension,onInspect}:{resul
 
 function ExplorerDefinition({metric,catalog,onClose}:{metric:ExplorerMetric|null;catalog:ExplorerCatalog;onClose:()=>void}){
   return <Modal open={Boolean(metric)} onOpenChange={open=>!open&&onClose()} eyebrow={metric?.module} title={metric?.name??"Definición"} description="Catálogo explícito de compatibilidad">
-    {metric&&<dl className="bi-definition"><div><dt>Fórmula</dt><dd>{metric.formula}</dd></div><div><dt>Unidad</dt><dd>{metric.unit==="currency"?catalog.currency_code??"Moneda base":metric.unit}</dd></div><div><dt>Fuente canónica</dt><dd>{metric.source}</dd></div><div><dt>Granularidad</dt><dd>{metric.grain}</dd></div><div><dt>Dimensiones</dt><dd>{metric.dimensions.map(code=>catalog.dimensions.find(item=>item.code===code)?.name??code).join(", ")}</dd></div><div><dt>Criterio</dt><dd>{EXPLORER_KIND[metric.kind]}</dd></div><div><dt>Visualizaciones</dt><dd>{metric.visualizations.map(code=>EXPLORER_VIZ[code]).join(", ")}</dd></div><div><dt>Drill-down</dt><dd>{metric.drilldown?"Sí":"No"}</dd></div><div><dt>Limitaciones</dt><dd>{metric.limitations}</dd></div><div><dt>Actualización</dt><dd>{new Date(catalog.updated_at).toLocaleString("es-MX")}</dd></div></dl>}
+    {metric&&<dl className="bi-definition"><div><dt>metric_id</dt><dd>{metric.metric_id??metric.code}</dd></div><div><dt>Versión del contrato</dt><dd>{metric.contract_version??"Sin versión"}</dd></div><div><dt>Fórmula</dt><dd>{metric.formula}</dd></div><div><dt>Unidad</dt><dd>{metric.unit==="currency"?catalog.currency_code??"Moneda base":metric.unit}</dd></div><div><dt>Fuente canónica</dt><dd>{metric.source}</dd></div><div><dt>RPC responsable</dt><dd>{metric.responsible_rpc??"bi_explorer_query"}</dd></div><div><dt>Granularidades de consulta</dt><dd>{metric.time_granularities?.join(", ")??metric.grain}</dd></div><div><dt>Dimensiones</dt><dd>{metric.dimensions.map(code=>catalog.dimensions.find(item=>item.code===code)?.name??code).join(", ")}</dd></div><div><dt>Comparaciones</dt><dd>{metric.supported_comparisons?.join(", ")??"Periodo anterior"}</dd></div><div><dt>Dirección favorable</dt><dd>{metric.favorable_direction==="down"?"Disminuir":metric.favorable_direction==="completeness"?"Completar":"Aumentar"}</dd></div><div><dt>Criterio</dt><dd>{EXPLORER_KIND[metric.kind]}</dd></div><div><dt>Visualizaciones</dt><dd>{metric.visualizations.map(code=>EXPLORER_VIZ[code]).join(", ")}</dd></div><div><dt>Drill-down</dt><dd>{metric.drilldown?"Sí":"No"}</dd></div><div><dt>Limitaciones</dt><dd>{metric.limitations}</dd></div><div><dt>Actualización</dt><dd>{new Date(catalog.updated_at).toLocaleString("es-MX")}</dd></div></dl>}
   </Modal>;
 }
 
