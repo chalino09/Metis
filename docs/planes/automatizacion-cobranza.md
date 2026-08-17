@@ -434,6 +434,14 @@ configurar y aprobar explícitamente su política real antes de generar trabajo.
 
 ### Fase 3 — Agente asistido y aprobaciones
 
+**Estado técnico el 2026-08-16:** Fase 3 cerrada al 100% en
+`codex/cobranza-fase-3`, con la migración final aplicada al Supabase conectado y
+QA autenticado completado. La entrega incorpora
+Agents SDK, salida estructurada, herramienta de contexto canónico de solo lectura,
+guardrail por caso, trazas sin contenido sensible, consumo y costo estimado,
+generación por lotes, aprobación revalidada, aplicación explícita sin envío,
+historial contextual y minimización de datos en navegador.
+
 **Backend/worker**
 
 - Integrar OpenAI Agents SDK en TypeScript.
@@ -455,6 +463,34 @@ configurar y aprobar explícitamente su política real antes de generar trabajo.
 - El agente no puede ejecutar acciones financieras sensibles.
 - Toda propuesta puede explicarse y reconstruirse.
 - Una propuesta vencida o basada en saldo cambiado no puede aplicarse.
+
+#### Evidencia técnica de Fase 3
+
+- El worker registra modelo, versión, tokens, costo estimado y `trace_id` en la
+  ejecución; el trazo excluye entradas y salidas sensibles y se vacía antes de
+  terminar el proceso de una sola corrida.
+- La propuesta se crea idempotentemente por tarea. Aprobar y aplicar son pasos
+  distintos; ambos revalidan caso, saldo, vigencia y bloqueos. Aplicar sólo deja
+  el borrador listo para un canal futuro y registra expresamente
+  `outbound_sent=false`.
+- La bandeja no recibe modelo, prompt, evidencia técnica ni UUID internos. Se
+  revocó además la lectura directa de propuestas, ejecuciones y acciones para
+  `authenticated`; las lecturas operativas usan RPC con respuesta mínima.
+- El expediente reconstruye propuestas, decisiones y aplicación como contexto
+  asistido legible, sin convertirlo en un CRM ni inventar conversaciones de un
+  canal que todavía no existe.
+- La prueba SQL transaccional `202608170001_collection_assisted_agent.sql`
+  comprobó telemetría, aislamiento multiempresa, cambio de saldo, aplicación
+  única, historial y ausencia de privilegios directos; terminó con `DO` y
+  `ROLLBACK`.
+- El QA autenticado comprobó el flujo completo sobre una propuesta de prueba:
+  revisión, aprobación, aplicación separada, historial contextual y ausencia
+  de envío. La bandeja terminó con cero pendientes y la interfaz no mostró
+  modelo, prompt, trazas ni UUID técnicos.
+- Las 14 pruebas específicas aprobaron, junto con ESLint, TypeScript y build de
+  producción mediante Webpack. La suite general aprobó 329 de 334 pruebas; las
+  cinco fallas preexistentes pertenecen a navegación contable, Centro de
+  Migración, presupuestos y CxP, fuera del alcance de cobranza.
 
 ### Fase 3.5 — Evaluaciones y control de versiones del agente
 
