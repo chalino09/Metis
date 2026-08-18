@@ -1,0 +1,19 @@
+delete from public.companies where id='81700006-0000-4000-8000-000000000001';
+delete from auth.users where id='81700006-0000-4000-8000-000000000002';
+insert into public.companies(id,legal_name,display_name,product_experience_code)values('81700006-0000-4000-8000-000000000001','Concurrencia Restaurante','Concurrencia Restaurante','restaurant');
+insert into auth.users(id,aud,role,email,encrypted_password)values('81700006-0000-4000-8000-000000000002','authenticated','authenticated','restaurant-concurrency@example.invalid','');
+insert into public.user_roles(user_id,role_id,company_id)select'81700006-0000-4000-8000-000000000002',id,'81700006-0000-4000-8000-000000000001'from public.roles where code='direccion_admin';
+insert into public.locations(id,company_id,external_code,name)values('81700006-0000-4000-8000-000000000003','81700006-0000-4000-8000-000000000001','COCINA','Cocina');
+insert into public.cash_registers(id,company_id,location_id,code,display_name)values('81700006-0000-4000-8000-000000000004','81700006-0000-4000-8000-000000000001','81700006-0000-4000-8000-000000000003','CAJA','Caja');
+insert into public.cash_sessions(id,company_id,cash_register_id,location_id,opened_by)values('81700006-0000-4000-8000-000000000005','81700006-0000-4000-8000-000000000001','81700006-0000-4000-8000-000000000004','81700006-0000-4000-8000-000000000003','81700006-0000-4000-8000-000000000002');
+insert into public.products(id,company_id,alpha_sku,internal_sku,name,unit,is_inventory_tracked)values
+ ('81700006-0000-4000-8000-000000000010','81700006-0000-4000-8000-000000000001','DISH','DISH','Platillo','PZA',false),
+ ('81700006-0000-4000-8000-000000000011','81700006-0000-4000-8000-000000000001','ING','ING','Ingrediente','g',true);
+insert into public.culinary_recipes(id,company_id,product_id,recipe_kind)values('81700006-0000-4000-8000-000000000012','81700006-0000-4000-8000-000000000001','81700006-0000-4000-8000-000000000010','dish');
+insert into public.culinary_recipe_versions(id,recipe_id,version_number,status,yield_quantity,yield_unit_code,portion_count,valid_from,activated_by,activated_at)values('81700006-0000-4000-8000-000000000013','81700006-0000-4000-8000-000000000012',1,'active',1,'piece',1,now()-interval'1 hour','81700006-0000-4000-8000-000000000002',now()-interval'1 hour');
+insert into public.culinary_recipe_components(recipe_version_id,component_product_id,entered_quantity,entered_unit_code,normalized_quantity,base_unit_code)values('81700006-0000-4000-8000-000000000013','81700006-0000-4000-8000-000000000011',60,'g',1,'g');
+insert into public.product_costs(company_id,product_id,cost_type,amount,currency_code,valid_from,created_by)values('81700006-0000-4000-8000-000000000001','81700006-0000-4000-8000-000000000011','replacement_cost',1,'MXN',now()-interval'1 hour','81700006-0000-4000-8000-000000000002');
+insert into public.inventory_balances(company_id,location_id,product_id,quantity_on_hand)values('81700006-0000-4000-8000-000000000001','81700006-0000-4000-8000-000000000003','81700006-0000-4000-8000-000000000011',100);
+insert into public.sales(id,company_id,location_id,cash_register_id,cash_session_id,cashier_id,sale_type,currency_code,subtotal_amount,discount_amount,tax_amount,total_amount,client_request_id)values
+ ('81700006-0000-4000-8000-000000000020','81700006-0000-4000-8000-000000000001','81700006-0000-4000-8000-000000000003','81700006-0000-4000-8000-000000000004','81700006-0000-4000-8000-000000000005','81700006-0000-4000-8000-000000000002','cash','MXN',100,0,0,100,'81700006-0000-4000-8000-000000000022'),
+ ('81700006-0000-4000-8000-000000000021','81700006-0000-4000-8000-000000000001','81700006-0000-4000-8000-000000000003','81700006-0000-4000-8000-000000000004','81700006-0000-4000-8000-000000000005','81700006-0000-4000-8000-000000000002','cash','MXN',100,0,0,100,'81700006-0000-4000-8000-000000000023');

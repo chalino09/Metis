@@ -1,0 +1,13 @@
+import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+import test from "node:test";
+const sql=readFileSync("supabase/migrations/202608170004_restaurant_phase1_recipe_authoring.sql","utf8");
+const ui=readFileSync("app/components/RecipeEditorModal.tsx","utf8");
+const catalog=readFileSync("app/components/ProductCatalogView.tsx","utf8");
+test("la receta completa se guarda en una RPC transaccional e idempotente",()=>{assert.match(sql,/save_culinary_recipe_draft/);assert.match(sql,/jsonb_to_recordset\(p_components\)/);assert.match(sql,/culinary_recipe_requests/);});
+test("la búsqueda de ingredientes es server-side y paginada",()=>{assert.match(sql,/search_culinary_components/);assert.match(sql,/limit v_size offset/);});
+test("el catálogo separa platillos, insumos y preparaciones sin duplicar products",()=>{const catalogSql=readFileSync("supabase/migrations/202608170007_restaurant_phase1_preparations_catalog.sql","utf8");assert.match(catalogSql,/p_role not in \('dish','ingredient','preparation'\)/);assert.match(catalogSql,/p_role='dish' and \(is_dish/);assert.match(catalogSql,/p_role='ingredient' and is_inventory_tracked/);assert.match(catalogSql,/p_role='preparation' and is_preparation/);assert.match(catalog,/search_restaurant_catalog/);assert.match(catalog,/seccion=insumos/);assert.match(catalog,/seccion=preparaciones/);});
+test("la carga inicial procesa un lote transaccional en servidor",()=>{assert.match(sql,/import_culinary_recipe_batch/);assert.match(sql,/jsonb_array_length\(p_rows\)>500/);assert.match(sql,/culinary_recipe\.batch_imported/);});
+test("la interfaz ofrece borrador, duplicación, activación, costo y margen",()=>{for(const text of ["Duplicar versión activa","Guardar borrador","Activar receta","Costo por porción","Margen estimado"])assert.match(ui,new RegExp(text));assert.match(ui,/p_recipe_kind:recipeKind/);});
+test("los controles principales tienen etiquetas y errores anunciables",()=>{assert.match(ui,/role="alert"/);assert.match(ui,/aria-label="Buscar insumo o preparación"/);assert.match(ui,/aria-label={`Quitar \${line\.productName}`}/);});
+test("los platillos nuevos no duplican inventario del núcleo",()=>{assert.match(catalog,/inventoryPolicy:experience==="restaurant"&&role!=="ingredient"\?"not_required":"tracked"/);});

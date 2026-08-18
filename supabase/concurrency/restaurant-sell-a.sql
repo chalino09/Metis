@@ -1,0 +1,2 @@
+begin;select set_config('request.jwt.claim.role','authenticated',true);select set_config('request.jwt.claim.sub','81700006-0000-4000-8000-000000000002',true);
+insert into public.sale_items(id,sale_id,product_id,product_code,product_name,unit_name,quantity,unit_price_amount,gross_amount,discount_percent,discount_amount,taxable_amount,tax_amount,total_amount)values('81700006-0000-4000-8000-000000000030','81700006-0000-4000-8000-000000000020','81700006-0000-4000-8000-000000000010','DISH','Platillo','PZA',1,100,100,0,0,100,0,100);select pg_sleep(1);commit;

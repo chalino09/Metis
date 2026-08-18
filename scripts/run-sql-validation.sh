@@ -310,6 +310,35 @@ else
   failed=$((failed + 1))
 fi
 
+concurrency_name="concurrency_restaurant_culinary"
+if docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+    < "$ROOT/supabase/concurrency/restaurant-setup.sql" > "$EVIDENCE/${concurrency_name}-setup.log" 2>&1; then
+  set +e
+  docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+    < "$ROOT/supabase/concurrency/restaurant-sell-a.sql" > "$EVIDENCE/${concurrency_name}-a.log" 2>&1 &
+  restaurant_a_pid=$!
+  docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+    < "$ROOT/supabase/concurrency/restaurant-sell-b.sql" > "$EVIDENCE/${concurrency_name}-b.log" 2>&1 &
+  restaurant_b_pid=$!
+  wait "$restaurant_a_pid"; restaurant_a_status=$?
+  wait "$restaurant_b_pid"; restaurant_b_status=$?
+  set -e
+  if { test "$restaurant_a_status" -eq 0 && test "$restaurant_b_status" -ne 0; } \
+      || { test "$restaurant_a_status" -ne 0 && test "$restaurant_b_status" -eq 0; }; then restaurant_winner_ok=1; else restaurant_winner_ok=0; fi
+  if test "$restaurant_winner_ok" -eq 1 \
+      && docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+        < "$ROOT/supabase/concurrency/restaurant-verify.sql" > "$EVIDENCE/${concurrency_name}-verify.log" 2>&1; then
+    echo "PASS $concurrency_name" | tee -a "$EVIDENCE/summary.txt"
+    passed=$((passed + 1))
+  else
+    echo "FAIL $concurrency_name" | tee -a "$EVIDENCE/summary.txt"
+    failed=$((failed + 1))
+  fi
+else
+  echo "FAIL $concurrency_name" | tee -a "$EVIDENCE/summary.txt"
+  failed=$((failed + 1))
+fi
+
 alpha_dir=$(node --env-file=.env -e 'process.stdout.write(process.env.ALPHA_ERP_IMPORT_DIR ?? "")')
 if test -n "$alpha_dir" && test -d "$alpha_dir"; then
   if node --env-file=.env --experimental-strip-types scripts/inspect-alpha-exports.ts \

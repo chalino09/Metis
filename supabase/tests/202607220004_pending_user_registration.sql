@@ -1,7 +1,7 @@
 begin;
 do $pending_registration$
 declare
-  c uuid:='cf040000-0000-4000-8000-000000000001';admin_user uuid:='cf040000-0000-4000-8000-000000000002';new_user uuid:='cf040000-0000-4000-8000-000000000003';
+  c uuid:='cf040000-0000-4000-8000-000000000001';admin_user uuid:='cf040000-0000-4000-8000-000000000002';new_user uuid:='cf040000-0000-4000-8000-000000000003';existing_user uuid:='cf040000-0000-4000-8000-000000000004';
   l1 uuid:='cf040000-0000-4000-8000-000000000011';l2 uuid:='cf040000-0000-4000-8000-000000000012';r jsonb;r2 jsonb;invite_id uuid;
 begin
   insert into public.companies(id,legal_name,display_name) values(c,'Registro pendiente','Registro pendiente');
@@ -23,6 +23,10 @@ begin
   r:=public.prepare_pending_user_registration('nuevo@example.invalid');
   if not coalesce((r->>'allowed')::boolean,false) or r->>'user_id' is not null then raise exception 'El correo autorizado no puede iniciar su alta: %',r;end if;
   if coalesce((public.prepare_pending_user_registration('otro@example.invalid')->>'allowed')::boolean,false) then raise exception 'Un correo no autorizado pudo registrarse.';end if;
+  insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,last_sign_in_at,raw_user_meta_data) values
+    (existing_user,'authenticated','authenticated','existente@example.invalid','',now(),now(),'{}'::jsonb);
+  r:=public.prepare_pending_user_registration('existente@example.invalid');
+  if coalesce((r->>'allowed')::boolean,false) or not coalesce((r->>'already_registered')::boolean,false) then raise exception 'Una cuenta existente no se distinguió del correo no autorizado: %',r;end if;
   insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,last_sign_in_at,raw_user_meta_data) values
     (new_user,'authenticated','authenticated','nuevo@example.invalid','',now(),null,'{"registration_pending":true}'::jsonb);
   r:=public.complete_pending_user_registration(new_user,'nuevo@example.invalid','Persona Nueva');
