@@ -31,6 +31,11 @@ export type ProductRecord = {
   porceniva: string | null;
   taxCategoryCode: "IVA16" | "IVA0" | null;
   taxRate: number | null;
+  priceTiers: Array<{
+    listNumber: number;
+    minQuantity: number;
+    maxQuantity: number | null;
+  }>;
 };
 
 export type InventoryRecord = {

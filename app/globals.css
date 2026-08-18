@@ -2978,6 +2978,24 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   letter-spacing:.01em;
   white-space:nowrap;
 }
+.app-shell--pos .pos-price-tier-note { color:#286c4b; font-weight:700; }
+.app-shell--pos .pos-price-tier-note.is-manual { color:#6c4b18; }
+.app-shell--pos .pos-price-tier-control { display:flex; align-items:center; min-width:0; margin-top:5px; }
+.app-shell--pos .pos-price-tier-select {
+  min-height:30px;
+  max-width:100%;
+  border-color:#d6d1c8;
+  border-radius:7px;
+  background:#fff;
+  padding:4px 7px;
+  color:#302e2a;
+  font-size:9px;
+  font-weight:700;
+}
+.app-shell--pos .pos-price-tier-select:hover:not(:disabled),
+.app-shell--pos .pos-price-tier-select[data-state="open"] { border-color:#918c82; background:#fff; }
+.app-shell--pos .pos-price-tier-select > span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.app-shell--pos .pos-price-tier-readonly { color:#68655f; font-size:9px; font-weight:650; }
 @media (max-width:700px) {
   .app-shell--pos .pos-cart__title-row { align-items:flex-start; flex-direction:column; gap:4px; }
 }

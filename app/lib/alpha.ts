@@ -264,6 +264,7 @@ function parseProductRows(rows: Array<Array<string | number>>) {
       porceniva: hasTaxColumns ? porceniva || null : null,
       taxCategoryCode: tax?.categoryCode ?? null,
       taxRate: tax?.rate ?? null,
+      priceTiers: parseProductPriceTiers(row, header.columns),
     });
   }
 
@@ -275,6 +276,19 @@ function parseProductRows(rows: Array<Array<string | number>>) {
     });
   }
   return { products, inventory: [], prices: [], costs: [], sales: [], rejectedRows, locations: [], issues };
+}
+
+function parseProductPriceTiers(row: Array<string | number>, columns: ProductHeader) {
+  const tiers: ProductRecord["priceTiers"] = [];
+  for (let listNumber = 1; listNumber <= 10; listNumber += 1) {
+    const amount = parseNumeric(productValue(row, columns, [`prec${listNumber}`], -1));
+    if (amount === null || amount <= 0) continue;
+    const minQuantity = parseNumeric(productValue(row, columns, [`desd${listNumber}`], -1));
+    const maxQuantity = parseNumeric(productValue(row, columns, [`hast${listNumber}`], -1));
+    if (minQuantity === null || minQuantity <= 0 || (maxQuantity !== null && maxQuantity < minQuantity)) continue;
+    tiers.push({ listNumber, minQuantity, maxQuantity: maxQuantity && maxQuantity > 0 ? maxQuantity : null });
+  }
+  return tiers;
 }
 
 function findProductHeader(rows: Array<Array<string | number>>): { rowIndex: number; columns: ProductHeader } | null {

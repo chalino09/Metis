@@ -124,6 +124,30 @@ test("reconoce el formato maestro de Alpha por encabezados fiscales, no por el n
   assert.equal(parsed.issues.filter((issue) => issue.code === "SKU_FALTANTE").length, 0);
 });
 
+test("extrae los rangos de precios escalonados del catálogo Alpha", async () => {
+  const header = ["cse_prod", "cve_prod", "desc_prod", "uni_med", "staiva", "porceniva", "prec1", "prec2", "prec3", "prec4", "desd1", "desd2", "desd3", "desd4", "hast1", "hast2", "hast3", "hast4"];
+  const rows = [
+    header,
+    ["Instrucción", "Instrucción", "Instrucción"],
+    ["Necesario", "Necesario", "Necesario"],
+    [],
+    [],
+    ["PERFILES", "PERFIL-01", "Perfil de prueba", "PZA", 2, 0, 95, 90, 85, 75, 1, 10, 50, 100, 9, 49, 99, 999],
+  ];
+  const parsed = await parseAlphaWorkbook(
+    workbookBuffer([{ name: "CAT PROD", rows }], "biff8"),
+    "3.1 PRODUCTOS.xls",
+    "local_development",
+  );
+
+  assert.deepEqual(parsed.products[0]?.priceTiers, [
+    { listNumber: 1, minQuantity: 1, maxQuantity: 9 },
+    { listNumber: 2, minQuantity: 10, maxQuantity: 49 },
+    { listNumber: 3, minQuantity: 50, maxQuantity: 99 },
+    { listNumber: 4, minQuantity: 100, maxQuantity: 999 },
+  ]);
+});
+
 test("bloquea combinaciones fiscales incompletas, desconocidas y exentas sin evidencia", async () => {
   const parsed = await parseAlphaWorkbook(
     workbookBuffer([{

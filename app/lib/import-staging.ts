@@ -70,6 +70,7 @@ export function buildStagingPayload(
         porceniva: row.porceniva,
         taxCategoryCode: row.taxCategoryCode,
         taxRate: row.taxRate,
+        priceTiers: row.priceTiers,
       },
       validation_status: statusFor(row.rowNumber),
     }));

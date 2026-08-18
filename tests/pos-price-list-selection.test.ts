@@ -24,9 +24,10 @@ test("el catálogo, carrito y cobro usan la misma lista efectiva", () => {
   assert.match(sales, /search_pos_cart_blocked_products/);
 });
 
-test("el selector es compacto, permite volver a automático y recalcula toda la venta", () => {
-  assert.match(sales, /className="pos-price-list-select"/);
+test("cada partida selecciona su nivel y no existe un selector global de lista", () => {
+  assert.doesNotMatch(sales, /className="pos-price-list-select"/);
+  assert.match(sales, /className="pos-price-tier-select"/);
+  assert.match(sales, /set_sale_cart_item_price_tier/);
   assert.match(sales, /value: "automatic"/);
-  assert.match(sales, /se recalculó toda la venta/);
-  assert.match(css, /\.pos-price-list-select/);
+  assert.match(css, /\.pos-price-tier-select/);
 });
