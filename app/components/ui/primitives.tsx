@@ -328,14 +328,18 @@ export function Tabs({
   value,
   onValueChange,
   items,
+  className,
+  ariaLabel = "Secciones",
 }: {
   value: string;
   onValueChange: (value: string) => void;
   items: Array<{ value: string; label: string; disabled?: boolean }>;
+  className?: string;
+  ariaLabel?: string;
 }) {
   return (
-    <RadixTabs.Root value={value} onValueChange={onValueChange}>
-      <RadixTabs.List className="ui-tabs" aria-label="Secciones">
+    <RadixTabs.Root className={className} value={value} onValueChange={onValueChange}>
+      <RadixTabs.List className="ui-tabs" aria-label={ariaLabel}>
         {items.map((item) => <RadixTabs.Trigger className="ui-tabs__trigger" value={item.value} disabled={item.disabled} key={item.value}>{item.label}</RadixTabs.Trigger>)}
       </RadixTabs.List>
     </RadixTabs.Root>

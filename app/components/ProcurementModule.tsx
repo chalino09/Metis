@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { Pencil, Plus } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   DataPagination,
@@ -24,6 +25,7 @@ import { getSupabaseClient } from "@/app/lib/supabase";
 type Row = {
   id: string;
   folio: string;
+  location_id: string;
   location_name: string;
   status: string;
   source: string;
@@ -84,7 +86,9 @@ type Product = {
   name: string;
   alpha_sku: string | null;
   internal_sku: string | null;
+  barcode: string | null;
   unit: string | null;
+  is_inventory_tracked: boolean;
 };
 
 type QuoteDraftLine = {
@@ -152,6 +156,8 @@ export function ProcurementView({
   const [editingQuoteId, setEditingQuoteId] = useState<string | null>(null);
   const [quantityEditorOpen, setQuantityEditorOpen] = useState(false);
   const [quantityDraft, setQuantityDraft] = useState<Record<string, string>>({});
+  const [destinationEditorOpen, setDestinationEditorOpen] = useState(false);
+  const [destinationLocationId, setDestinationLocationId] = useState("");
   const [saving, setSaving] = useState(false);
   const [reason, setReason] = useState("");
   const [decision, setDecision] = useState<"selection" | "approve" | null>(null);
@@ -168,6 +174,13 @@ export function ProcurementView({
   });
   const [manualOpen, setManualOpen] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
+  const [manualProductQuery, setManualProductQuery] = useState("");
+  const [manualProductPickerOpen, setManualProductPickerOpen] = useState(false);
+  const [manualProductSearching, setManualProductSearching] = useState(false);
+  const [manualProductError, setManualProductError] = useState<string | null>(null);
+  const [manualProductActiveIndex, setManualProductActiveIndex] = useState(-1);
+  const manualProductRequest = useRef(0);
+  const manualRequestId = useRef<string | null>(null);
   const [manual, setManual] = useState({
     locationId: "",
     productId: "",
@@ -218,22 +231,87 @@ export function ProcurementView({
     return () => window.clearTimeout(timer);
   }, [open, searchParams]);
 
-  async function openManual() {
-    const { data } = await getSupabaseClient().rpc("search_purchase_order_products", {
-      p_company_id: companyId,
-      p_query: null,
-      p_limit: 50,
-    });
-    setProducts(((data as { items?: Product[] } | null)?.items ?? []));
+  useEffect(() => {
+    if (!manualOpen) return;
+    if (manual.productId) return;
+    const query = manualProductQuery.trim();
+    const current = ++manualProductRequest.current;
+    if (query.length < 1) {
+      void Promise.resolve().then(() => {
+        if (current !== manualProductRequest.current) return;
+        setProducts([]);
+        setManualProductSearching(false);
+        setManualProductError(null);
+      });
+      return;
+    }
+    const timer = window.setTimeout(async () => {
+      setManualProductSearching(true);
+      setManualProductError(null);
+      const { data, error: rpcError } = await getSupabaseClient().rpc("search_purchase_order_products", {
+        p_company_id: companyId,
+        p_query: query,
+        p_limit: 30,
+      });
+      if (current !== manualProductRequest.current) return;
+      setManualProductSearching(false);
+      if (rpcError) {
+        setProducts([]);
+        setManualProductError("No se pudieron buscar productos.");
+        return;
+      }
+      setProducts(((data as { items?: Product[] } | null)?.items ?? []).filter((product) => product.is_inventory_tracked));
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [companyId, manual.productId, manualOpen, manualProductQuery]);
+
+  function chooseManualProduct(product: Product) {
+    const sku = product.internal_sku ?? product.alpha_sku ?? product.barcode ?? "Sin código";
+    setManual({ ...manual, productId: product.id });
+    setManualProductQuery(`${product.name} · ${sku}`);
+    setProducts([]);
+    setManualProductPickerOpen(false);
+    setManualProductActiveIndex(-1);
+    setManualProductError(null);
+  }
+
+  function handleManualProductKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (!manualProductPickerOpen || !products.length) {
+      if (event.key === "Escape") setManualProductPickerOpen(false);
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setManualProductActiveIndex((index) => Math.min(index + 1, products.length - 1));
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setManualProductActiveIndex((index) => Math.max(index - 1, 0));
+    } else if (event.key === "Enter" && manualProductActiveIndex >= 0) {
+      event.preventDefault();
+      chooseManualProduct(products[manualProductActiveIndex]);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      setManualProductPickerOpen(false);
+    }
+  }
+
+  function openManual() {
+    manualRequestId.current = crypto.randomUUID();
+    setProducts([]);
+    setManualProductQuery("");
+    setManualProductPickerOpen(false);
+    setManualProductSearching(false);
+    setManualProductError(null);
+    setManualProductActiveIndex(-1);
     setManual({ locationId: "", productId: "", quantity: "", targetDate: "", reason: "" });
     setManualOpen(true);
   }
 
   async function saveManual() {
-    if (!manual.locationId || !manual.productId || !(Number(manual.quantity) > 0) || !manual.reason.trim()) {
+    if (!manual.locationId || !manual.productId || !(Number(manual.quantity) > 0) || !manual.targetDate || !manual.reason.trim()) {
       toast({
         title: "Revisa la solicitud",
-        description: "La excepción requiere ubicación, producto, cantidad y motivo.",
+        description: "La excepción requiere ubicación, producto, cantidad, fecha objetivo y motivo.",
         tone: "error",
       });
       return;
@@ -246,6 +324,7 @@ export function ProcurementView({
       p_target_date: manual.targetDate || null,
       p_exception_reason: manual.reason.trim(),
       p_lines: [{ product_id: manual.productId, quantity: Number(manual.quantity) }],
+      p_client_request_id: manualRequestId.current,
     });
     setSaving(false);
     if (rpcError) {
@@ -253,6 +332,7 @@ export function ProcurementView({
       return;
     }
     setManualOpen(false);
+    manualRequestId.current = null;
     await load();
     toast({
       title: "Solicitud de compra creada",
@@ -435,6 +515,30 @@ export function ProcurementView({
     setQuantityEditorOpen(true);
   }
 
+  function openDestinationEditor() {
+    if (!detail) return;
+    setDestinationLocationId(detail.location_id);
+    setDestinationEditorOpen(true);
+  }
+
+  async function saveDestination() {
+    if (!detail || !destinationLocationId) {
+      toast({ title: "Selecciona un destino", description: "Elige la ubicación donde se recibirá la compra.", tone: "error" });
+      return;
+    }
+    setSaving(true);
+    const { error: rpcError } = await getSupabaseClient().rpc("change_procurement_requisition_destination", {
+      p_company_id: companyId,
+      p_requisition_id: detail.id,
+      p_location_id: destinationLocationId,
+    });
+    setSaving(false);
+    if (rpcError) { toast({ title: "No se cambió el destino", description: rpcError.message, tone: "error" }); return; }
+    setDestinationEditorOpen(false);
+    await open(detail.id); await load();
+    toast({ title: "Destino actualizado", description: "La solicitud conserva sus partidas y recalculó la existencia de referencia en el nuevo destino.", tone: "success" });
+  }
+
   async function saveAdjustedQuantities() {
     if (!detail || detail.lines.some((line) => !Number.isFinite(Number(quantityDraft[line.id])) || Number(quantityDraft[line.id]) <= 0)) {
       toast({ title: "Revisa las cantidades", description: "Usa una cantidad mayor a cero para cada partida.", tone: "error" });
@@ -489,6 +593,7 @@ export function ProcurementView({
     return quoteLine && Number(quoteLine.available_quantity) >= Number(line.required_quantity);
   })) : false;
   const canAdjustNeed = Boolean(detail && detail.status === "quoting" && detail.quotes.length === 0 && canCreate);
+  const canAdjustDestination = Boolean(detail && detail.status === "quoting" && detail.quotes.length === 0 && canCreate);
   const canSelectSupplier = Boolean(detail && detail.status === "quoting" && hasCompleteQuote && canRecommend);
 
   return (
@@ -500,7 +605,8 @@ export function ProcurementView({
           <p>Solicitudes, cotizaciones y selecciones de proveedores antes de emitir órdenes de compra.</p>
         </div>
         {canCreate && (
-          <Button variant="secondary" onClick={() => void openManual()}>
+          <Button variant="primary" onClick={() => void openManual()}>
+            <Plus size={16} />
             Nueva solicitud de compra
           </Button>
         )}
@@ -635,6 +741,7 @@ export function ProcurementView({
                   {detail.quotes.length > 0 && !hasCompleteQuote && canQuote && <Button variant="primary" onClick={() => void openQuote()}>Registrar otra cotización</Button>}
                   {canSelectSupplier && <Button variant="primary" onClick={openRecommendation}>{canApprove ? "Crear orden de compra" : "Elegir proveedor"}</Button>}
                   {canAdjustNeed && <Button variant="secondary" onClick={openQuantityEditor}>Ajustar cantidad</Button>}
+                  {canAdjustDestination && <Button variant="secondary" onClick={openDestinationEditor}>Cambiar destino</Button>}
                   {detail.quotes.length > 0 && canQuote && <Button variant="secondary" onClick={() => void openQuote()}>Agregar cotización</Button>}
                 </div>
               </section>
@@ -749,7 +856,7 @@ export function ProcurementView({
                           <span>Total con descuento comercial</span>
                           <strong>{formatMoney(commercialTotal, supplierQuote.currency_code)}</strong>
                           <small>No incluye descuento por pronto pago.</small>
-                          {canQuote && detail.status === "quoting" && <Button variant="secondary" size="sm" onClick={() => void openQuote(supplierQuote)}>Editar cotización</Button>}
+                          {canQuote && detail.status === "quoting" && <Button className="procurement-quote-edit-button" variant="secondary" size="sm" onClick={() => void openQuote(supplierQuote)}><Pencil size={14} aria-hidden="true" /> Editar cotización</Button>}
                         </footer>
                       </article>
                     );
@@ -1047,6 +1154,31 @@ export function ProcurementView({
       </Modal>
 
       <Modal
+        open={destinationEditorOpen}
+        onOpenChange={(isOpen) => !saving && setDestinationEditorOpen(isOpen)}
+        eyebrow="Solicitud de compra"
+        title="Cambiar destino"
+        description="Disponible antes de registrar cotizaciones. Las partidas se conservan y se actualiza la existencia de referencia del nuevo destino."
+        footer={
+          <>
+            <Button onClick={() => setDestinationEditorOpen(false)}>Cancelar</Button>
+            <Button variant="primary" loading={saving} onClick={() => void saveDestination()}>
+              Guardar destino
+            </Button>
+          </>
+        }
+      >
+        <Field label="Ubicación destino" hint="La cotización, orden y recepción heredarán esta ubicación.">
+          <Select
+            ariaLabel="Ubicación destino"
+            value={destinationLocationId}
+            onValueChange={setDestinationLocationId}
+            options={accessibleLocations.map((location) => ({ value: location.id, label: `${location.external_code} · ${location.name}` }))}
+          />
+        </Field>
+      </Modal>
+
+      <Modal
         open={manualOpen}
         onOpenChange={(isOpen) => !saving && setManualOpen(isOpen)}
         eyebrow="Sólo excepción"
@@ -1073,24 +1205,61 @@ export function ProcurementView({
               ]}
             />
           </Field>
-          <Field label="Producto">
-            <Select
-              ariaLabel="Producto excepcional"
-              value={manual.productId}
-              onValueChange={(productId) => setManual({ ...manual, productId })}
-              options={[
-                { value: "", label: "Selecciona producto", disabled: true },
-                ...products.map((product) => ({
-                  value: product.id,
-                  label: `${product.name} · ${product.internal_sku ?? product.alpha_sku ?? "Sin código"}`,
-                })),
-              ]}
-            />
+          <Field label="Producto" hint="Obligatorio; sólo productos inventariables activos">
+            <div className="procurement-product-picker">
+              <Input
+                value={manualProductQuery}
+                onFocus={() => setManualProductPickerOpen(true)}
+                onBlur={() => window.setTimeout(() => setManualProductPickerOpen(false), 120)}
+                onKeyDown={handleManualProductKeyDown}
+                onChange={(event) => {
+                  setManualProductQuery(event.target.value);
+                  setManualProductPickerOpen(true);
+                  setManualProductActiveIndex(-1);
+                  if (manual.productId) setManual({ ...manual, productId: "" });
+                }}
+                placeholder="Busca por nombre, SKU o código de barras"
+                role="combobox"
+                aria-label="Producto excepcional"
+                aria-expanded={manualProductPickerOpen && !manual.productId}
+                aria-busy={manualProductSearching || undefined}
+                aria-controls="procurement-manual-product-options"
+                aria-autocomplete="list"
+                aria-activedescendant={manualProductActiveIndex >= 0 ? `procurement-manual-product-option-${manualProductActiveIndex}` : undefined}
+                autoComplete="off"
+              />
+              {manualProductPickerOpen && !manual.productId && (
+                <div id="procurement-manual-product-options" className="purchase-order-supplier-options" role="listbox">
+                  {manualProductSearching && <p role="status">Buscando productos…</p>}
+                  {!manualProductSearching && manualProductError && <p role="alert">{manualProductError}</p>}
+                  {!manualProductSearching && !manualProductError && manualProductQuery.trim().length < 1 && <p>Escribe una letra para buscar productos.</p>}
+                  {!manualProductSearching && !manualProductError && manualProductQuery.trim().length >= 1 && products.length === 0 && <p>No hay coincidencias. Prueba con otra letra, nombre, SKU o código.</p>}
+                  {!manualProductSearching && !manualProductError && products.map((product, index) => {
+                    const sku = product.internal_sku ?? product.alpha_sku ?? product.barcode ?? "Sin código";
+                    return (
+                      <button
+                        type="button"
+                        id={`procurement-manual-product-option-${index}`}
+                        role="option"
+                        aria-selected={manual.productId === product.id}
+                        key={product.id}
+                        className={index === manualProductActiveIndex ? "is-keyboard-active" : undefined}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => chooseManualProduct(product)}
+                      >
+                        <strong>{product.name}</strong>
+                        <small>{sku} · {product.unit ?? "Sin unidad"}</small>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </Field>
-          <Field label="Cantidad">
+          <Field label="Cantidad" hint="Mayor que cero">
             <Input type="number" min="0.000001" step="0.001" value={manual.quantity} onChange={(event) => setManual({ ...manual, quantity: event.target.value })} />
           </Field>
-          <Field label="Fecha objetivo">
+          <Field label="Fecha objetivo" hint="Requerida para planear la compra">
             <Input type="date" value={manual.targetDate} onChange={(event) => setManual({ ...manual, targetDate: event.target.value })} />
           </Field>
           <Field label="Motivo de excepción">
