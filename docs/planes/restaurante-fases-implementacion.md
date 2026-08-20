@@ -174,9 +174,8 @@ El bloqueo explica qué debe corregirse y no modifica automáticamente el surtid
 
 ### Estado de implementación · 17 de agosto de 2026
 
-**Estado: validación de interfaz completada.** La base transaccional y el flujo
-principal están implementados, incluida la vista de Preparaciones en Supabase.
-Sólo queda destrabar la ejecución integral de evidencia SQL en la base local.
+**Estado: cerrada.** La base transaccional, el flujo principal y la validación de
+interfaz están implementados, incluida la vista de Preparaciones.
 
 #### Implementado
 
@@ -219,19 +218,181 @@ Sólo queda destrabar la ejecución integral de evidencia SQL en la base local.
   Core, Insumos y Preparaciones: foco inicial, etiquetas, dos columnas, drawer
   de 1240 px, sin desbordamiento horizontal y controles con nombres accesibles.
 
-#### Pendiente de validación final
+La colisión preexistente entre las migraciones con versión `202608120002` sigue
+afectando el reset integral del entorno local, pero no constituye deuda funcional
+de Restaurante ni reabre esta fase.
 
-1. Crear una preparación real, activar su receta y usarla desde un platillo como
-   prueba operativa de aceptación. No requiere SQL adicional.
-2. Resolver la colisión preexistente entre
-   `202608120002_bi_executive_decision_summary.sql` y
-   `202608120002_collection_automation_foundation.sql` en el entorno local de
-   validación. Esa colisión detiene `supabase db reset --local` antes de que las
-   pruebas culinarias puedan ejecutarse; no es causada por Restaurante ni debe
-   corregirse renombrando una migración ya aplicada en Supabase.
+---
 
-La operación ya puede usar Fase 1. Al recuperar el reset local se podrá registrar
-la evidencia automática final de concurrencia sin deuda funcional de Restaurante.
+## Puerta de avance · flujo guiado de Platillos
+
+### Decisión
+
+**Apto para avanzar con este ajuste antes de ampliar la Fase 2.** No se creará un
+proyecto, catálogo ni núcleo nuevo para Restaurante. El problema está en la
+experiencia de captura: el flujo actual expone por separado producto, precio,
+receta y surtido, por lo que obliga a la persona usuaria a entender la estructura
+administrativa de Satrapy.
+
+La solución será una capa de orquestación exclusiva de Restaurante sobre las
+entidades y operaciones canónicas existentes. La experiencia `core` no cambiará.
+
+### Viabilidad confirmada
+
+La arquitectura actual ya ofrece los puntos necesarios:
+
+- `ProductCatalogView` distingue la experiencia `restaurant` y la función
+  culinaria seleccionada.
+- `products` conserva la identidad canónica y `product_culinary_roles` define si
+  el artículo es platillo, insumo o preparación.
+- Las recetas, sus versiones, costos y activación ya cuentan con operaciones
+  server-side transaccionales e idempotentes.
+- Los precios continúan en listas y vigencias canónicas.
+- El surtido por ubicación y el readiness operativo permanecen separados.
+
+Por tanto, no hace falta duplicar dominio ni mover Restaurante a otra aplicación.
+Sí hace falta dejar de presentar esas capacidades como módulos independientes
+dentro de la tarea cotidiana de crear o editar un platillo.
+
+### Flujo objetivo
+
+La creación y edición de un platillo se resolverá en un solo espacio de trabajo
+con cuatro pasos y continuidad de estado:
+
+1. **Platillo:** nombre y categoría culinaria. El código de barras será opcional
+   y secundario; la unidad de venta será pieza sin pedir una decisión innecesaria.
+2. **Precio y venta:** precio en la lista activa correspondiente y tratamiento
+   fiscal. No se expondrán como decisiones normales los flags técnicos
+   `is_sellable`, `is_active` o `inventory_policy`.
+3. **Receta:** rendimiento, porciones, insumos, preparaciones, merma, costo y
+   margen, reutilizando el editor y las RPC culinarias existentes.
+4. **Revisar y publicar:** resumen de precio, costo, margen y bloqueos de
+   readiness, con una acción principal inequívoca.
+
+Se podrá guardar un borrador incompleto. Publicar exigirá, como mínimo, precio
+vigente, tratamiento fiscal válido y receta activa sin bloqueos. La disponibilidad
+por sucursal seguirá siendo una operación comercial separada y posterior; un
+bloqueo operativo no retirará automáticamente el platillo del surtido.
+
+Editar un platillo abrirá el mismo espacio de trabajo y no una cadena de drawers
+o modales desconectados. Los mensajes describirán la tarea pendiente, por ejemplo
+**Agrega el precio** o **Completa la receta**, en lugar de estados internos como
+**Configuración pendiente**.
+
+### Límites del ajuste
+
+- Sólo cambia la experiencia Restaurante.
+- No se crean tablas de productos, precios, recetas o inventario paralelas.
+- No se habilita el cambio de función culinaria ni la desactivación del catálogo
+  como acciones cotidianas dentro del formulario.
+- La corrección de registros heredados o mal clasificados será una herramienta
+  administrativa auditada, no parte del alta diaria.
+- La creación de categorías fiscales y listas de precios seguirá siendo una
+  configuración administrativa; el flujo sólo permitirá elegir valores ya
+  válidos.
+- La captura guiada individual se usará para altas y correcciones puntuales. Un
+  catálogo inicial de decenas o cientos de platillos deberá poder importarse por
+  lote.
+
+### Archivo seguro de insumos
+
+Esta entrega incluirá **Archivar insumo** sólo en Restaurante. No elimina el
+producto de la base ni recupera el flujo de cambio de función culinaria.
+
+1. La persona con permiso selecciona **Archivar insumo**, indica un motivo y
+   confirma la acción.
+2. El servidor revisa existencias y recetas activas que lo utilizan.
+3. Si existen dependencias operativas, bloquea el archivo y explica qué debe
+   resolverse; no modifica recetas ni inventario automáticamente.
+4. Si es seguro archivarlo, deja de aparecer en el catálogo y en nuevas recetas,
+   pero conserva compras, costos, movimientos y auditoría históricos.
+
+La acción será una RPC server-side, idempotente y auditada; usará el estado
+canónico de actividad, sin crear un flag nuevo. Archivar no sirve para corregir
+un platillo mal clasificado: esa corrección seguirá siendo administrativa y
+auditada.
+
+### Dependencia técnica y SQL
+
+El rediseño y su prueba de usabilidad pueden comenzar sin una migración nueva,
+componiendo las operaciones canónicas existentes y conservando explícitamente el
+estado de borrador.
+
+Para habilitar **Publicar** se requerirá una única RPC de orquestación para
+Restaurante que aplique producto, función culinaria, precio y activación de receta
+en una transacción idempotente. Las operaciones actuales son seguras por separado,
+pero encadenarlas desde el navegador puede dejar una configuración parcial si una
+llamada intermedia falla. La nueva RPC no creará entidades ni cambiará el contrato
+de `core`.
+
+La entrega también requerirá una migración para la RPC de archivo seguro de
+insumos. No habrá eliminación física de productos.
+
+### Correcciones críticas previas al flujo de Platillos
+
+Se implementaron primero tres ajustes operativos, limitados a Restaurante:
+
+1. El alta o edición guarda producto, función culinaria, presentación de compra
+   y control de lotes en una sola transacción idempotente. Así no puede quedar un
+   insumo creado pero invisible por faltar su función culinaria.
+2. Las conversiones métricas conocidas se validan en servidor: una unidad igual
+   equivale a `1`, `1 kg = 1,000 g` y `1 l = 1,000 ml`. Las presentaciones de
+   contenido variable, como caja o saco, conservan captura explícita.
+3. Restaurante muestra **Mínimos de inventario**, reutilizando las políticas
+   canónicas por ubicación. El motivo del alta sigue siendo evidencia de
+   auditoría y no representa el mínimo de existencia.
+
+La migración `202608190001_restaurant_ingredient_operational_integrity.sql`
+también recupera de forma auditada las altas manuales interrumpidas que sí
+alcanzaron a configurar su compra y corrige sólo equivalencias métricas
+demostrablemente incoherentes. No modifica el flujo seguro de archivo.
+
+### Cierre de integridad de conversiones, recetas y archivo
+
+La migración `202608200001_restaurant_catalog_integrity_completion.sql` cierra
+los tres ajustes críticos pendientes, sólo para Restaurante:
+
+1. **Conversiones completas.** Las unidades estándar se calculan y validan de
+   forma exacta (`1 kg = 1,000 g`, `1 l = 1,000 ml`). Caja, saco, bolsa,
+   paquete, botella y otras presentaciones no reciben un `1` automático: se
+   exige capturar y confirmar su contenido real. El servidor detecta y lista
+   equivalencias heredadas dudosas sin inventar ni modificar datos.
+2. **Alta completa y recuperable.** El guardado de un insumo sigue siendo una
+   operación transaccional, idempotente y auditada: producto, función culinaria,
+   compra y lote se guardan juntos. La revisión paginada permite corregir pocos
+   registros puntuales; para catálogos amplios corresponde una corrección por
+   lote auditada.
+3. **Recetas antes de archivar.** El archivo consulta las recetas activas,
+   existencias y órdenes abiertas. Cuando una receta bloquea el archivo, muestra
+   su nombre y versión para abrirla, duplicar la versión activa, retirar o
+   reemplazar el componente y activar la corrección. Sólo entonces permite
+   archivar. No elimina productos ni altera recetas históricas.
+
+La pantalla muestra la revisión sólo en **Insumos** de Restaurante y conserva
+intacta la experiencia `core`. El SQL no corrige automáticamente una botella o
+caja heredada: el sistema no puede conocer de forma fiable su contenido real.
+
+### Orden de implementación
+
+1. Prototipar el espacio de trabajo con datos reales y sin modificar el núcleo.
+2. Unificar creación y edición; integrar precio, receta y resumen de readiness.
+3. Probar borrador, reanudación, publicación y errores parciales.
+4. Definir e implementar el contrato transaccional de publicación.
+5. Integrarlo y probar idempotencia, concurrencia y reversión ante errores.
+6. Validar la experiencia autenticada en escritorio de al menos 1180 × 700 CSS.
+7. Continuar el alcance fiscal restante de la Fase 2.
+
+### Criterios de salida
+
+- Crear un platillo no exige salir del flujo para asignar precio o receta.
+- Un borrador puede reanudarse sin duplicar el producto canónico.
+- Editar vuelve al mismo flujo y muestra lo ya configurado.
+- La persona usuaria no necesita interpretar flags del núcleo.
+- Precio, costo, margen y bloqueos aparecen juntos antes de publicar.
+- Publicar no deja producto, función, precio o receta en un estado parcial
+  ambiguo.
+- El surtido y el readiness conservan su independencia.
+- La experiencia `core` y los historiales canónicos no cambian.
 
 ---
 
@@ -241,6 +402,41 @@ la evidencia automática final de concurrencia sin deuda funcional de Restaurant
 
 Capturar y dar seguimiento a las solicitudes de factura de los comensales, aun
 antes de integrar un proveedor de timbrado.
+
+### Estado de implementación · 18 de agosto de 2026
+
+**Estado: implementación iniciada.** Ya existe la migración transaccional, la
+bandeja operativa y la primera interfaz para funciones culinarias explícitas y
+solicitudes internas ligadas al ticket. El autoservicio público mediante QR queda
+pendiente de aprobación operativa y no se habilitó implícitamente.
+
+### Claridad del catálogo de Restaurante
+
+Antes de ampliar la operación fiscal se corregirá la lectura del catálogo sólo
+en la experiencia Restaurante. Los apartados **Platillos**, **Insumos** y
+**Preparaciones** tendrán mayor jerarquía visual y usarán una terminología única
+en navegación, tablas, formularios, filtros, diagnósticos y recetas.
+
+La función culinaria será explícita sobre el producto canónico y no se inferirá
+por la falta de una receta ni únicamente por sus flags de inventario o venta:
+
+- **Platillo:** lo que se vende al comensal. Puede tener receta y normalmente no
+  conserva inventario propio.
+- **Insumo:** lo que se compra, recibe y consume para elaborar recetas. Puede
+  venderse excepcionalmente cuando se habilite de forma explícita.
+- **Preparación:** base elaborada internamente con receta propia y reutilizable
+  dentro de platillos. No se vende ni se recibe directamente.
+
+La interfaz no utilizará **Disponible para recetas** como sustituto de una
+función culinaria. En su lugar mostrará un concepto inequívoco, por ejemplo
+**Función culinaria: Insumo**, y distinguirá por separado si el producto puede
+usarse como componente, venderse o controlar inventario.
+
+Un producto sin receta de platillo no se convertirá automáticamente en insumo.
+Los cambios administrativos de función serán explícitos y auditados. En el alcance
+actual, cada producto tendrá una sola función culinaria principal. Permitir varias
+funciones requerirá primero un caso de negocio comprobado y un contrato específico;
+no se habilitará mediante un flag genérico.
 
 ### Alcance
 
@@ -268,6 +464,13 @@ timbrado. La solicitud no modifica la venta ni el ticket originales.
 
 ### Criterios de salida
 
+- Los tres apartados tienen mayor jerarquía visual únicamente en Restaurante y
+  se distinguen sin depender de conocimiento técnico.
+- Cada producto aparece según su función culinaria explícita; la ausencia de una
+  receta no cambia automáticamente su apartado.
+- La interfaz distingue función culinaria, uso como componente, control de
+  inventario y disponibilidad de venta.
+- Los cambios de función quedan auditados y no crean productos duplicados.
 - Un cajero o cliente puede solicitar factura usando el folio del ticket.
 - Satrapy evita solicitudes duplicadas y conserva idempotencia.
 - Los datos fiscales existentes se reutilizan.
@@ -381,8 +584,9 @@ La interfaz debe distinguir:
 
 ## Orden recomendado de ejecución
 
-1. Completar la Fase 1 y probarla con operación real controlada.
-2. Implementar la Fase 2 para no perder solicitudes mientras se selecciona el
+1. Mantener cerrada la base funcional de la Fase 1 y ejecutar la puerta de avance
+   del flujo guiado de Platillos.
+2. Completar la Fase 2 para no perder solicitudes mientras se selecciona el
    PAC.
 3. Seleccionar e integrar el PAC en la Fase 3.
 4. Evaluar proveedor, volumen y viabilidad antes de ejecutar la Fase 4.

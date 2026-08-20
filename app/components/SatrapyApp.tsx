@@ -11,6 +11,7 @@ import {
   Check,
   ClipboardCheck,
   FileSpreadsheet,
+  FileCheck2,
   Eye,
   EyeOff,
   History,
@@ -70,6 +71,7 @@ import { EcommerceModule } from "@/app/components/EcommerceModule";
 import { CollaboratorsDirectoryView, PayrollView } from "@/app/components/CollaboratorsModule";
 import { BiModule } from "@/app/components/BiModule";
 import { CollectionAutomationModule } from "@/app/components/CollectionAutomationModule";
+import { InvoiceRequestsModule } from "@/app/components/InvoiceRequestsModule";
 import type {
   AppRoleCode,
   ImportBatchRow,
@@ -79,7 +81,7 @@ import type {
   RoleOption,
 } from "@/app/lib/types";
 
-type ViewName = "collection_automation" | "bi_summary" | "bi_alerts" | "bi_explorer" | "bi_reports" | "bi_budgets" | "bi_network" | "settings_home" | "initial_migration" | "migration" | "users_access" | "suppliers" | "procurement" | "purchase_orders" | "purchase_receipts" | "supplier_invoices" | "supplier_paying_accounts" | "products" | "inventory" | "inventory_counts" | "inventory_transfers" | "inventory_replenishment" | "ecommerce_readiness" | "locations" | "audit" | "sales_audit" | "assortments" | "pos" | "sales_history" | "sales_quotes" | "sales_orders" | "customers" | "receivables" | "cash" | "sales_settings" | "collaborators_directory" | "payroll" | "accounting_summary" | "accounting_accounts" | "accounting_periods" | "accounting_reports" | "accounting_journals" | "accounting_events" | "accounting_banking" | "accounting_opening" | "accounting_settings";
+type ViewName = "collection_automation" | "invoice_requests" | "bi_summary" | "bi_alerts" | "bi_explorer" | "bi_reports" | "bi_budgets" | "bi_network" | "settings_home" | "initial_migration" | "migration" | "users_access" | "suppliers" | "procurement" | "purchase_orders" | "purchase_receipts" | "supplier_invoices" | "supplier_paying_accounts" | "products" | "inventory" | "inventory_counts" | "inventory_transfers" | "inventory_replenishment" | "ecommerce_readiness" | "locations" | "audit" | "sales_audit" | "assortments" | "pos" | "sales_history" | "sales_quotes" | "sales_orders" | "customers" | "receivables" | "cash" | "sales_settings" | "collaborators_directory" | "payroll" | "accounting_summary" | "accounting_accounts" | "accounting_periods" | "accounting_reports" | "accounting_journals" | "accounting_events" | "accounting_banking" | "accounting_opening" | "accounting_settings";
 type AreaName = "bi" | "sales" | "ecommerce" | "purchasing" | "inventory" | "collaborators" | "accounting" | "settings";
 
 const ALL_ROLES: RoleOption[] = [
@@ -263,6 +265,13 @@ const VIEW_META: Record<ViewName, {
     area: "sales",
     requirement: { all: ["view_sales"] },
   },
+  invoice_requests: {
+    label: "Solicitudes de factura",
+    icon: FileCheck2,
+    href: "/satrapy/ventas/solicitudes-factura",
+    area: "sales",
+    requirement: { all: ["view_invoice_requests"] },
+  },
   sales_quotes: {
     label: "Cotizaciones",
     icon: ClipboardCheck,
@@ -342,7 +351,7 @@ function viewForPath(pathname: string): ViewName | undefined {
 }
 
 const NAVIGATION_SECTIONS: Array<{ id: AreaName; label: string; views: ViewName[] }> = [
-  { id: "sales", label: "Ventas", views: ["pos", "sales_history", "sales_quotes", "sales_orders", "customers", "receivables", "cash"] },
+  { id: "sales", label: "Ventas", views: ["pos", "sales_history", "invoice_requests", "sales_quotes", "sales_orders", "customers", "receivables", "cash"] },
   { id: "purchasing", label: "Compras", views: ["suppliers", "procurement", "purchase_orders", "purchase_receipts", "supplier_invoices"] },
   { id: "inventory", label: "Inventario", views: ["products", "inventory", "inventory_counts", "inventory_transfers", "inventory_replenishment"] },
   { id: "collaborators", label: "Colaboradores", views: ["collaborators_directory", "payroll"] },
@@ -605,6 +614,7 @@ export function SatrapyRouteContent() {
   if (activeView === "sales_audit") return <SalesAuditView companyId={appState.membership.companyId} />;
   if (activeView === "pos") return <PosSalesView key={appState.membership.companyId} companyId={appState.membership.companyId} companyName={appState.membership.companyName} cashierName={appState.email} permissions={appState.membership.permissions} experience={experience} />;
   if (activeView === "sales_history") return <SalesHistoryView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
+  if (activeView === "invoice_requests") return <InvoiceRequestsModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "sales_quotes") return <SalesQuotesView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "sales_orders") return <SalesOrdersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "customers") return <CustomersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} initialCustomerId={selectedCustomerId} initialCreateOpen={creatingCustomer} />;

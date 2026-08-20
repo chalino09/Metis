@@ -377,21 +377,25 @@ export function Modal({ open, onOpenChange, eyebrow, title, description, childre
 export function Drawer({
   open,
   onOpenChange,
+  eyebrow,
   title,
+  description,
   children,
   className,
   returnFocusRef,
 }: {
   open: boolean;
-  onOpenChange: (open: boolean) => void;
+  onOpenChange: (open: boolean) => unknown;
+  eyebrow?: string;
   title: string;
+  description?: string;
   children: ReactNode;
   className?: string;
   returnFocusRef?: { current: HTMLElement | null };
 }) {
   const previousFocusRef = useRef<HTMLElement | null>(null);
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root open={open} onOpenChange={(nextOpen) => { onOpenChange(nextOpen); }}>
       <Dialog.Portal>
         <Dialog.Overlay className="ui-dialog-overlay" />
         <Dialog.Content className={cx("ui-drawer", className)} onOpenAutoFocus={() => {
@@ -402,7 +406,9 @@ export function Drawer({
           event.preventDefault();
           target.focus();
         }}>
+          {eyebrow && <span className="eyebrow">{eyebrow}</span>}
           <Dialog.Title>{title}</Dialog.Title>
+          {description && <Dialog.Description>{description}</Dialog.Description>}
           <Dialog.Close asChild><button className="ui-dialog__close" aria-label="Cerrar"><X size={17} /></button></Dialog.Close>
           <div className="ui-drawer__body">{children}</div>
         </Dialog.Content>
