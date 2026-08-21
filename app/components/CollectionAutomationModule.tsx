@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, Input, Modal, Select, useToast } from "@/app/components/ui/primitives";
-import { DataPagination, DataState, PageHeading } from "@/app/components/ui/data";
+import { DataPagination, DataState } from "@/app/components/ui/data";
 import { getSupabaseClient } from "@/app/lib/supabase";
+import { ReceivablesModuleHeader } from "@/app/components/ReceivablesNavigation";
 
 type CaseItem={id:string;customer_id:string;customer_code:string;customer_name:string;status:string;priority_score:number;assigned_to:string|null;next_action_at:string|null;next_action_reason:string|null;outstanding_amount:number;overdue_amount:number;promise_amount:number|null;promised_for:string|null;blocks:string[]};
 type Summary={open_cases:number;requires_human:number;active_promises:number;recovered_amount:number;recovery_basis:string};
@@ -58,8 +58,7 @@ export function CollectionAutomationModule({companyId}:{companyId:string}){
   async function generateProposals(){setGeneratingProposals(true);const {data,error:generateError}=await getSupabaseClient().rpc("collection_generate_assisted_reviews",{p_company_id:companyId,p_batch_size:100,p_after_case_id:null});if(generateError)toast({title:"No se pudieron preparar las tareas",description:generateError.message,tone:"error"});else toast({title:"Tareas asistidas preparadas",description:`${Number((data as {created?:number}|null)?.created??0)} casos quedaron en cola. El worker generará propuestas; no se enviarán mensajes.`,tone:"success"});setGeneratingProposals(false);}
   const assigneeOptions=assignees.map((item)=>({value:item.id,label:item.name}));const activeDraft=policies.find((item)=>item.status==="draft"&&item.complete);const activePolicy=policies.find((item)=>item.status==="approved");const detailOutstanding=detail?.documents.reduce((total,item)=>total+Number(item.outstanding_amount),0)??selected?.outstanding_amount??0;const showWorkspace=configuration==="configured"||items.length>0||loading||Boolean(error);
   return <main className="content-frame module-page collection-automation">
-    <PageHeading eyebrow="Cuentas por cobrar" title="Gestiones de cobranza" description="Prioriza la cartera por cliente, registra compromisos y conserva una cronología auditable." />
-    <nav className="receivables-tabs" aria-label="Vistas de cuentas por cobrar"><Link href="/satrapy/ventas/cuentas-por-cobrar">Cartera</Link><Link href="/satrapy/ventas/cuentas-por-cobrar/automatizacion" aria-current="page">Gestiones</Link></nav>
+    <ReceivablesModuleHeader active="gestiones" title="Cuentas por cobrar" description="Prioriza la cartera por cliente, registra compromisos y conserva una cronología auditable." tabsLabel="Vistas de cuentas por cobrar" />
     <section className={`collection-policy ${configuration==="configured"?"is-configured":""}`} aria-labelledby="collection-policy-heading">
       <div className="collection-policy__content">
         <div className="collection-policy__intro"><span className="eyebrow">Automatización de cobranza</span><h2 id="collection-policy-heading">Política operativa</h2><p>{policyLoading?"Cargando configuración…":configuration==="configured"?`Activa · versión ${activePolicy?.version??""} · aprobada ${activePolicy?.approved_at?new Date(activePolicy.approved_at).toLocaleDateString("es-MX"):""}`:"Define responsables, horario y frecuencia antes de generar trabajo."}</p></div>

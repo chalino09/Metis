@@ -350,7 +350,7 @@ function viewForPath(pathname: string): ViewName | undefined {
 }
 
 const NAVIGATION_SECTIONS: Array<{ id: AreaName; label: string; views: ViewName[] }> = [
-  { id: "sales", label: "Ventas", views: ["pos", "sales_history", "invoice_requests", "sales_quotes", "sales_orders", "customers", "receivables", "cash"] },
+  { id: "sales", label: "Ventas", views: ["pos", "sales_history", "sales_quotes", "sales_orders", "customers", "receivables", "cash"] },
   { id: "purchasing", label: "Compras", views: ["suppliers", "procurement", "purchase_orders", "purchase_receipts", "supplier_invoices"] },
   { id: "inventory", label: "Inventario", views: ["products", "inventory", "inventory_counts", "inventory_transfers", "inventory_replenishment"] },
   { id: "collaborators", label: "Colaboradores", views: ["collaborators_directory", "payroll"] },
@@ -378,6 +378,12 @@ const INTERNAL_VIEWS: ViewName[] = ["collection_automation"];
 
 function viewLabel(name: ViewName, experience: ProductExperience) {
   return experienceViewLabel(name, VIEW_META[name].label, experience);
+}
+
+function navigationViewIsActive(name: ViewName, activeView: ViewName) {
+  return name === "receivables"
+    ? activeView === "receivables" || activeView === "collection_automation"
+    : activeView === name;
 }
 
 function getAllowedNavigation(permissions: string[], previewRole: AppRoleCode | null, experience: ProductExperience, isSuperAdmin: boolean) {
@@ -451,7 +457,7 @@ export function SatrapyShell({ children }: { children: ReactNode }) {
             <strong>{appState.membership.companyName}</strong>
             <span>{activeSection?.label ?? "Operación"}</span>
           </div>
-          {activeSection?.id === "accounting" ? <div className="context-nav__links accounting-context-nav">{contextViews?.map((name) => { const item = VIEW_META[name]; const Icon = item.icon; return <Link className={`context-nav__item ${activeView === name ? "is-active" : ""}`} aria-current={activeView === name ? "page" : undefined} href={item.href} key={name}><Icon size={16} />{viewLabel(name, experience)}</Link>; })}</div> : <div className="context-nav__links">{contextViews?.map((name) => { const item = VIEW_META[name]; const Icon = item.icon; return <button className={`context-nav__item ${activeView === name ? "is-active" : ""}`} aria-current={activeView === name ? "page" : undefined} onClick={() => router.push(activeSection?.id === "bi" ? `${item.href}${window.location.search}` : item.href)} key={name}><Icon size={16} />{viewLabel(name, experience)}</button>; })}</div>}
+          {activeSection?.id === "accounting" ? <div className="context-nav__links accounting-context-nav">{contextViews?.map((name) => { const item = VIEW_META[name]; const Icon = item.icon; return <Link className={`context-nav__item ${activeView === name ? "is-active" : ""}`} aria-current={activeView === name ? "page" : undefined} href={item.href} key={name}><Icon size={16} />{viewLabel(name, experience)}</Link>; })}</div> : <div className="context-nav__links">{contextViews?.map((name) => { const item = VIEW_META[name]; const Icon = item.icon; const active = navigationViewIsActive(name, activeView); const href = activeSection?.id === "bi" ? `${item.href}${window.location.search}` : item.href; return <Link className={`context-nav__item ${active ? "is-active" : ""}`} aria-current={active ? "page" : undefined} href={href} key={name}><Icon size={16} />{viewLabel(name, experience)}</Link>; })}</div>}
           <span className="topbar__status">Operación en orden</span>
         </nav>}
         {previewRole && (

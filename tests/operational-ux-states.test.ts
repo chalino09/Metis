@@ -29,7 +29,7 @@ test("Ventas, Inventario y Compras conservan resultados durante una actualizaci�
 test("los listados principales ofrecen recuperación y mensajes entendibles", () => {
   for (const source of [sales, inventory, orders, receipts]) assert.match(source, />Reintentar<\/Button>/);
   assert.match(supplierInvoices, /> Actualizar<\/Button>/);
-  assert.match(orders, /No se pudieron cargar las órdenes de compra\./);
+  assert.match(orders, /No se pudieron cargar las cotizaciones y órdenes\./);
   assert.match(receipts, /No se pudieron cargar las recepciones\./);
   assert.match(sales, /No se pudieron consultar las ventas\./);
   assert.match(inventory, /No se pudieron cargar las sugerencias de reabastecimiento\./);
