@@ -1238,14 +1238,26 @@ export function SalesHistoryView({ companyId, permissions }: { companyId: string
   const [returnLines, setReturnLines] = useState<Record<string, { quantity: string; restock: boolean }>>({});
   const [returning, setReturning] = useState(false);
   const [approvals, setApprovals] = useState<Array<{ id: string; scope: string; requested_percent: number; requested_reason: string; created_at: string }>>([]);
+  const totalSnapshot = useRef<{ key: string; total: number } | null>(null);
+  const latestLoad = useRef(0);
   const load = useCallback(async () => {
+    const requestId = ++latestLoad.current;
+    const totalKey = `${companyId}:${query.trim().toLocaleLowerCase("es-MX")}`;
+    const cachedTotal = totalSnapshot.current?.key === totalKey ? totalSnapshot.current.total : undefined;
     setLoading(true);
-    const { data, error: loadError } = await getSupabaseClient().rpc("list_sales", { p_company_id: companyId, p_location_id: null, p_query: query || null, p_page: page, p_page_size: 50 });
+    const { data, error: loadError } = await getSupabaseClient().rpc("list_sales", { p_company_id: companyId, p_location_id: null, p_query: query || null, p_page: page, p_page_size: 50, p_include_total: cachedTotal === undefined });
+    if (requestId !== latestLoad.current) return;
     if (loadError) setError("No se pudieron consultar las ventas.");
-    else { const result = data as { items?: SaleRow[]; total?: number }; setRows(result.items ?? []); setTotal(result.total ?? 0); setError(null); }
+    else {
+      const result = data as { items?: SaleRow[]; total?: number | null };
+      if (typeof result.total === "number") totalSnapshot.current = { key: totalKey, total: result.total };
+      setRows(result.items ?? []);
+      setTotal(typeof result.total === "number" ? result.total : cachedTotal ?? 0);
+      setError(null);
+    }
     setLoading(false);
   }, [companyId, page, query]);
-  useEffect(() => { const timer = window.setTimeout(() => void load(), 150); return () => window.clearTimeout(timer); }, [load]);
+  useEffect(() => { const timer = window.setTimeout(() => void load(), 350); return () => window.clearTimeout(timer); }, [load]);
   const loadApprovals = useCallback(async () => {
     if (!permissions.includes("approve_discount")) return;
     const { data } = await getSupabaseClient().rpc("list_pending_discount_approvals", { p_company_id: companyId });
