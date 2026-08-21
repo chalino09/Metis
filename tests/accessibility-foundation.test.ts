@@ -6,6 +6,7 @@ import { isKeyboardActivationKey } from "../app/lib/keyboard-activation.ts";
 
 const provider = readFileSync("app/components/SatrapyProvider.tsx", "utf8");
 const shell = readFileSync("app/components/SatrapyApp.tsx", "utf8");
+const styles = readFileSync("app/globals.css", "utf8");
 const tableFoundation = readFileSync("app/components/ui/data.tsx", "utf8");
 const operationalTables = [
   "app/components/SatrapyApp.tsx",
@@ -40,4 +41,23 @@ test("las filas operativas son enfocables y se activan con Enter o espacio", () 
   for (const source of operationalTables) {
     assert.doesNotMatch(source, /<tr[^>]*\bonClick=/, "queda una fila operativa accesible solo por puntero");
   }
+});
+
+test("los formularios laterales reservan espacio para mostrar completo el foco", () => {
+  assert.match(
+    styles,
+    /\.ui-drawer__body \{[^}]*margin:14px -4px -4px;[^}]*padding:4px 6px 4px 4px;/,
+  );
+  assert.match(
+    styles,
+    /\.customer-drawer > \.ui-drawer__body \{[^}]*margin:14px -4px -4px;[^}]*padding:4px 6px 4px 4px;/,
+  );
+  assert.match(
+    styles,
+    /\.sales-quote-detail > \.ui-drawer__body \{[^}]*margin:14px -4px -4px;[^}]*padding:4px 6px 4px 4px;/,
+  );
+  assert.match(
+    styles,
+    /\.payroll-detail > \.ui-drawer__body \{[^}]*margin:12px -4px -4px;[^}]*padding:4px 6px 4px 4px;/,
+  );
 });

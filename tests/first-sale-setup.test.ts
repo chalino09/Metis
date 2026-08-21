@@ -13,8 +13,10 @@ test("el inicio de primera venta pertenece al núcleo compartido", () => {
   assert.doesNotMatch(configuration, /Superficie del producto/);
   assert.doesNotMatch(configuration, /Experiencia por empresa/);
   assert.match(sales, /Inicio compartido/);
-  assert.match(sales, /Lista de precios<\/strong> responde cuánto cuesta/);
-  assert.match(sales, /Productos por sucursal<\/strong> responde qué se vende y dónde/);
+  assert.match(sales, /Define cuánto cuesta/);
+  assert.match(sales, /Define qué se vende y dónde/);
+  assert.match(sales, /Preparación inicial completa/);
+  assert.match(sales, /Ver pasos/);
 });
 
 test("las denominaciones MXN faltantes se completan en una sola operación auditada", () => {

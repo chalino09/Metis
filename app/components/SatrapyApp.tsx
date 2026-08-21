@@ -52,7 +52,6 @@ import { COMMERCIAL_ASSORTMENTS_PATH, LEGACY_POS_PREPARATION_PATH, MANAGE_ASSORT
 import { useSatrapy, type SatrapyAccessIssue } from "@/app/components/SatrapyProvider";
 import { roleDisplayName } from "@/app/lib/role-labels";
 import { CashDeskView, CustomersView, PosSalesView, ReceivablesView, SalesAuditView, SalesHistoryView, SalesSettingsView } from "@/app/components/SalesModule";
-import { CommercialAssortmentsView } from "@/app/components/CommercialAssortmentsView";
 import { SalesQuotesView } from "@/app/components/SalesQuotesModule";
 import { SalesOrdersView } from "@/app/components/SalesOrdersModule";
 import { SuppliersView } from "@/app/components/SuppliersModule";
@@ -319,7 +318,7 @@ const VIEW_META: Record<ViewName, {
     icon: WalletCards,
     href: "/satrapy/configuracion/ventas",
     area: "settings",
-    requirement: { any: ["manage_payment_methods", "manage_discount_policies", "manage_locations", "manage_prices"] },
+    requirement: { any: ["manage_payment_methods", "manage_discount_policies", "manage_locations", "manage_prices", "manage_assortments"] },
   },
   collaborators_directory: { label: "Directorio", icon: Users, href: "/satrapy/colaboradores/directorio", area: "collaborators", requirement: { all: ["view_collaborators"] } },
   payroll: { label: "Nómina", icon: WalletCards, href: "/satrapy/colaboradores/nomina", area: "collaborators", requirement: { all: ["view_collaborators"] } },
@@ -571,8 +570,8 @@ export function SatrapyRouteContent() {
   const isForbidden = Boolean(requestedView && !allowedViews.includes(requestedView));
 
   useEffect(() => {
-    if (!loading && appState && pathname === LEGACY_POS_PREPARATION_PATH) {
-      router.replace(VIEW_META.assortments.href);
+    if (!loading && appState && (pathname === LEGACY_POS_PREPARATION_PATH || pathname === VIEW_META.assortments.href)) {
+      router.replace("/satrapy/configuracion/ventas?seccion=assortments");
       return;
     }
     if (!loading && appState && pathname === "/satrapy/inventario/ubicaciones") {
@@ -639,7 +638,7 @@ export function SatrapyRouteContent() {
   if (activeView === "accounting_banking") return <BankingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "accounting_opening") return <AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="opening" />;
   if (activeView === "accounting_settings") return <AccountingModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} view="settings" />;
-  return <CommercialAssortmentsView key={appState.membership.companyId} companyId={appState.membership.companyId} />;
+  return <SalesSettingsView key={appState.membership.companyId} companyId={appState.membership.companyId} permissions={appState.membership.permissions} experience={experience} initialResource="assortments" />;
 }
 
 type AuthFormError = {
@@ -1546,7 +1545,7 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
         <div className="upload-stack">
           <label className="upload-zone">
             <Upload size={22} />
-            <strong>Cargar archivos de migración inicial</strong>
+            <strong>Subir archivos de origen</strong>
             <span>Selecciona juntos los CSV o Excel disponibles. Satrapy identifica cada fuente y conserva un resultado verificable antes de confirmar.</span>
             <input type="file" accept=".csv,.xls,.xlsx" multiple disabled={!canUploadAny || busy} onChange={(event) => { const selected = Array.from(event.target.files ?? []); event.target.value = ""; if (selected.length) void addFiles(selected); }} />
           </label>
@@ -1566,7 +1565,7 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
 
       <section className="migration-specialized" aria-labelledby="specialized-imports-title">
         <header><div><span className="eyebrow">Importaciones por módulo</span><h2 id="specialized-imports-title">Carga cada archivo donde corresponde</h2><p>Los estados bancarios se gestionan en Bancos y las metas y presupuestos en BI.</p></div></header>
-        <div><Link href="/satrapy/contabilidad/bancos"><Landmark size={18}/><span><strong>Estados bancarios</strong><small>Importa y concilia desde Bancos.</small></span><ArrowRight size={15}/></Link><Link href="/satrapy/bi/metas-presupuestos"><Target size={18}/><span><strong>Metas y presupuestos</strong><small>Captura y administra desde BI.</small></span><ArrowRight size={15}/></Link></div>
+        <div><Link href="/satrapy/contabilidad/bancos"><Landmark size={18}/><span><strong>Estados bancarios</strong><small>Importa y concilia desde Bancos. Plantilla: plantilla_estado_bancario_neutral.xlsx</small></span><ArrowRight size={15}/></Link><Link href="/satrapy/bi/metas-presupuestos"><Target size={18}/><span><strong>Metas y presupuestos</strong><small>Captura y administra desde BI.</small></span><ArrowRight size={15}/></Link></div>
       </section>
 
       {budgetPreview && <section className="import-preview-shell" aria-labelledby="budget-import-preview-title">

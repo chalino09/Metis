@@ -14,7 +14,7 @@ type MembershipItem = { product_id: string; code: string | null; name: string; i
 type MembershipResult = { items: MembershipItem[]; total: number; member_count: number; page: number; page_size: number };
 type AssortmentContext = { assortments: Assortment[]; locations: Location[]; catalog_total: number; outside_assortment_total: number };
 
-export function CommercialAssortmentsView({ companyId }: { companyId: string }) {
+export function CommercialAssortmentsView({ companyId, embedded = false }: { companyId: string; embedded?: boolean }) {
   const { toast } = useToast();
   const [assortments, setAssortments] = useState<Assortment[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -30,7 +30,8 @@ export function CommercialAssortmentsView({ companyId }: { companyId: string }) 
   const [newName, setNewName] = useState("Catálogo general");
   const [newLocationIds, setNewLocationIds] = useState<string[]>([]);
   const [locationId, setLocationId] = useState("");
-  const [confirmation, setConfirmation] = useState<"create" | "refresh" | null>(null);
+  const [confirmation, setConfirmation] = useState<"create" | "refresh" | "filtered-add" | "filtered-remove" | null>(null);
+  const [bulkReason, setBulkReason] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -173,6 +174,30 @@ export function CommercialAssortmentsView({ companyId }: { companyId: string }) 
     toast({ title: "Disponibilidad actualizada", description: `${updated} producto${updated === 1 ? "" : "s"} ${included ? "disponible" : "retirado"}${updated === 1 ? "" : "s"}.`, tone: "success" });
   }
 
+  async function updateFilteredMembership() {
+    if (!selected || !confirmation?.startsWith("filtered-") || !bulkReason.trim()) return;
+    const included = confirmation === "filtered-add";
+    setBusy(true);
+    const { data, error: updateError } = await getSupabaseClient().rpc("set_sales_assortment_membership_by_filter", {
+      p_company_id: companyId,
+      p_assortment_id: selected.id,
+      p_query: debouncedQuery || null,
+      p_membership: membershipFilter === "all" ? null : membershipFilter,
+      p_included: included,
+      p_reason: bulkReason.trim(),
+    });
+    setBusy(false);
+    if (updateError) {
+      toast({ title: "No se pudo actualizar el surtido", description: updateError.message, tone: "error" });
+      return;
+    }
+    const updated = Number((data as { updated?: number } | null)?.updated ?? 0);
+    setConfirmation(null);
+    setBulkReason("");
+    await Promise.all([loadBase(), loadSelected()]);
+    toast({ title: "Surtido actualizado", description: `${updated.toLocaleString("es-MX")} producto${updated === 1 ? "" : "s"} ${included ? "agregado" : "retirado"}${updated === 1 ? "" : "s"}.`, tone: "success" });
+  }
+
   async function assignLocation() {
     if (!selected || !locationId) return;
     setBusy(true);
@@ -218,9 +243,9 @@ export function CommercialAssortmentsView({ companyId }: { companyId: string }) 
   const toggleProduct = (id: string) => setSelectedProductIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
 
   return (
-    <div className="content-frame">
-      <header className="page-heading">
-        <div><span className="eyebrow">Configuración comercial</span><h1>Productos por sucursal</h1><p>Elige qué productos puede vender cada sucursal. Los precios se configuran por separado.</p></div>
+    <div className={embedded ? "settings-resource commercial-assortments-embedded" : "content-frame"}>
+      <header className={embedded ? undefined : "page-heading"}>
+        <div><span className="eyebrow">Oferta por sucursal</span>{embedded ? <h2>Productos por sucursal</h2> : <h1>Productos por sucursal</h1>}<p>Elige qué productos puede vender cada sucursal. Los precios se configuran por separado.</p></div>
         <Button variant="secondary" onClick={() => { void loadBase(); void loadSelected(); }}><RefreshCw size={16} /> Actualizar</Button>
       </header>
       <div className="pos-products-workspace">
@@ -243,12 +268,14 @@ export function CommercialAssortmentsView({ companyId }: { companyId: string }) 
                   <div className="pos-prep-inline"><Select value={locationId} onValueChange={setLocationId} ariaLabel="Agregar sucursal al catálogo" options={[{ value: "", label: "Seleccionar sucursal", disabled: true }, ...availableLocations.map((location) => ({ value: location.id, label: `${location.external_code} · ${location.name}` }))]} disabled={busy || !availableLocations.length} /><Button onClick={() => void assignLocation()} disabled={!locationId || busy}>Agregar sucursal</Button></div>
                   <div className="pos-prep-chips">{activeLocations.length ? activeLocations.map((location) => <span key={location.id}>{location.external_code} · {location.name}<button aria-label={`Retirar ${location.name}`} onClick={() => void removeLocation(location.id)} disabled={busy}><Trash2 size={13} /></button></span>) : <small>Sin sucursales asignadas.</small>}</div>
                 </section>
-                <section><h3>Qué controla esta pantalla</h3><p className="pos-prep-help"><strong>Aquí:</strong> qué productos aparecen en cada sucursal.<br /><strong>Lista de precios:</strong> cuánto cuestan.<br /><strong>Inventario:</strong> si existen unidades para vender.</p></section>
               </div>
               <div className="pos-prep-table">
-                <div className="pos-prep-table-heading"><div><h3>Productos del catálogo</h3><p>Selecciona uno o varios productos para incluirlos o retirarlos de todas las sucursales asignadas.</p></div></div>
-                <div className="pos-bulk-actions" aria-live="polite"><span><strong>{selectedProductIds.length}</strong> seleccionados</span><Button size="sm" variant="secondary" disabled={!selectedProductIds.length || busy} onClick={() => void updateMembership(true)}>Ofrecer en sucursales</Button><Button size="sm" variant="secondary" disabled={!selectedProductIds.length || busy} onClick={() => void updateMembership(false)}>Retirar de sucursales</Button></div>
+                <div className="pos-prep-table-heading"><div><h3>Productos del surtido</h3><p>Para pocos productos usa las casillas. Para un catálogo amplio, filtra y aplica el cambio a todos los resultados.</p></div></div>
                 <DataToolbar search={query} onSearchChange={setQuery} placeholder="Buscar producto o código" filters={<Select value={membershipFilter} onValueChange={(value) => { setMembershipFilter(value as typeof membershipFilter); setPage(1); }} ariaLabel="Filtrar disponibilidad" options={[{ value: "all", label: "Todos" }, { value: "included", label: "Disponibles" }, { value: "excluded", label: "No disponibles" }]} />} activeFilters={(query.trim() ? 1 : 0) + (membershipFilter !== "all" ? 1 : 0)} onClear={() => { setQuery(""); setDebouncedQuery(""); setMembershipFilter("all"); setPage(1); }} results={membership?.total ?? 0} />
+                <div className="pos-assortment-actions">
+                  <section aria-live="polite"><span>Selección manual</span><p><strong>{selectedProductIds.length}</strong> producto{selectedProductIds.length === 1 ? "" : "s"} de esta página.</p><div><Button size="sm" variant="secondary" disabled={!selectedProductIds.length || busy} onClick={() => void updateMembership(true)}>Ofrecer selección</Button><Button size="sm" variant="secondary" disabled={!selectedProductIds.length || busy} onClick={() => void updateMembership(false)}>Retirar selección</Button></div></section>
+                  <section><span>Todos los resultados del filtro</span><p><strong>{membership?.total ?? 0}</strong> producto{membership?.total === 1 ? "" : "s"}, aunque estén en otras páginas.</p><div><Button size="sm" variant="secondary" disabled={!membership?.total || busy} onClick={() => { setBulkReason(""); setConfirmation("filtered-add"); }}>Ofrecer resultados</Button><Button size="sm" variant="secondary" disabled={!membership?.total || busy} onClick={() => { setBulkReason(""); setConfirmation("filtered-remove"); }}>Retirar resultados</Button></div></section>
+                </div>
                 <DataState loading={loading} error={error} hasData={membership?.items.length ?? 0} empty="No hay productos para este filtro.">
                   <div className="table-wrap surface-table"><table><thead><tr><th className="selection-cell"><input type="checkbox" aria-label="Seleccionar página" checked={allPageSelected} onChange={() => setSelectedProductIds(allPageSelected ? selectedProductIds.filter((id) => !currentPageIds.includes(id)) : [...new Set([...selectedProductIds, ...currentPageIds])])} /></th><th>Producto</th><th>Código</th><th>Disponibilidad</th></tr></thead><tbody>{(membership?.items ?? []).map((item) => <tr key={item.product_id}><td className="selection-cell"><input type="checkbox" aria-label={`Seleccionar ${item.name}`} checked={selectedProductIds.includes(item.product_id)} onChange={() => toggleProduct(item.product_id)} /></td><td><strong>{item.name}</strong></td><td className="mono">{item.code ?? "—"}</td><td><Badge tone={item.included ? "success" : "neutral"}>{item.included ? "Disponible" : "No disponible"}</Badge></td></tr>)}</tbody></table></div>
                 </DataState>
@@ -285,6 +312,7 @@ export function CommercialAssortmentsView({ companyId }: { companyId: string }) 
       </div>
       <Modal open={confirmation === "create"} onOpenChange={(open) => { if (!open && !busy) setConfirmation(null); }} eyebrow="Productos por sucursal" title="Crear y activar catálogo" description="Los productos vendibles actuales quedarán disponibles en las sucursales seleccionadas. Después podrás ajustar la selección." footer={<><Button variant="secondary" onClick={() => setConfirmation(null)} disabled={busy}>Cancelar</Button><Button variant="primary" onClick={() => void createAssortment()} loading={busy}>Crear y activar</Button></>}><div className="pos-prep-confirm-summary"><span><strong>{catalogTotal}</strong> productos</span><span><strong>{newLocationIds.length}</strong> sucursales</span></div></Modal>
       <Modal open={confirmation === "refresh"} onOpenChange={(open) => { if (!open && !busy) setConfirmation(null); }} eyebrow="Productos por sucursal" title="Agregar productos del catálogo" description="Se agregarán los productos vendibles que todavía no están disponibles aquí. No se retirará ningún producto existente." footer={<><Button variant="secondary" onClick={() => setConfirmation(null)} disabled={busy}>Cancelar</Button><Button variant="primary" onClick={() => void refreshCatalog()} loading={busy}>Agregar productos</Button></>} />
+      <Modal open={confirmation === "filtered-add" || confirmation === "filtered-remove"} onOpenChange={(open) => { if (!open && !busy) { setConfirmation(null); setBulkReason(""); } }} eyebrow="Cambio masivo auditado" title={confirmation === "filtered-add" ? "Ofrecer todos los resultados" : "Retirar todos los resultados"} description={`El cambio se aplicará a los ${(membership?.total ?? 0).toLocaleString("es-MX")} productos que coinciden con el filtro, no sólo a esta página. No modifica precios, existencias ni readiness.`} footer={<><Button variant="secondary" onClick={() => { setConfirmation(null); setBulkReason(""); }} disabled={busy}>Cancelar</Button><Button variant={confirmation === "filtered-remove" ? "danger" : "primary"} onClick={() => void updateFilteredMembership()} loading={busy} disabled={!bulkReason.trim()}>{confirmation === "filtered-add" ? "Ofrecer resultados" : "Retirar resultados"}</Button></>}><label className="operation-reason">Motivo obligatorio<textarea rows={3} value={bulkReason} onChange={(event) => setBulkReason(event.target.value)} placeholder="Ej. Cambio de temporada autorizado" /></label></Modal>
     </div>
   );
 }

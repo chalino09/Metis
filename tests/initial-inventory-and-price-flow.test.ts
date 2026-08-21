@@ -18,13 +18,23 @@ test("el inventario inicial se registra por lote, una vez y dentro del núcleo",
   assert.doesNotMatch(migration, /Restaurante Cuapancingo|SUC-001/);
 });
 
-test("precios explica la secuencia y mantiene el IVA canónico del producto", () => {
-  assert.match(prices, /Crear la lista/);
-  assert.match(prices, /Capturar precios e IVA/);
-  assert.match(prices, /Asignar a sucursales/);
-  assert.match(prices, /El IVA viene de cada producto/);
+test("precios separa las tres tareas y mantiene el IVA canónico del producto", () => {
+  assert.match(prices, /Listas \(/);
+  assert.match(prices, /Precios de productos/);
+  assert.match(prices, /Asignación a sucursales/);
+  assert.match(prices, /Primero crea una lista, después agrega sus precios y al final asígnala a las sucursales/);
+  assert.match(prices, /El IVA pertenece al producto/);
   assert.match(prices, /href="\/satrapy\/inventario\/productos"/);
   assert.doesNotMatch(prices, /save_tax_category|tax_category_id/);
+});
+
+test("la captura puntual pide precio final y deja lo avanzado bajo demanda", () => {
+  assert.match(prices, /Precio final \(\$\{selectedList\.currency_code\}\)/);
+  assert.ok(prices.includes("const amount=finalAmount/(1+priceDraft.product.tax_rate)"));
+  assert.match(prices, /Opciones avanzadas/);
+  assert.match(prices, /Programar para otra fecha/);
+  assert.match(prices, /Importar precios/);
+  assert.doesNotMatch(prices, /Motivo obligatorio/);
 });
 
 test("datetime-local usa el calendario y la hora de Satrapy", () => {

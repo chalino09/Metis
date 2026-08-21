@@ -189,7 +189,7 @@ export function ConfigurationHome({ companyId, permissions }: { companyId: strin
       id: "assortments",
       label: "Productos por sucursal",
       description: isRestaurant ? "Elige qué platillos se ofrecen en cada sucursal." : "Elige qué productos se pueden vender en cada sucursal.",
-      href: "/satrapy/configuracion/surtidos",
+      href: "/satrapy/configuracion/ventas?seccion=assortments",
       icon: SlidersHorizontal,
       group: "operation",
       mode: "manage",

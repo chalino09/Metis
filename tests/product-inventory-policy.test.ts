@@ -24,7 +24,7 @@ test("las altas manuales eligen una política explícita", () => {
   assert.match(catalog, /Mercancía con inventario/);
   assert.match(catalog, /Servicio sin inventario/);
   assert.match(catalog, /Elige el tipo operativo/);
-  assert.match(catalog, /inventoryPolicy!=="unclassified"/);
+  assert.match(catalog, /disabled=\{saving\|\|draft\.inventoryPolicy==="unclassified"\}/);
   assert.match(catalog, /p_inventory_policy:normalized\.inventoryPolicy/);
   assert.doesNotMatch(catalog, /p_is_inventory_tracked:normalized\.inventoryTracked/);
 });

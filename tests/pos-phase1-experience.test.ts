@@ -47,7 +47,7 @@ test("la búsqueda separa términos y el catálogo interno desglosa IVA", () => 
   assert.match(migration, /'tax_amount'/);
   assert.match(migration, /'total_amount'/);
   assert.match(prices, /Precio sin IVA/);
-  assert.match(prices, /Precio total/);
+  assert.match(prices, /Precio final/);
 });
 
 test("el POS consulta existencias de otras sucursales sin alterar la venta local", () => {

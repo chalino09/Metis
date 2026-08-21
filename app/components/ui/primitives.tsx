@@ -305,7 +305,7 @@ export function Select({
   return (
     <RadixSelect.Root value={value} onValueChange={onValueChange} disabled={disabled}>
       <RadixSelect.Trigger className={cx("ui-select", className)} style={style} aria-label={ariaLabel}>
-        <RadixSelect.Value>{selected?.label ?? placeholder}</RadixSelect.Value>
+        <RadixSelect.Value placeholder={placeholder}>{selected?.value ? selected.label : undefined}</RadixSelect.Value>
         <RadixSelect.Icon><ChevronDown size={15} /></RadixSelect.Icon>
       </RadixSelect.Trigger>
       <RadixSelect.Portal>

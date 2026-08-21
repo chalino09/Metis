@@ -218,16 +218,30 @@ export function ProcurementView({
     return () => window.clearTimeout(timer);
   }, [open, searchParams]);
 
-  async function openManual() {
-    const { data } = await getSupabaseClient().rpc("search_purchase_order_products", {
+  const openManual = useCallback(async (preselectedProductId = "") => {
+    const { data } = await getSupabaseClient().rpc("search_products", {
       p_company_id: companyId,
       p_query: null,
-      p_limit: 50,
+      p_page: 1,
+      p_page_size: 50,
+      p_category_id: null,
+      p_is_active: true,
+      p_is_sellable: null,
+      p_inventory_tracked: true,
+      p_price_list_id: null,
     });
-    setProducts(((data as { items?: Product[] } | null)?.items ?? []));
-    setManual({ locationId: "", productId: "", quantity: "", targetDate: "", reason: "" });
+    const nextProducts=((data as { items?: Product[] } | null)?.items ?? []);
+    setProducts(nextProducts);
+    setManual({ locationId: "", productId: nextProducts.some(product=>product.id===preselectedProductId)?preselectedProductId:"", quantity: "", targetDate: "", reason: "" });
     setManualOpen(true);
-  }
+  },[companyId]);
+
+  const newProductId=searchParams.get("producto_nuevo");
+  useEffect(()=>{
+    if(!canCreate||!newProductId)return;
+    const timer=window.setTimeout(()=>{void openManual(newProductId);router.replace("/satrapy/compras/abastecimiento",{scroll:false});},0);
+    return()=>window.clearTimeout(timer);
+  },[canCreate,newProductId,openManual,router]);
 
   async function saveManual() {
     if (!manual.locationId || !manual.productId || !(Number(manual.quantity) > 0) || !manual.reason.trim()) {
@@ -402,6 +416,23 @@ export function ProcurementView({
     });
   }
 
+  function selectedAuthorizationSummary() {
+    if (!detail) return { suppliers: "—", totals: "—" };
+    const suppliers = new Set<string>();
+    const totals = new Map<string, number>();
+    for (const line of detail.lines) {
+      const selectedId = awardChoices[line.id];
+      const selected = awardCandidates(line.id, Number(line.required_quantity)).find((candidate) => candidate.line.id === selectedId);
+      if (!selected) continue;
+      suppliers.add(selected.quote.supplier_name);
+      totals.set(selected.quote.currency_code, (totals.get(selected.quote.currency_code) ?? 0) + selected.net * Number(line.required_quantity));
+    }
+    return {
+      suppliers: suppliers.size ? [...suppliers].join(", ") : "Selecciona un proveedor",
+      totals: totals.size ? [...totals].map(([currency, total]) => formatMoney(total, currency)).join(" · ") : "—",
+    };
+  }
+
   async function completeSelection() {
     if (!detail) return;
     const lines = selectedAwards();
@@ -426,7 +457,7 @@ export function ProcurementView({
     setDecision(null);
     await open(detail.id);
     await load();
-    toast({ title: canApprove ? "Orden de compra creada" : "Selección enviada a aprobación", description: canApprove ? "La compra quedó autorizada y lista para recibir." : "La compra quedó lista para que una persona autorizada la apruebe.", tone: "success" });
+    toast({ title: canApprove ? "Compra autorizada y orden creada" : "Selección enviada a aprobación", description: canApprove ? "La compra quedó autorizada y lista para recibir." : "La compra quedó lista para que una persona autorizada la apruebe.", tone: "success" });
   }
 
   function openQuantityEditor() {
@@ -490,6 +521,7 @@ export function ProcurementView({
   })) : false;
   const canAdjustNeed = Boolean(detail && detail.status === "quoting" && detail.quotes.length === 0 && canCreate);
   const canSelectSupplier = Boolean(detail && detail.status === "quoting" && hasCompleteQuote && canRecommend);
+  const authorizationSummary = selectedAuthorizationSummary();
 
   return (
     <div className="content-frame">
@@ -633,7 +665,7 @@ export function ProcurementView({
                 <div>
                   {detail.quotes.length === 0 && canQuote && <Button variant="primary" onClick={() => void openQuote()}>Registrar cotización</Button>}
                   {detail.quotes.length > 0 && !hasCompleteQuote && canQuote && <Button variant="primary" onClick={() => void openQuote()}>Registrar otra cotización</Button>}
-                  {canSelectSupplier && <Button variant="primary" onClick={openRecommendation}>{canApprove ? "Crear orden de compra" : "Elegir proveedor"}</Button>}
+                  {canSelectSupplier && <Button variant="primary" onClick={openRecommendation}>{canApprove ? "Aprobar compra y crear orden" : "Elegir proveedor"}</Button>}
                   {canAdjustNeed && <Button variant="secondary" onClick={openQuantityEditor}>Ajustar cantidad</Button>}
                   {detail.quotes.length > 0 && canQuote && <Button variant="secondary" onClick={() => void openQuote()}>Agregar cotización</Button>}
                 </div>
@@ -802,7 +834,7 @@ export function ProcurementView({
                     setDecision("approve");
                   }}
                 >
-                  Aprobar selección
+                  Aprobar compra y crear orden
                 </Button>
               )}
             </div>
@@ -812,19 +844,19 @@ export function ProcurementView({
                 open={Boolean(decision)}
                 onOpenChange={(isOpen) => !isOpen && !saving && setDecision(null)}
                 eyebrow="Decisión auditada"
-                title={decision === "approve" ? "Aprobar selección" : canApprove ? "Crear orden de compra" : "Elegir proveedor"}
+                title={decision === "approve" || canApprove ? "Aprobar compra y crear orden" : "Elegir proveedor"}
                 description={
                   decision === "approve"
-                    ? "La aprobación creará una orden de compra por proveedor seleccionado."
+                    ? "La compra quedará autorizada y se creará una orden de compra por proveedor seleccionado."
                     : canApprove
-                      ? "Confirma la cotización elegida para cada partida. La orden de compra se creará al continuar."
+                      ? "Revisa proveedor, importe y destino. Al confirmar, la compra quedará autorizada y se creará una orden por proveedor."
                       : "Elige la cotización que gana cada partida para enviarla a aprobación."
                 }
                 footer={
                   <>
                     <Button onClick={() => setDecision(null)}>Cancelar</Button>
                     <Button variant="primary" loading={saving} onClick={() => void (decision === "approve" ? approve() : completeSelection())}>
-                      {decision === "approve" ? "Aprobar y crear orden de compra" : canApprove ? "Crear orden de compra" : "Enviar a aprobación"}
+                      {decision === "approve" || canApprove ? "Aprobar compra y crear orden" : "Enviar selección a aprobación"}
                     </Button>
                   </>
                 }
@@ -850,6 +882,12 @@ export function ProcurementView({
                         </Field>
                       );
                     })}
+                    <dl className="procurement-decision-summary" aria-label="Resumen de autorización">
+                      <div><dt>Proveedor</dt><dd>{authorizationSummary.suppliers}</dd></div>
+                      <div><dt>Importe</dt><dd>{authorizationSummary.totals}</dd></div>
+                      <div><dt>Almacén destino</dt><dd>{detail.location_name}</dd></div>
+                    </dl>
+                    {canApprove && <p className="procurement-decision-consequence">Al confirmar, se autoriza la compra y se genera la orden de compra.</p>}
                   </div>
                 )}
               </Modal>
@@ -1051,12 +1089,12 @@ export function ProcurementView({
         onOpenChange={(isOpen) => !saving && setManualOpen(isOpen)}
         eyebrow="Sólo excepción"
         title="Nueva solicitud de compra"
-        description="Úsala únicamente cuando la compra no provenga de faltantes; el motivo queda auditado."
+        description="Úsala para una compra puntual que todavía no proviene de mínimos y máximos. El motivo queda auditado."
         footer={
           <>
             <Button onClick={() => setManualOpen(false)}>Cancelar</Button>
             <Button variant="primary" loading={saving} onClick={() => void saveManual()}>
-              Crear solicitud
+              Crear solicitud de compra
             </Button>
           </>
         }

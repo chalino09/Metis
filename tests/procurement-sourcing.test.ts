@@ -40,7 +40,10 @@ test("la interfaz presenta el módulo antes de las órdenes de compra", () => {
   assert.match(app, /generate_procurement_requisition_from_replenishment/);
   assert.match(ui, /Registrar cotización/);
   assert.match(ui, /Siguiente paso/);
-  assert.match(ui, /Crear orden de compra/);
+  assert.match(ui, /Aprobar compra y crear orden/);
+  assert.match(ui, /Enviar selección a aprobación/);
+  assert.match(ui, /Resumen de autorización/);
+  assert.match(ui, /Almacén destino/);
   assert.match(ui, /Ajustar cantidades/);
   assert.match(ui, /Editar cotización/);
   assert.doesNotMatch(ui, /Preparar selección/);
