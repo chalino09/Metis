@@ -7,7 +7,7 @@ const root=new URL("..",import.meta.url);
 const read=(path:string)=>readFile(new URL(path,root),"utf8");
 
 test("Fase 3 consulta agregados operativos con búsqueda, allowlist, orden y paginación server-side",async()=>{
-  const sql=await read("supabase/migrations/202608120019_bi_operational_analytics_tables.sql");
+  const sql=await read("supabase/migrations/202608120021_bi_operational_analytics_tables.sql");
   assert.match(sql,/create or replace function public\.bi_get_operational_table/i);
   assert.match(sql,/public\.bi_explorer_query/);
   assert.match(sql,/v_sort not in\('negative_impact','positive_contribution'/);

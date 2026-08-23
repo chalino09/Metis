@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { ROLE_PREVIEW_PERMISSIONS } from "../app/lib/navigation-access.ts";
 
-const migration=readFileSync("supabase/migrations/202608120002_collection_automation_foundation.sql","utf8");
+const migration=readFileSync("supabase/migrations/202608120003_collection_automation_foundation.sql","utf8");
 const worker=readFileSync("scripts/collection-worker.ts","utf8");
 const ui=readFileSync("app/components/CollectionAutomationModule.tsx","utf8");
 const sales=readFileSync("app/components/SalesModule.tsx","utf8");

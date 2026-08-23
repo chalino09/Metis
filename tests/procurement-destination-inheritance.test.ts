@@ -5,8 +5,8 @@ import test from "node:test";
 const quotes = readFileSync("app/components/PurchaseOrdersModule.tsx", "utf8");
 const receipts = readFileSync("app/components/PurchaseReceiptsModule.tsx", "utf8");
 const requisitions = readFileSync("app/components/ProcurementModule.tsx", "utf8");
-const migration = readFileSync("supabase/migrations/202608200003_procurement_requisition_destination_for_receipts.sql", "utf8");
-const destinationChangeMigration = readFileSync("supabase/migrations/202608200004_procurement_requisition_destination_change.sql", "utf8");
+const migration = readFileSync("supabase/migrations/202608200005_procurement_requisition_destination_for_receipts.sql", "utf8");
+const destinationChangeMigration = readFileSync("supabase/migrations/202608200006_procurement_requisition_destination_change.sql", "utf8");
 
 test("el destino sólo se puede cambiar desde la solicitud antes de cotizar", () => {
   assert.match(requisitions, /change_procurement_requisition_destination/);

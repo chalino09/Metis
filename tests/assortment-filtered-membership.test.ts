@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const migration = readFileSync("supabase/migrations/202608200008_assortment_filtered_membership.sql", "utf8");
+const migration = readFileSync("supabase/migrations/202608200011_assortment_filtered_membership.sql", "utf8");
 const view = readFileSync("app/components/CommercialAssortmentsView.tsx", "utf8");
 
 test("la operación masiva se resuelve en servidor y queda auditada", () => {

@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const root = new URL("../", import.meta.url);
-const migration = await readFile(new URL("supabase/migrations/202608130004_bi_cost_correction_ledger.sql", root), "utf8");
+const migration = await readFile(new URL("supabase/migrations/202608130005_bi_cost_correction_ledger.sql", root), "utf8");
 const moduleSource = await readFile(new URL("app/components/BiModule.tsx", root), "utf8");
 
 test("la corrección histórica es autorizada, set-based y auditable", () => {

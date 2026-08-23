@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const sql = readFileSync("supabase/migrations/202608200002_restaurant_conversion_matrix_completion.sql", "utf8");
+const sql = readFileSync("supabase/migrations/202608200004_restaurant_conversion_matrix_completion.sql", "utf8");
 const catalog = readFileSync("app/components/ProductCatalogView.tsx", "utf8");
 
 test("la matriz cubre peso, volumen y piezas sin mezclar dimensiones", () => {

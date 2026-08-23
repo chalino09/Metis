@@ -301,7 +301,7 @@ ni se modificaron saldos, clientes, contactos o pagos de Teza.
 
 #### Evidencia de ejecución de Fase 1
 
-- La migración `202608120002_collection_automation_foundation.sql` crea permisos
+- La migración `202608120003_collection_automation_foundation.sql` crea permisos
   separados de consulta/gestión, políticas empresariales versionadas, casos,
   tareas, ejecuciones, acciones y propuestas con RLS por empresa. No genera casos
   desde CxC ni duplica saldos.
@@ -386,7 +386,7 @@ configuró ni aprobó automáticamente la política operativa de ninguna empresa
 
 #### Evidencia de implementación de Fase 2
 
-- La migración `202608120003_collection_operations.sql` extiende el caso por
+- La migración `202608120005_collection_operations.sql` extiende el caso por
   cliente con responsable, próxima acción, prioridad determinista y cierre; añade
   promesas auditadas sin duplicar saldos de CxC.
 - La configuración ya es administrable desde `Gestiones`: se captura una
@@ -411,7 +411,7 @@ configuró ni aprobó automáticamente la política operativa de ninguna empresa
   puede cumplirla automáticamente.
 - El monto recuperado se calcula con pagos confirmados desde la apertura del
   caso y la respuesta publica expresamente esa base de cálculo.
-- `202608130006_collection_case_read_repairs.sql` corrige la lectura del folio
+- `202608130008_collection_case_read_repairs.sql` corrige la lectura del folio
   desde `canonical_tickets` (en lugar de una columna inexistente en `sales`) y
   conserva el saldo abierto desde los documentos canónicos de CxC. La interfaz
   separa saldo abierto de vencido y muestra un reintento accesible si falla la

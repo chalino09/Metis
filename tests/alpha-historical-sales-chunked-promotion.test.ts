@@ -4,8 +4,8 @@ import test from "node:test";
 
 const route = readFileSync("app/api/imports/stage/[batchId]/actions/route.ts", "utf8");
 const ui = readFileSync("app/components/SatrapyApp.tsx", "utf8");
-const migration = readFileSync("supabase/migrations/202608120015_chunked_alpha_historical_sales_promotion.sql", "utf8");
-const taxFix = readFileSync("supabase/migrations/202608120016_fix_alpha_historical_sales_tax_fallback.sql", "utf8");
+const migration = readFileSync("supabase/migrations/202608120017_chunked_alpha_historical_sales_promotion.sql", "utf8");
+const taxFix = readFileSync("supabase/migrations/202608120018_fix_alpha_historical_sales_tax_fallback.sql", "utf8");
 
 test("el historial de ventas usa bloques server-side acotados", () => {
   assert.match(route, /promote_alpha_historical_sales_chunk/);
