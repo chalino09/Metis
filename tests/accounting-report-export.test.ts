@@ -15,7 +15,7 @@ const report: AccountingReportExport = {
 test("el Excel financiero conserva metadatos, valores numéricos y formato contable", async () => {
   const bytes = await createAccountingExcel(report, "Empresa de prueba", "MXN");
   assert.equal(Buffer.from(bytes).subarray(0, 2).toString(), "PK");
-  const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(bytes);
+  const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(bytes as unknown as Parameters<typeof workbook.xlsx.load>[0]);
   const sheet = workbook.getWorksheet("Reporte"); assert.ok(sheet);
   assert.equal(sheet.getCell("A1").value, "Empresa de prueba");
   assert.equal(sheet.getCell("A2").value, "Balanza de comprobación");

@@ -10,6 +10,7 @@ import {
   Database,
   History,
   Landmark,
+  Cable,
   RefreshCw,
   Search,
   ShieldCheck,
@@ -52,6 +53,7 @@ type Readiness = {
 const GROUPS = [
   { id: "setup", label: "Puesta en marcha", description: "Carga inicial y comprobación de la base operativa." },
   { id: "company", label: "Empresa y acceso", description: "Estructura, personas y alcance de operación." },
+  { id: "integrations", label: "Servicios conectados", description: "Canales, comercio e inteligencia artificial por empresa." },
   { id: "operation", label: "Operación comercial", description: "Reglas necesarias para vender y cobrar." },
   { id: "finance", label: "Finanzas", description: "Base contable y cuentas financieras." },
   { id: "audit", label: "Auditoría", description: "Evidencia de cambios e importaciones." },
@@ -183,7 +185,7 @@ export function ConfigurationHome({ companyId, permissions }: { companyId: strin
       group: "operation",
       mode: "manage",
       keywords: "configuracion comercial formas pago caja precios descuentos ticket cotizacion",
-      visible: has("manage_payment_methods", "manage_discount_policies", "manage_locations", "manage_prices", "manage_ticket_branding"),
+      visible: has("manage_payment_methods", "manage_discount_policies", "manage_locations", "manage_prices", "manage_ticket_branding", "manage_quote_branding"),
     },
     {
       id: "assortments",
@@ -206,6 +208,17 @@ export function ConfigurationHome({ companyId, permissions }: { companyId: strin
       mode: "manage",
       keywords: "contabilidad catalogo cuentas polizas periodos",
       visible: !isRestaurant && has("view_accounting", "configure_accounting"),
+    },
+    {
+      id: "integrations",
+      label: "Centro de integraciones",
+      description: "Conecta servicios y supervisa credenciales, webhooks, errores y reintentos.",
+      href: "/satrapy/configuracion/integraciones",
+      icon: Cable,
+      group: "integrations",
+      mode: "manage",
+      keywords: "meta whatsapp shopify grok xai nango bots webhooks conexiones credenciales",
+      visible: has("view_integrations"),
     },
     {
       id: "bank-accounts",

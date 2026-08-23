@@ -20,6 +20,8 @@ export const ROLE_PREVIEW_PERMISSIONS: Record<AppRoleCode, string[]> = {
 };
 
 ROLE_PREVIEW_PERMISSIONS.direccion_admin.push(
+  "view_integrations",
+  "manage_integrations",
   "view_banking",
   "import_bank_statements",
   "reconcile_banking",

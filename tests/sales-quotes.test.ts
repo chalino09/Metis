@@ -5,7 +5,7 @@ import test from "node:test";
 const sql = readFileSync("supabase/migrations/202607230011_sales_quotes_follow_up.sql", "utf8");
 const composerSql = readFileSync("supabase/migrations/202607230012_quote_composer_and_pdf.sql", "utf8");
 const quotes = readFileSync("app/components/SalesQuotesModule.tsx", "utf8");
-const quotePdf = readFileSync("app/lib/quote-pdf.ts", "utf8");
+const quotePdf = readFileSync("app/lib/quote-pdf.tsx", "utf8");
 const quoteSettings = readFileSync("app/components/QuoteBrandingSettings.tsx", "utf8");
 const app = readFileSync("app/components/SatrapyApp.tsx", "utf8");
 
