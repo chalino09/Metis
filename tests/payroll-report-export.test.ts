@@ -19,7 +19,7 @@ test("el reporte de nómina conserva pagos e incidencias retroactivas", async ()
 
   assert.equal(Buffer.from(bytes).subarray(0, 2).toString(), "PK");
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(bytes);
+  await workbook.xlsx.load(bytes as unknown as Parameters<typeof workbook.xlsx.load>[0]);
   const summary = workbook.getWorksheet("Nómina");
   const incidents = workbook.getWorksheet("Incidencias");
   const daily = workbook.getWorksheet("Detalle por fecha");
@@ -49,7 +49,7 @@ test("el recibo individual sólo incluye al colaborador seleccionado", async () 
     [{ payment_method: "transfer", payment_date: "2026-08-10", payment_reference: "SPEI-123", total_amount: 5400 }],
   );
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(bytes);
+  await workbook.xlsx.load(bytes as unknown as Parameters<typeof workbook.xlsx.load>[0]);
   assert.deepEqual(workbook.worksheets.map(sheet => sheet.name), ["Recibo"]);
   assert.equal(workbook.getWorksheet("Recibo")?.getCell("B3").value, "Ana Pérez");
   assert.equal(workbook.getWorksheet("Recibo")?.getCell("C9").value, 5400);

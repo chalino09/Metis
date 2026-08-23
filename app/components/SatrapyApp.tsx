@@ -35,6 +35,7 @@ import {
   UserRoundCheck,
   Users,
   WalletCards,
+  Cable,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
@@ -68,6 +69,7 @@ import { ConfigurationHome } from "@/app/components/ConfigurationHome";
 import { InitialMigrationView } from "@/app/components/InitialMigrationView";
 import { ProductCatalogView } from "@/app/components/ProductCatalogView";
 import { EcommerceModule } from "@/app/components/EcommerceModule";
+import { IntegrationCenter } from "@/app/components/IntegrationCenter";
 import { CollaboratorsDirectoryView, PayrollView } from "@/app/components/CollaboratorsModule";
 import { BiModule } from "@/app/components/BiModule";
 import { RestaurantCostAnalysis } from "@/app/components/RestaurantCostAnalysis";
@@ -82,7 +84,7 @@ import type {
   RoleOption,
 } from "@/app/lib/types";
 
-type ViewName = "collection_automation" | "invoice_requests" | "bi_summary" | "restaurant_costs" | "bi_alerts" | "bi_explorer" | "bi_reports" | "bi_budgets" | "bi_network" | "settings_home" | "initial_migration" | "migration" | "users_access" | "suppliers" | "procurement" | "purchase_orders" | "purchase_receipts" | "supplier_invoices" | "supplier_paying_accounts" | "products" | "inventory" | "inventory_counts" | "inventory_transfers" | "inventory_replenishment" | "ecommerce_readiness" | "locations" | "audit" | "sales_audit" | "assortments" | "pos" | "sales_history" | "sales_quotes" | "sales_orders" | "customers" | "receivables" | "cash" | "sales_settings" | "collaborators_directory" | "payroll" | "accounting_summary" | "accounting_accounts" | "accounting_periods" | "accounting_reports" | "accounting_journals" | "accounting_events" | "accounting_banking" | "accounting_opening" | "accounting_settings";
+type ViewName = "collection_automation" | "invoice_requests" | "bi_summary" | "restaurant_costs" | "bi_alerts" | "bi_explorer" | "bi_reports" | "bi_budgets" | "bi_network" | "settings_home" | "integrations" | "initial_migration" | "migration" | "users_access" | "suppliers" | "procurement" | "purchase_orders" | "purchase_receipts" | "supplier_invoices" | "supplier_paying_accounts" | "products" | "inventory" | "inventory_counts" | "inventory_transfers" | "inventory_replenishment" | "ecommerce_readiness" | "locations" | "audit" | "sales_audit" | "assortments" | "pos" | "sales_history" | "sales_quotes" | "sales_orders" | "customers" | "receivables" | "cash" | "sales_settings" | "collaborators_directory" | "payroll" | "accounting_summary" | "accounting_accounts" | "accounting_periods" | "accounting_reports" | "accounting_journals" | "accounting_events" | "accounting_banking" | "accounting_opening" | "accounting_settings";
 type AreaName = "bi" | "sales" | "ecommerce" | "purchasing" | "inventory" | "collaborators" | "accounting" | "settings";
 
 const ALL_ROLES: RoleOption[] = [
@@ -118,8 +120,9 @@ const VIEW_META: Record<ViewName, {
     icon: LayoutGrid,
     href: "/satrapy/configuracion",
     area: "settings",
-    requirement: { any: ["manage_product_experience","manage_locations","manage_company_users","import_data","import_prices","import_costs","import_accounting_opening","import_bi_budgets","view_import_audit","manage_assortments","manage_supplier_paying_accounts","manage_payment_methods","manage_discount_policies","manage_prices","manage_ticket_branding","view_sales_audit","view_accounting","configure_accounting","view_banking"] },
+    requirement: { any: ["manage_product_experience","manage_locations","manage_company_users","import_data","import_prices","import_costs","import_accounting_opening","import_bi_budgets","view_import_audit","manage_assortments","manage_supplier_paying_accounts","manage_payment_methods","manage_discount_policies","manage_prices","manage_ticket_branding","view_sales_audit","view_accounting","configure_accounting","view_banking","view_integrations"] },
   },
+  integrations: { label: "Centro de integraciones", icon: Cable, href: "/satrapy/configuracion/integraciones", area: "settings", requirement: { all: ["view_integrations"] } },
   initial_migration: {
     label: "Migración inicial",
     icon: Building2,
@@ -360,10 +363,11 @@ const NAVIGATION_SECTIONS: Array<{ id: AreaName; label: string; views: ViewName[
   { id: "accounting", label: "Contabilidad", views: ["accounting_summary", "accounting_accounts", "accounting_reports", "accounting_periods", "accounting_journals", "accounting_events", "accounting_banking", "accounting_opening"] },
   { id: "bi", label: "BI", views: ["bi_summary", "restaurant_costs", "bi_alerts", "bi_explorer", "bi_reports", "bi_budgets", "bi_network"] },
   { id: "ecommerce", label: "Ecommerce", views: ["ecommerce_readiness"] },
-  { id: "settings", label: "Configuración", views: ["settings_home", "locations", "users_access", "initial_migration", "migration", "audit", "assortments", "supplier_paying_accounts", "sales_settings", "sales_audit", "accounting_settings"] },
+  { id: "settings", label: "Configuración", views: ["settings_home", "integrations", "locations", "users_access", "initial_migration", "migration", "audit", "assortments", "supplier_paying_accounts", "sales_settings", "sales_audit", "accounting_settings"] },
 ];
 
 const SETTINGS_GROUPS: Partial<Record<ViewName, string>> = {
+  integrations: "Servicios conectados",
   initial_migration: "Puesta en marcha",
   migration: "Puesta en marcha",
   locations: "Empresa y acceso",
@@ -615,6 +619,7 @@ export function SatrapyRouteContent() {
   if (activeView === "inventory_transfers") return <InventoryTransfersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "inventory_replenishment") return <InventoryReplenishmentView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "settings_home") return <ConfigurationHome companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
+  if (activeView === "integrations") return <IntegrationCenter companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "initial_migration") return <InitialMigrationView companyId={appState.membership.companyId} />;
   if (activeView === "locations") return <CompanyLocationsView companyId={appState.membership.companyId} permissions={effectivePermissions} />;
   if (activeView === "users_access") return <CompanyUsersView companyId={appState.membership.companyId} />;

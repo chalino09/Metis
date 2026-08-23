@@ -4,7 +4,7 @@ import test from "node:test";
 
 const ui = readFileSync("app/components/ProcurementModule.tsx", "utf8");
 const migration = readFileSync("supabase/migrations/202608200001_procurement_manual_product_guard.sql", "utf8");
-const singleCharacterSearch = readFileSync("supabase/migrations/202608200002_procurement_single_character_product_search.sql", "utf8");
+const singleCharacterSearch = readFileSync("supabase/migrations/202608200003_procurement_single_character_product_search.sql", "utf8");
 
 test("la solicitud excepcional busca productos de forma server-side", () => {
   assert.match(ui, /manualProductQuery/);

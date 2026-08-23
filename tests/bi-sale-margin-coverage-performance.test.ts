@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const migration = readFileSync(
-  "supabase/migrations/202608120018_optimize_bi_sale_margin_coverage.sql",
+  "supabase/migrations/202608120020_optimize_bi_sale_margin_coverage.sql",
   "utf8",
 );
 

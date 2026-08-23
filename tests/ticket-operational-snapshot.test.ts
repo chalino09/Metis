@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const sql = readFileSync("supabase/migrations/202608130006_ticket_location_collaborator_snapshot.sql", "utf8");
+const sql = readFileSync("supabase/migrations/202608130009_ticket_location_collaborator_snapshot.sql", "utf8");
 const settings = readFileSync("app/components/TicketBrandingSettings.tsx", "utf8");
 const ticket = readFileSync("app/lib/ticket-pdf.ts", "utf8");
 

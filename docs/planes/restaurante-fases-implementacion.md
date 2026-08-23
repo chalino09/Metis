@@ -349,7 +349,7 @@ demostrablemente incoherentes. No modifica el flujo seguro de archivo.
 
 ### Cierre de integridad de conversiones, recetas y archivo
 
-La migración `202608200001_restaurant_catalog_integrity_completion.sql` cierra
+La migración `202608200002_restaurant_catalog_integrity_completion.sql` cierra
 los tres ajustes críticos pendientes, sólo para Restaurante:
 
 1. **Conversiones completas.** Las unidades estándar se calculan y validan de

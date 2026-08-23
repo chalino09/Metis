@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const migration = readFileSync(new URL("../supabase/migrations/202608120008_alpha_sales_missing_sku_review.sql", import.meta.url), "utf8");
+const migration = readFileSync(new URL("../supabase/migrations/202608120010_alpha_sales_missing_sku_review.sql", import.meta.url), "utf8");
 const actions = readFileSync(new URL("../app/api/imports/stage/[batchId]/actions/route.ts", import.meta.url), "utf8");
 const preview = readFileSync(new URL("../app/api/imports/stage/[batchId]/route.ts", import.meta.url), "utf8");
 const interfaceSource = readFileSync(new URL("../app/components/SatrapyApp.tsx", import.meta.url), "utf8");

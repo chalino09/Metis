@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const migration = readFileSync(new URL("../supabase/migrations/202608120005_alpha_sales_evidence_package.sql", import.meta.url), "utf8");
+const migration = readFileSync(new URL("../supabase/migrations/202608120007_alpha_sales_evidence_package.sql", import.meta.url), "utf8");
 const stageAll = readFileSync(new URL("../app/api/imports/stage-all/route.ts", import.meta.url), "utf8");
 const upload = readFileSync(new URL("../app/lib/import-upload-staging.ts", import.meta.url), "utf8");
 const interfaceSource = readFileSync(new URL("../app/components/SatrapyApp.tsx", import.meta.url), "utf8");

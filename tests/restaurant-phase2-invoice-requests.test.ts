@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const sql=readFileSync("supabase/migrations/202608180001_restaurant_phase2_invoice_requests.sql","utf8");
+const sql=readFileSync("supabase/migrations/202608180002_restaurant_phase2_invoice_requests.sql","utf8");
 const catalog=readFileSync("app/components/ProductCatalogView.tsx","utf8");
 const requests=readFileSync("app/components/InvoiceRequestsModule.tsx","utf8");
 const navigation=readFileSync("app/components/SatrapyApp.tsx","utf8");

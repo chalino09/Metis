@@ -5,7 +5,7 @@ import test from "node:test";
 const experience=readFileSync("app/lib/product-experience.ts","utf8");
 const collaborators=readFileSync("app/components/CollaboratorsModule.tsx","utf8");
 const schedule=readFileSync("app/components/payroll/CollaboratorWeeklyScheduleModal.tsx","utf8");
-const migration=readFileSync("supabase/migrations/202608230004_restaurant_collaborator_weekly_schedules.sql","utf8");
+const migration=readFileSync("supabase/migrations/202608230006_restaurant_collaborator_weekly_schedules.sql","utf8");
 const exportsFile=readFileSync("app/lib/payroll-report-export.ts","utf8");
 
 test("Restaurant expone el flujo completo de colaboradores, nómina y recibos",()=>{

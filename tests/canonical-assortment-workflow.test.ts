@@ -29,7 +29,7 @@ test("el alta manual abre una etapa explícita de comercialización", () => {
   assert.match(products, /Ahora define en qué surtidos se ofrecerá/);
   assert.match(products, /ProductCommercializationModal/);
   assert.match(products, /Definir disponibilidad por sucursal/);
-  assert.match(products, /Configuración comercial completa/);
+  assert.match(commercialization, /Configuración comercial completa/);
   assert.match(commercialization, /Esta decisión no modifica precios ni existencias/);
   assert.match(commercialization, /Sucursales activas/);
 });

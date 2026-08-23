@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const migration=readFileSync(new URL("../supabase/migrations/202608230002_restaurant_purchases_margin_analysis.sql",import.meta.url),"utf8");
-const runtimeRepair=readFileSync(new URL("../supabase/migrations/202608230003_restaurant_margin_runtime_repairs.sql",import.meta.url),"utf8");
+const migration=readFileSync(new URL("../supabase/migrations/202608230004_restaurant_purchases_margin_analysis.sql",import.meta.url),"utf8");
+const runtimeRepair=readFileSync(new URL("../supabase/migrations/202608230005_restaurant_margin_runtime_repairs.sql",import.meta.url),"utf8");
 const receipts=readFileSync(new URL("../app/components/RestaurantPurchaseReceiptsView.tsx",import.meta.url),"utf8");
 const analysis=readFileSync(new URL("../app/components/RestaurantCostAnalysis.tsx",import.meta.url),"utf8");
 const experience=readFileSync(new URL("../app/lib/product-experience.ts",import.meta.url),"utf8");

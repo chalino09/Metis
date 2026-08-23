@@ -136,7 +136,7 @@ function errorMessage(error:{message?:string}|null, fallback:string) { return er
 function catalogLoadError(error:{message?:string}|null, label:string) {
   const raw=error?.message?.toLowerCase()??"";
   return raw.includes("schema cache")||raw.includes("does not exist")||raw.includes("could not find the function")
-    ? `Falta instalar la migración de catálogo culinario (202608220001) para cargar ${label}.`
+    ? `Falta instalar la migración de catálogo culinario (202608230001) para cargar ${label}.`
     : `No se pudieron cargar los ${label}.`;
 }
 function numberFormat(value:number) { return new Intl.NumberFormat("es-MX", { maximumFractionDigits:3 }).format(value); }

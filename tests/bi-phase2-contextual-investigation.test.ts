@@ -15,7 +15,7 @@ test("Fase 2 define un contexto compartido y un recorrido semántico hasta evide
 });
 
 test("Fase 2 calcula contribuciones y reconciliación del lado servidor", async () => {
-  const sql = await read("supabase/migrations/202608120003_bi_contextual_investigation.sql");
+  const sql = await read("supabase/migrations/202608120004_bi_contextual_investigation.sql");
   assert.match(sql, /create or replace function public\.bi_get_metric_investigation/i);
   assert.match(sql, /public\.bi_explorer_query/);
   assert.match(sql, /100\.0\*\(coalesce\(current_value,0\)-coalesce\(previous_value,0\)\)\/v_change/);

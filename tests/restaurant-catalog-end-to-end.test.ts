@@ -3,8 +3,8 @@ import {readFileSync} from "node:fs";
 import test from "node:test";
 import {parseRestaurantCatalogFile} from "../app/lib/restaurant-catalog-import.ts";
 
-const sql=readFileSync("supabase/migrations/202608220001_restaurant_catalog_end_to_end.sql","utf8");
-const roleRepair=readFileSync("supabase/migrations/202608220002_restaurant_standard_category_role_repair.sql","utf8");
+const sql=readFileSync("supabase/migrations/202608230001_restaurant_catalog_end_to_end.sql","utf8");
+const roleRepair=readFileSync("supabase/migrations/202608230002_restaurant_standard_category_role_repair.sql","utf8");
 const catalog=readFileSync("app/components/ProductCatalogView.tsx","utf8");
 const editor=readFileSync("app/components/RecipeEditorModal.tsx","utf8");
 const importer=readFileSync("app/components/RestaurantCatalogImportModal.tsx","utf8");

@@ -4,8 +4,8 @@ import test from "node:test";
 
 const orders = readFileSync("app/components/PurchaseOrdersModule.tsx", "utf8");
 const procurement = readFileSync("app/components/ProcurementModule.tsx", "utf8");
-const documentSearch = readFileSync("supabase/migrations/202608200005_procurement_document_search.sql", "utf8");
-const documentDateOrder = readFileSync("supabase/migrations/202608200006_procurement_document_date_order.sql", "utf8");
+const documentSearch = readFileSync("supabase/migrations/202608200007_procurement_document_search.sql", "utf8");
+const documentDateOrder = readFileSync("supabase/migrations/202608200008_procurement_document_date_order.sql", "utf8");
 
 test("nueva cotización selecciona una solicitud pendiente con búsqueda paginada", () => {
   assert.match(orders, /search_procurement_requisitions/);
