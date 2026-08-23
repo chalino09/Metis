@@ -58,6 +58,7 @@ import { SuppliersView } from "@/app/components/SuppliersModule";
 import { PurchaseOrderPromotionAudit, PurchaseOrdersView } from "@/app/components/PurchaseOrdersModule";
 import { ProcurementView } from "@/app/components/ProcurementModule";
 import { PurchaseReceiptsView } from "@/app/components/PurchaseReceiptsModule";
+import { RestaurantPurchaseReceiptsView } from "@/app/components/RestaurantPurchaseReceiptsView";
 import { SupplierInvoicesView, SupplierPayingAccountsView } from "@/app/components/SupplierInvoicesModule";
 import { AccountingModule } from "@/app/components/AccountingModule";
 import { BankingModule } from "@/app/components/BankingModule";
@@ -69,6 +70,7 @@ import { ProductCatalogView } from "@/app/components/ProductCatalogView";
 import { EcommerceModule } from "@/app/components/EcommerceModule";
 import { CollaboratorsDirectoryView, PayrollView } from "@/app/components/CollaboratorsModule";
 import { BiModule } from "@/app/components/BiModule";
+import { RestaurantCostAnalysis } from "@/app/components/RestaurantCostAnalysis";
 import { CollectionAutomationModule } from "@/app/components/CollectionAutomationModule";
 import { InvoiceRequestsModule } from "@/app/components/InvoiceRequestsModule";
 import type {
@@ -80,7 +82,7 @@ import type {
   RoleOption,
 } from "@/app/lib/types";
 
-type ViewName = "collection_automation" | "invoice_requests" | "bi_summary" | "bi_alerts" | "bi_explorer" | "bi_reports" | "bi_budgets" | "bi_network" | "settings_home" | "initial_migration" | "migration" | "users_access" | "suppliers" | "procurement" | "purchase_orders" | "purchase_receipts" | "supplier_invoices" | "supplier_paying_accounts" | "products" | "inventory" | "inventory_counts" | "inventory_transfers" | "inventory_replenishment" | "ecommerce_readiness" | "locations" | "audit" | "sales_audit" | "assortments" | "pos" | "sales_history" | "sales_quotes" | "sales_orders" | "customers" | "receivables" | "cash" | "sales_settings" | "collaborators_directory" | "payroll" | "accounting_summary" | "accounting_accounts" | "accounting_periods" | "accounting_reports" | "accounting_journals" | "accounting_events" | "accounting_banking" | "accounting_opening" | "accounting_settings";
+type ViewName = "collection_automation" | "invoice_requests" | "bi_summary" | "restaurant_costs" | "bi_alerts" | "bi_explorer" | "bi_reports" | "bi_budgets" | "bi_network" | "settings_home" | "initial_migration" | "migration" | "users_access" | "suppliers" | "procurement" | "purchase_orders" | "purchase_receipts" | "supplier_invoices" | "supplier_paying_accounts" | "products" | "inventory" | "inventory_counts" | "inventory_transfers" | "inventory_replenishment" | "ecommerce_readiness" | "locations" | "audit" | "sales_audit" | "assortments" | "pos" | "sales_history" | "sales_quotes" | "sales_orders" | "customers" | "receivables" | "cash" | "sales_settings" | "collaborators_directory" | "payroll" | "accounting_summary" | "accounting_accounts" | "accounting_periods" | "accounting_reports" | "accounting_journals" | "accounting_events" | "accounting_banking" | "accounting_opening" | "accounting_settings";
 type AreaName = "bi" | "sales" | "ecommerce" | "purchasing" | "inventory" | "collaborators" | "accounting" | "settings";
 
 const ALL_ROLES: RoleOption[] = [
@@ -105,6 +107,7 @@ const VIEW_META: Record<ViewName, {
   requirement?: NavigationRequirement;
 }> = {
   bi_summary: { label: "Resumen ejecutivo", icon: BarChart3, href: "/satrapy/bi", area: "bi", requirement: { all: ["view_bi"] } },
+  restaurant_costs: { label: "Costos y márgenes", icon: TrendingUp, href: "/satrapy/bi/costos-margenes", area: "bi", requirement: { all: ["view_bi", "view_costs"] } },
   bi_alerts: { label: "Alertas", icon: ShieldAlert, href: "/satrapy/bi/alertas", area: "bi", requirement: { all: ["view_bi_alerts"] } },
   bi_explorer: { label: "Análisis", icon: TrendingUp, href: "/satrapy/bi/explorador", area: "bi", requirement: { all: ["view_bi"] } },
   bi_reports: { label: "Vistas y reportes", icon: FileSpreadsheet, href: "/satrapy/bi/reportes", area: "bi", requirement: { all: ["view_bi"] } },
@@ -355,7 +358,7 @@ const NAVIGATION_SECTIONS: Array<{ id: AreaName; label: string; views: ViewName[
   { id: "inventory", label: "Inventario", views: ["products", "inventory", "inventory_counts", "inventory_transfers", "inventory_replenishment"] },
   { id: "collaborators", label: "Colaboradores", views: ["collaborators_directory", "payroll"] },
   { id: "accounting", label: "Contabilidad", views: ["accounting_summary", "accounting_accounts", "accounting_reports", "accounting_periods", "accounting_journals", "accounting_events", "accounting_banking", "accounting_opening"] },
-  { id: "bi", label: "BI", views: ["bi_summary", "bi_alerts", "bi_explorer", "bi_reports", "bi_budgets", "bi_network"] },
+  { id: "bi", label: "BI", views: ["bi_summary", "restaurant_costs", "bi_alerts", "bi_explorer", "bi_reports", "bi_budgets", "bi_network"] },
   { id: "ecommerce", label: "Ecommerce", views: ["ecommerce_readiness"] },
   { id: "settings", label: "Configuración", views: ["settings_home", "locations", "users_access", "initial_migration", "migration", "audit", "assortments", "supplier_paying_accounts", "sales_settings", "sales_audit", "accounting_settings"] },
 ];
@@ -388,7 +391,7 @@ function navigationViewIsActive(name: ViewName, activeView: ViewName) {
 
 function getAllowedNavigation(permissions: string[], previewRole: AppRoleCode | null, experience: ProductExperience, isSuperAdmin: boolean) {
   const effectivePermissions = previewRole ? ROLE_PREVIEW_PERMISSIONS[previewRole] : permissions;
-  const isAllowed = (name: ViewName) => isViewAvailableForExperience(name, experience)
+  const isAllowed = (name: ViewName) => !(name === "restaurant_costs" && experience !== "restaurant") && isViewAvailableForExperience(name, experience)
     && ((!previewRole && isSuperAdmin) || matchesNavigationRequirement(effectivePermissions, VIEW_META[name].requirement));
   const navigation = NAVIGATION_SECTIONS.map((section) => ({ ...section, label: experienceSectionLabel(section.id, section.label, experience), views: section.views.filter(isAllowed) }))
     .filter((section) => section.views.length > 0);
@@ -602,7 +605,7 @@ export function SatrapyRouteContent() {
   if (activeView === "suppliers") return <SuppliersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "procurement") return <ProcurementView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "purchase_orders") return <PurchaseOrdersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
-  if (activeView === "purchase_receipts") return <PurchaseReceiptsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
+  if (activeView === "purchase_receipts") return experience === "restaurant" ? <RestaurantPurchaseReceiptsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} /> : <PurchaseReceiptsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "supplier_invoices") return <SupplierInvoicesView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "supplier_paying_accounts") return <SupplierPayingAccountsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "products") return <ProductCatalogView companyId={appState.membership.companyId} permissions={appState.membership.permissions} experience={experience} />;
@@ -630,6 +633,7 @@ export function SatrapyRouteContent() {
   if (activeView === "collaborators_directory") return <CollaboratorsDirectoryView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "payroll") return <PayrollView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "bi_summary") return <BiModule companyId={appState.membership.companyId} view="summary" />;
+  if (activeView === "restaurant_costs") return <RestaurantCostAnalysis companyId={appState.membership.companyId} />;
   if (activeView === "bi_alerts") return <BiModule companyId={appState.membership.companyId} view="alerts" />;
   if (activeView === "bi_explorer") return <BiModule companyId={appState.membership.companyId} view="explorer" />;
   if (activeView === "bi_reports") return <BiModule companyId={appState.membership.companyId} view="reports" />;
@@ -1020,6 +1024,7 @@ function isCompletePurchasingMigrationBatch(batch: PurchasingMigrationBatch) {
 
 function MigrationCenter({ companyId, permissions }: { companyId: string; permissions: string[] }) {
   const { toast } = useToast();
+  const { appState } = useSatrapy();
   const [batches, setBatches] = useState<StagedBatch[]>([]);
   const [batchPage, setBatchPage] = useState(1);
   const [batchTotal, setBatchTotal] = useState(0);
@@ -1051,6 +1056,7 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
   const canImport = permissions.some((permission) => ["import_data", "import_prices", "import_costs", "import_accounting_opening"].includes(permission));
   const canUploadAny = canImport;
   const canImportCustomers = permissions.includes("import_data");
+  const isRestaurant = appState?.membership.productExperience === "restaurant";
   const visibleBatches = batches.filter((batch) => !isMisroutedCustomerMigrationBatch(batch));
   const visibleCustomerMigrationBatches = customerMigrationBatches.filter((batch) => !(batch.status === "failed"
     && customerMigrationBatches.some((candidate) => candidate.id !== batch.id && candidate.cutoff_date === batch.cutoff_date && candidate.status !== "failed")));
@@ -1569,10 +1575,10 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
         </aside>
       </section>
 
-      <section className="migration-specialized" aria-labelledby="specialized-imports-title">
+      {!isRestaurant && <section className="migration-specialized" aria-labelledby="specialized-imports-title">
         <header><div><span className="eyebrow">Importaciones por módulo</span><h2 id="specialized-imports-title">Carga cada archivo donde corresponde</h2><p>Los estados bancarios se gestionan en Bancos y las metas y presupuestos en BI.</p></div></header>
         <div><Link href="/satrapy/contabilidad/bancos"><Landmark size={18}/><span><strong>Estados bancarios</strong><small>Importa y concilia desde Bancos. Plantilla: plantilla_estado_bancario_neutral.xlsx</small></span><ArrowRight size={15}/></Link><Link href="/satrapy/bi/metas-presupuestos"><Target size={18}/><span><strong>Metas y presupuestos</strong><small>Captura y administra desde BI.</small></span><ArrowRight size={15}/></Link></div>
-      </section>
+      </section>}
 
       {budgetPreview && <section className="import-preview-shell" aria-labelledby="budget-import-preview-title">
         <div className="preview-summary"><span id="budget-import-preview-title" className="file-kind">Metas y presupuestos</span><span>{budgetPreview.batch.valid_count} válidas de {budgetPreview.batch.row_count} filas</span>{budgetPreview.batch.error_count > 0 && <Badge tone="danger">{budgetPreview.batch.error_count} con error</Badge>}</div>
@@ -1581,21 +1587,21 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
         {budgetPreview.batch.error_count === 0 && <div className="confirm-bar"><label>Motivo de promoción<Input value={budgetPromotionReason} onChange={(event) => setBudgetPromotionReason(event.target.value)} minLength={5} /></label><Button variant="primary" loading={busy} disabled={budgetPromotionReason.trim().length < 5} onClick={() => void promoteBudgetImport()}>Promover borradores</Button></div>}
       </section>}
 
-      <section className="location-review migration-package-section">
+      {(!isRestaurant || visibleCustomerMigrationBatches.length > 0) && <section className="location-review migration-package-section">
         <div><span className="eyebrow">Clientes y CxC</span><h2>Paquetes de migración</h2><p>Satrapy agrupa clientes, condiciones comerciales, saldos y cobranza; después valida el paquete antes de incorporarlo.</p></div>
         <div className="location-review-list">
           <div className="location-review-note"><FileSpreadsheet size={18} /><span>La cobranza se conserva como evidencia y nunca genera abonos automáticamente.</span></div>
           {visibleCustomerMigrationBatches.map((batch) => <div className="location-review-row" key={batch.id}><span><strong>Corte {dateOnlyFormat(batch.cutoff_date)} · {customerMigrationStatusLabel(batch.status)}</strong><small>{customerMigrationSummary(batch)}</small></span>{["ready_to_promote", "promoting"].includes(batch.status) && <button className="primary-button" disabled={busy || !canImportCustomers} onClick={() => void promoteCustomerMigration(batch.id)}>{batch.status === "promoting" ? "Continuar importación" : "Importar clientes y CxC"}</button>}{["completed", "completed_with_discrepancies"].includes(batch.status) && batch.summary.receivable_repair?.status !== "completed" && customerConflicts.every((conflict) => conflict.batch_id !== batch.id) && <button className="secondary-button" disabled={busy || !canImportCustomers} onClick={() => void repairCustomerMigration(batch.id)}>Validar saldos CxC</button>}{(batch.summary.customer_identity_repair?.status === "completed" || batch.summary.customer_conflict_review?.status === "completed") && batch.summary.receivable_repair?.status === "completed" && batch.summary.receivable_backfill?.status !== "completed" && <button className="secondary-button" disabled={busy || !canImportCustomers} onClick={() => void previewReceivableBackfill(batch.id)}>Revisar CxC de clientes resueltos</button>}</div>)}
         </div>
-      </section>
+      </section>}
 
-      <section className="location-review migration-package-section">
+      {(!isRestaurant || visiblePurchasingMigrationBatches.length > 0 || pendingPurchasingFileCount > 0) && <section className="location-review migration-package-section">
         <div className="migration-package-heading"><div><span className="eyebrow">Compras y CxP</span><h2>Paquetes de migración</h2><p>Satrapy agrupa proveedores, órdenes, documentos por pagar y evidencia de pagos.</p></div>{linkedAlphaFolderAvailable && <button className="secondary-button" disabled={busy || !canImportCustomers} onClick={() => void consolidatePurchasingFromLinkedFolder()}>Consolidar archivos</button>}</div>
         <div className="location-review-list">
           <div className="location-review-note"><FileSpreadsheet size={18} /><span>La recepción histórica no está disponible; el paquete permanece como evidencia hasta completar el flujo operativo.</span></div>
           {visiblePurchasingMigrationBatches.map((batch) => <div className="location-review-row" key={batch.id}><span><strong>Corte {dateOnlyFormat(batch.cutoff_date)} · {batch.status === "staged" ? "Evidencia preparada" : batch.status === "validation_failed" ? "Datos por revisar" : batch.status === "failed" ? "Fallida" : "Procesando"}</strong><small>{batch.summary.suppliers ?? 0} proveedores · {batch.summary.purchase_orders ?? 0} órdenes de compra / {batch.summary.purchase_order_lines ?? 0} partidas · {batch.summary.payable_documents ?? 0} documentos CxP por {numberFormat(Number(batch.summary.payable_outstanding_total ?? 0))} MXN · {batch.summary.supplier_payments ?? 0} aplicaciones de pago como evidencia</small><small>{batch.summary.error_count ?? 0} errores · {batch.summary.warning_count ?? 0} alertas · recepción histórica no disponible</small></span><Badge tone={batch.status === "staged" ? "warning" : batch.status === "validation_failed" || batch.status === "failed" ? "danger" : "neutral"}>{batch.status === "staged" ? "Solo staging" : batch.status === "validation_failed" ? "Revisión requerida" : batch.status === "failed" ? "Fallida" : "Procesando"}</Badge></div>)}
         </div>
-      </section>
+      </section>}
 
       {customerConflicts.length > 0 && <CustomerConflictInbox conflicts={customerConflicts} busy={busy || !canImportCustomers} onDecide={decideCustomerConflict} />}
 
@@ -1820,12 +1826,14 @@ type InventoryMovementRow = {
   reference_type: string;
   reference_id: string | null;
   reference_label: string;
+  dish_name?: string | null;
+  ticket_folio?: string | null;
 };
 
 type InventoryOpeningProduct = { product_id: string; product_code: string; name: string; unit: string | null };
 
 function InventoryView({ companyId, permissions }: { companyId: string; permissions: string[] }) {
-  const { accessibleLocations, queryCache } = useSatrapy();
+  const { accessibleLocations, appState, queryCache } = useSatrapy();
   const { toast } = useToast();
   const [rows, setRows] = useState<InventoryProductRow[]>([]);
   const [expandedProducts, setExpandedProducts] = useState<Set<string>>(() => new Set());
@@ -1862,6 +1870,7 @@ function InventoryView({ companyId, permissions }: { companyId: string; permissi
   const requestId = useRef(0);
   const movementRequestId = useRef(0);
   const canInitializeInventory = permissions.includes("*") || permissions.includes("operate_inventory");
+  const isRestaurant = appState?.membership.productExperience === "restaurant";
   useEffect(() => { const timer = window.setTimeout(() => { setDebouncedSearch(search.trim()); setPage(1); }, 280); return () => window.clearTimeout(timer); }, [search]);
   useEffect(() => { const timer = window.setTimeout(() => { setOpeningDebouncedQuery(openingQuery.trim()); setOpeningPage(1); }, 280); return () => window.clearTimeout(timer); }, [openingQuery]);
   const load = useCallback(async () => {
@@ -1983,7 +1992,7 @@ function InventoryView({ companyId, permissions }: { companyId: string; permissi
     const directLocation = directLocationView ? product.locations[0] : null;
     const displayedQuantity = directLocation ? directLocation.quantity_on_hand : product.total_quantity_on_hand;
     const displayedUpdatedAt = directLocation ? directLocation.balance_updated_at : product.balance_updated_at;
-    return <Fragment key={product.product_id}><tr className="inventory-product-row"><td className="mono">{product.product_code}</td><td><strong>{product.product_name}</strong><small>{product.unit ?? "Sin unidad"}</small></td><td className="number-cell"><strong>{numberFormat(Number(displayedQuantity))} {product.unit ?? ""}</strong></td><td>{directLocation ? <><strong>{directLocation.last_movement_type ? inventoryMovementLabel(directLocation.last_movement_type) : "Sin movimientos"}</strong><small>{directLocation.last_movement_at ? dateTimeFormat(directLocation.last_movement_at) : "—"}</small></> : <><strong>{product.location_count} {product.location_count === 1 ? "sucursal" : "sucursales"}</strong><small>{product.positive_location_count} con existencia</small></>}</td><td>{displayedUpdatedAt ? dateTimeFormat(displayedUpdatedAt) : "Sin movimientos"}</td><td>{directLocation ? <Button variant="secondary" size="sm" aria-label={`Ver movimientos de ${product.product_name} en ${directLocation.location_name}`} onClick={() => openMovementHistory(directLocation)}>Ver movimientos</Button> : <Button variant="secondary" size="sm" aria-expanded={expanded} onClick={() => toggleProduct(product.product_id)}>{expanded ? "Ocultar" : "Ver sucursales"}</Button>}</td></tr>{!directLocation && expanded && <tr className="inventory-location-detail-row"><td colSpan={6}><div className="inventory-location-breakdown" aria-label={`Existencias por sucursal de ${product.product_name}`}>{product.locations.map((location) => <article key={location.location_id}><div><span className="location-chip">{location.location_code}</span><strong>{location.location_name}</strong></div><div className="inventory-location-balance"><strong>{numberFormat(Number(location.quantity_on_hand))} {product.unit ?? ""}</strong><small>{location.balance_updated_at ? `Actualizado ${dateTimeFormat(location.balance_updated_at)}` : "Sin saldo inicializado"}</small></div><div><strong>{location.last_movement_type ? inventoryMovementLabel(location.last_movement_type) : "Sin movimientos"}</strong><small>{location.last_movement_at ? dateTimeFormat(location.last_movement_at) : "—"}</small></div><div className="inventory-location-actions"><Button variant="secondary" size="sm" onClick={() => openMovementHistory(location)}>Ver movimientos</Button>{location.has_snapshot_reference && <Button variant="secondary" size="sm" onClick={() => void openSnapshotReference(location)}>Ver corte importado</Button>}</div></article>)}</div></td></tr>}</Fragment>;
+    return <Fragment key={product.product_id}><tr className="inventory-product-row"><td className="mono">{product.product_code}</td><td><strong>{product.product_name}</strong><small>{product.unit ?? "Sin unidad"}</small></td><td className="number-cell"><strong>{numberFormat(Number(displayedQuantity))} {product.unit ?? ""}</strong></td><td>{directLocation ? <><strong>{directLocation.last_movement_type ? inventoryMovementLabel(directLocation.last_movement_type, isRestaurant) : "Sin movimientos"}</strong>{directLocation.last_movement_reference_label && <small>{directLocation.last_movement_reference_label}</small>}<small>{directLocation.last_movement_at ? dateTimeFormat(directLocation.last_movement_at) : "—"}</small></> : <><strong>{product.location_count} {product.location_count === 1 ? "sucursal" : "sucursales"}</strong><small>{product.positive_location_count} con existencia</small></>}</td><td>{displayedUpdatedAt ? dateTimeFormat(displayedUpdatedAt) : "Sin movimientos"}</td><td>{directLocation ? <Button variant="secondary" size="sm" aria-label={`Ver movimientos de ${product.product_name} en ${directLocation.location_name}`} onClick={() => openMovementHistory(directLocation)}>Ver movimientos</Button> : <Button variant="secondary" size="sm" aria-expanded={expanded} onClick={() => toggleProduct(product.product_id)}>{expanded ? "Ocultar" : "Ver sucursales"}</Button>}</td></tr>{!directLocation && expanded && <tr className="inventory-location-detail-row"><td colSpan={6}><div className="inventory-location-breakdown" aria-label={`Existencias por sucursal de ${product.product_name}`}>{product.locations.map((location) => <article key={location.location_id}><div><span className="location-chip">{location.location_code}</span><strong>{location.location_name}</strong></div><div className="inventory-location-balance"><strong>{numberFormat(Number(location.quantity_on_hand))} {product.unit ?? ""}</strong><small>{location.balance_updated_at ? `Actualizado ${dateTimeFormat(location.balance_updated_at)}` : "Sin saldo inicializado"}</small></div><div><strong>{location.last_movement_type ? inventoryMovementLabel(location.last_movement_type, isRestaurant) : "Sin movimientos"}</strong>{location.last_movement_reference_label && <small>{location.last_movement_reference_label}</small>}<small>{location.last_movement_at ? dateTimeFormat(location.last_movement_at) : "—"}</small></div><div className="inventory-location-actions"><Button variant="secondary" size="sm" onClick={() => openMovementHistory(location)}>Ver movimientos</Button>{location.has_snapshot_reference && <Button variant="secondary" size="sm" onClick={() => void openSnapshotReference(location)}>Ver corte importado</Button>}</div></article>)}</div></td></tr>}</Fragment>;
   })}</tbody></table></div></DataState><DataPagination page={page} total={total} pageSize={DATA_PAGE_SIZE} onChange={setPage} />
     <Drawer open={openingOpen} onOpenChange={open=>{if(!open)closeInventoryOpening();}} title="Registrar inventario inicial" className="inventory-opening-drawer"><form className="inventory-opening" onSubmit={saveInventoryOpening}>
       <p className="settings-drawer-intro">Úsalo una sola vez por sucursal para capturar el saldo real con el que comienza la operación. Se guarda como un lote transaccional y auditado.</p>
@@ -1998,7 +2007,7 @@ function InventoryView({ companyId, permissions }: { companyId: string; permissi
       </>}
     </form></Drawer>
     <Modal open={Boolean(referenceRow)} onOpenChange={(open) => { if (!open) { setReferenceRow(null); setReferenceLoading(false); setReferenceError(null); } }} eyebrow="Referencia histórica" title={referenceRow ? referenceRow.product_name : "Corte importado"} description="Este corte fue el punto de referencia importado. No reemplaza la existencia actual ni registra un conteo físico.">{referenceLoading ? <div className="loading-copy" role="status"><LoaderCircle className="spin" size={18} /> Consultando corte importado…</div> : referenceError ? <p className="form-error">{referenceError}</p> : referenceRow && <dl className="inventory-reference-summary"><div><dt>Ubicación</dt><dd>{referenceRow.location_code} · {referenceRow.location_name}</dd></div><div><dt>Cantidad importada</dt><dd>{numberFormat(Number(referenceRow.snapshot_quantity ?? 0))} {referenceRow.unit ?? ""}</dd></div><div><dt>Fecha del corte</dt><dd>{referenceRow.snapshot_date ? dateOnlyFormat(referenceRow.snapshot_date) : "Sin fecha"}</dd></div><div><dt>Archivo de origen</dt><dd>{referenceRow.snapshot_source_file ?? "No disponible"}</dd></div><div><dt>Cambio desde ese corte</dt><dd>{referenceRow.difference_from_snapshot == null ? "No calculable" : `${Number(referenceRow.difference_from_snapshot) > 0 ? "+" : ""}${numberFormat(Number(referenceRow.difference_from_snapshot))} ${referenceRow.unit ?? ""}`}</dd></div><div><dt>Existencia actual</dt><dd>{numberFormat(Number(referenceRow.quantity_on_hand))} {referenceRow.unit ?? ""}</dd></div></dl>}</Modal>
-    <Drawer open={Boolean(movementRow)} onOpenChange={(open) => { if (!open) closeMovementHistory(); }} title={movementRow ? `${movementRow.product_name} · Movimientos` : "Movimientos de inventario"} className="inventory-movement-drawer"><div className="inventory-movement-history">{movementRow && <><p className="settings-note">{movementRow.location_code} · {movementRow.location_name}</p><dl className="inventory-reference-summary"><div><dt>Saldo actual</dt><dd>{numberFormat(Number(movementRow.quantity_on_hand))} {movementRow.unit ?? ""}</dd></div><div><dt>Último movimiento</dt><dd>{movementRow.last_movement_at ? dateTimeFormat(movementRow.last_movement_at) : "Sin movimientos"}</dd></div></dl></>}<DataState loading={movementLoading} error={movementError} errorAction={<Button variant="secondary" size="sm" onClick={() => void loadMovementHistory()}>Reintentar</Button>} hasData={movementRows.length} emptyTitle="Aún no hay movimientos" empty="Esta existencia no tiene movimientos registrados en el ledger."><div className="table-wrap inventory-movement-table"><table><thead><tr><th>Fecha</th><th>Movimiento</th><th className="number-cell">Variación</th><th className="number-cell">Saldo</th><th>Referencia</th><th>Registró</th></tr></thead><tbody>{movementRows.map((movement) => <tr key={movement.id}><td>{dateTimeFormat(movement.occurred_at)}</td><td>{inventoryMovementLabel(movement.movement_type)}</td><td className="number-cell">{Number(movement.quantity_delta) > 0 ? "+" : ""}{numberFormat(Number(movement.quantity_delta))} {movementRow?.unit ?? ""}</td><td className="number-cell">{numberFormat(Number(movement.balance_after))} {movementRow?.unit ?? ""}</td><td>{movement.reference_label}</td><td>{movement.actor_name ?? "Sin usuario"}</td></tr>)}</tbody></table></div></DataState><DataPagination page={movementPage} total={movementTotal} pageSize={25} label="movimientos" onChange={changeMovementPage} /></div></Drawer>
+    <Drawer open={Boolean(movementRow)} onOpenChange={(open) => { if (!open) closeMovementHistory(); }} title={movementRow ? `${movementRow.product_name} · Movimientos` : "Movimientos de inventario"} className="inventory-movement-drawer"><div className="inventory-movement-history">{movementRow && <><p className="settings-note">{movementRow.location_code} · {movementRow.location_name}</p><dl className="inventory-reference-summary"><div><dt>Saldo actual</dt><dd>{numberFormat(Number(movementRow.quantity_on_hand))} {movementRow.unit ?? ""}</dd></div><div><dt>Último movimiento</dt><dd>{movementRow.last_movement_at ? dateTimeFormat(movementRow.last_movement_at) : "Sin movimientos"}</dd></div></dl></>}<DataState loading={movementLoading} error={movementError} errorAction={<Button variant="secondary" size="sm" onClick={() => void loadMovementHistory()}>Reintentar</Button>} hasData={movementRows.length} emptyTitle="Aún no hay movimientos" empty="Esta existencia no tiene movimientos registrados en el ledger."><div className="table-wrap inventory-movement-table"><table><thead><tr><th>Fecha</th><th>Movimiento</th><th className="number-cell">Variación</th><th className="number-cell">Saldo</th><th>Origen</th><th>Registró</th></tr></thead><tbody>{movementRows.map((movement) => <tr key={movement.id}><td>{dateTimeFormat(movement.occurred_at)}</td><td>{inventoryMovementLabel(movement.movement_type, isRestaurant)}</td><td className="number-cell">{Number(movement.quantity_delta) > 0 ? "+" : ""}{numberFormat(Number(movement.quantity_delta))} {movementRow?.unit ?? ""}</td><td className="number-cell">{numberFormat(Number(movement.balance_after))} {movementRow?.unit ?? ""}</td><td>{movement.reference_label}</td><td>{movement.actor_name ?? "Sin usuario"}</td></tr>)}</tbody></table></div></DataState><DataPagination page={movementPage} total={movementTotal} pageSize={25} label="movimientos" onChange={changeMovementPage} /></div></Drawer>
   </div>;
 }
 
@@ -2950,7 +2959,7 @@ function dateOnlyFormat(value: string) { return new Intl.DateTimeFormat("es-MX",
 function dateTimeFormat(value: string) { return new Intl.DateTimeFormat("es-MX", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)); }
 function statusLabel(status: string) { return status === "completed" ? "Completado" : status === "failed" ? "Fallido" : status === "discarded" ? "Descartado" : status === "expired" ? "Vencido" : status === "validation_failed" ? "Validación fallida" : status === "staged" ? "En staging" : "Procesando"; }
 function importTypeLabel(type: string) { return type === "products" ? "Productos" : type === "inventory" ? "Inventario" : type === "prices" ? "Precios" : type === "costs" ? "Costos" : type === "collaborators" ? "Colaboradores" : type === "sales" ? "Ventas históricas" : type; }
-function inventoryMovementLabel(type: string) { return type === "opening_snapshot" ? "Saldo inicial importado" : type === "opening_manual" ? "Inventario inicial" : type === "sale" ? "Venta" : type === "sale_reversal" ? "Cancelación de venta" : type === "sale_return" ? "Devolución de venta" : type === "controlled_adjustment" ? "Ajuste controlado" : type === "physical_count_adjustment" ? "Conteo físico" : type === "transfer_out" ? "Salida por transferencia" : type === "transfer_in" ? "Entrada por transferencia" : type === "purchase_receipt" ? "Recepción de compra" : type === "purchase_receipt_reversal" ? "Reversa de recepción" : type; }
+function inventoryMovementLabel(type: string, isRestaurant = false) { return type === "opening_snapshot" ? "Saldo inicial importado" : type === "opening_manual" ? "Inventario inicial" : type === "sale" ? "Venta" : type === "sale_reversal" ? isRestaurant ? "Reintegro por cancelación" : "Cancelación de venta" : type === "sale_return" ? "Devolución de venta" : type === "culinary_sale" ? "Consumo por venta" : type === "culinary_sale_reversal" ? "Reintegro por cancelación" : type === "controlled_adjustment" ? "Ajuste controlado" : type === "physical_count_adjustment" ? "Conteo físico" : type === "transfer_out" ? "Salida por transferencia" : type === "transfer_in" ? "Entrada por transferencia" : type === "purchase_receipt" ? "Recepción de compra" : type === "purchase_receipt_reversal" ? "Reversa de recepción" : type; }
 function inventoryTransferStatusLabel(status: InventoryTransferStatus) { return status === "sent" ? "Preparada" : status === "in_transit" ? "En tránsito" : "Recibida"; }
 function inventoryTransferTone(status: InventoryTransferStatus): "primary" | "warning" | "success" { return status === "sent" ? "primary" : status === "in_transit" ? "warning" : "success"; }
 function inventoryCountStatusLabel(status: InventoryCountStatus) { return status === "open" ? "En captura" : status === "review" ? "En revisión" : status === "pending_approval" ? "Por aprobar" : status === "posted" ? "Aplicado" : status === "cancelled" ? "Cancelado" : "Rechazado"; }

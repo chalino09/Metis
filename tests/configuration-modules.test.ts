@@ -20,6 +20,9 @@ test("Configuración se organiza por módulos y conserva las rutas anteriores",(
 
 test("Migración inicial reutiliza el Centro principal sin crear otro cargador",()=>{
   assert.match(journey,/get_initial_migration_readiness/);assert.match(journey,/Centro de Migración/);assert.doesNotMatch(journey,/type=\"file\"/);assert.doesNotMatch(sql,/create table public\.import/);
+  assert.match(shell,/!isRestaurant && <section className="migration-specialized"/);
+  assert.match(shell,/!isRestaurant \|\| visibleCustomerMigrationBatches\.length > 0/);
+  assert.match(shell,/!isRestaurant \|\| visiblePurchasingMigrationBatches\.length > 0 \|\| pendingPurchasingFileCount > 0/);
 });
 
 test("Sucursales usa operaciones server-side, idempotentes y auditadas",()=>{

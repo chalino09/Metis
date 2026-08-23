@@ -29,5 +29,5 @@ test("el archivo expone la receta activa y permite corregir una nueva versión",
   assert.match(catalog, /Recetas activas que usan este insumo/);
   assert.match(catalog, /Abrir receta/);
   assert.match(recipeEditor, /next\.draft\?\?next\.active/);
-  assert.match(recipeEditor, /Duplicar versión activa/);
+  assert.match(recipeEditor, /p_duplicate_from_version_id:context\?\.active\?\.id\?\?null/);
 });

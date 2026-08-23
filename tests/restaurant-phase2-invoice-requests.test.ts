@@ -13,7 +13,8 @@ test("las funciones culinarias son explícitas, canónicas y auditadas",()=>{
  assert.match(sql,/product\.culinary_role_changed/);
  assert.match(sql,/from public\.product_culinary_roles role_data join public\.products/);
  assert.doesNotMatch(sql,/create table[^;]+(?:dishes|ingredients|preparations)\s*\(/i);
- assert.match(catalog,/Función culinaria/);
+ assert.match(catalog,/function restaurantRoleLabel/);
+ assert.match(catalog,/product_culinary_roles|catalogRole/);
  assert.doesNotMatch(catalog,/Disponible para recetas/);
 });
 

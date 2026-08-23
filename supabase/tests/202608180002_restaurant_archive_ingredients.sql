@@ -44,8 +44,10 @@ begin
   if archived->>'idempotent'<>'true' then
     raise exception 'El archivo no fue idempotente: %',archived;
   end if;
-  if (public.search_restaurant_catalog(c,'ingredient',null,1,50,null)->>'total')::integer<>2 then
-    raise exception 'El insumo archivado sigue visible en el catálogo.';
+  if (public.search_restaurant_catalog(c,'ingredient',null,1,50,null)->>'total')::integer<>3
+    or (public.search_restaurant_catalog(c,'ingredient',null,1,50,true)->>'total')::integer<>2
+    or (public.search_restaurant_catalog(c,'ingredient',null,1,50,false)->>'total')::integer<>1 then
+    raise exception 'El catálogo no separó correctamente insumos activos e inactivos.';
   end if;
 
   insert into public.culinary_recipes(id,company_id,product_id,recipe_kind)

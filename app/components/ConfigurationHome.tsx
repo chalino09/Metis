@@ -73,7 +73,7 @@ export function ConfigurationHome({ companyId, permissions }: { companyId: strin
   const isRestaurant = appState?.membership.productExperience === "restaurant";
   const has = useCallback((...codes: string[]) => isSuperAdmin || codes.some((code) => permissions.includes(code) || permissions.includes("*")), [isSuperAdmin, permissions]);
   const canReviewMigration = !isRestaurant && has("import_data", "import_prices", "import_costs", "import_accounting_opening");
-  const canUseImportCenter = !isRestaurant && (canReviewMigration || has("import_bi_budgets"));
+  const canUseImportCenter = has("import_data", "import_prices", "import_costs", "import_accounting_opening", "import_bi_budgets");
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<ConfigurationMode>("all");
   const [readiness, setReadiness] = useState<Readiness | null>(null);
@@ -144,12 +144,12 @@ export function ConfigurationHome({ companyId, permissions }: { companyId: strin
     {
       id: "migration-center",
       label: "Centro de Migración",
-      description: "Carga archivos y presupuestos, valida excepciones y conserva cada lote.",
+      description: "Carga archivos, valida excepciones y conserva cada lote.",
       href: "/satrapy/configuracion/importaciones",
       icon: Database,
       group: "setup",
       mode: "setup",
-      keywords: "alpha archivos excel carga importacion lotes presupuestos metas",
+      keywords: "archivos excel carga importacion lotes productos inventario clientes ventas compras contabilidad presupuestos metas",
       visible: canUseImportCenter,
     },
     {

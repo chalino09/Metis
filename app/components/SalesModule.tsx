@@ -161,7 +161,7 @@ async function printCompanyTicket(companyId: string, ticket: Record<string, unkn
 }
 
 function posBlockerLabel(code: string) {
-  const labels: Record<string, string> = { outside_assortment: "Fuera del surtido de esta sucursal", inactive: "Producto inactivo", not_sellable: "No habilitado para venta", commercial_review_required: "Revisión comercial pendiente", inventory_setup_required: "Inventario pendiente de preparar", missing_sales_unit: "Falta unidad de venta", missing_tax_category: "Falta categoría fiscal", missing_current_tax_rate: "Falta impuesto vigente", missing_or_zero_price: "Falta precio vigente", out_of_stock: "Sin existencia en esta sucursal" };
+  const labels: Record<string, string> = { outside_assortment: "Fuera del surtido de esta sucursal", inactive: "Producto inactivo", not_sellable: "No habilitado para venta", commercial_review_required: "Revisión comercial pendiente", inventory_setup_required: "Inventario pendiente de preparar", missing_sales_unit: "Falta unidad de venta", missing_tax_category: "Falta categoría fiscal", missing_current_tax_rate: "Falta impuesto vigente", missing_or_zero_price: "Falta precio vigente", out_of_stock: "Sin existencia en esta sucursal", insufficient_ingredient_stock: "Sin existencia de ingredientes", missing_active_recipe: "Falta receta activa", missing_purchase_conversion: "Falta equivalencia de compra", invalid_recipe_conversion: "Conversión de receta inválida" };
   return labels[code] ?? code.replaceAll("_", " ");
 }
 

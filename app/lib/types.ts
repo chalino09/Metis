@@ -213,6 +213,7 @@ export type InventoryRow = {
   balance_updated_at: string;
   last_movement_type: string | null;
   last_movement_at: string | null;
+  last_movement_reference_label?: string | null;
   has_snapshot_reference?: boolean;
   snapshot_quantity: number | null;
   snapshot_date: string | null;

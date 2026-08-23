@@ -7,6 +7,8 @@ export const PRODUCT_READINESS_LABELS: Record<string, string> = {
   missing_tax_category: "Sin categoría fiscal",
   missing_current_tax_rate: "Sin tasa fiscal vigente",
   missing_or_zero_price: "Sin precio vigente",
+  missing_active_recipe: "Sin receta activa",
+  invalid_recipe_components: "Receta con componentes no permitidos",
   outside_assortment: "Sin sucursales de venta",
   out_of_stock: "Sin existencia",
 };

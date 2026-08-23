@@ -8,10 +8,9 @@ const bi = readFileSync("app/components/BiModule.tsx", "utf8");
 const configuration = readFileSync("app/components/ConfigurationHome.tsx", "utf8");
 
 test("Restaurant reutiliza operación, personal e indicadores sin habilitar módulos avanzados", () => {
-  for (const view of ["bi_summary", "inventory_counts", "collaborators_directory", "sales_settings", "sales_audit"]) {
+  for (const view of ["bi_summary", "inventory_counts", "collaborators_directory", "payroll", "sales_settings", "sales_audit"]) {
     assert.match(experience, new RegExp(`"${view}"`));
   }
-  assert.doesNotMatch(experience, /"payroll",/);
   assert.doesNotMatch(experience, /"bi_explorer",/);
   assert.doesNotMatch(experience, /"procurement",/);
 });
