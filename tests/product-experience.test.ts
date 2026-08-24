@@ -10,10 +10,10 @@ test("core conserva todos los módulos y el vocabulario original", () => {
 });
 
 test("Restaurant limita la superficie sin alterar las entidades canónicas", () => {
-  for (const view of ["bi_summary", "pos", "sales_history", "cash", "products", "inventory", "inventory_counts", "inventory_replenishment", "collaborators_directory", "payroll", "sales_settings"]) {
+  for (const view of ["bi_summary", "pos", "sales_history", "cash", "products", "inventory", "inventory_counts", "inventory_replenishment", "collaborators_directory", "payroll", "sales_settings", "accounting_summary", "accounting_accounts", "accounting_periods", "accounting_reports", "accounting_journals", "accounting_events", "accounting_opening", "accounting_settings"]) {
     assert.equal(isViewAvailableForExperience(view, "restaurant"), true, view);
   }
-  for (const view of ["accounting_summary", "ecommerce_readiness", "procurement", "bi_explorer"]) {
+  for (const view of ["ecommerce_readiness", "procurement", "bi_explorer"]) {
     assert.equal(isViewAvailableForExperience(view, "restaurant"), false, view);
   }
   assert.equal(experienceViewLabel("products", "Productos", "restaurant"), "Platillos");

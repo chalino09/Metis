@@ -72,6 +72,15 @@ function unitCode(value: unknown) {
   return normalized;
 }
 
+function canonicalName(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
 export async function parseRestaurantCatalogFile(file: File, role: RestaurantImportRole): Promise<RestaurantCatalogImportPreview> {
   if (!/\.(csv|xlsx?)$/i.test(file.name)) return { rows: [], errors: ["Selecciona un archivo CSV o Excel."], fileName: file.name };
   const XLSX = await import("xlsx");
@@ -112,6 +121,17 @@ export async function parseRestaurantCatalogFile(file: File, role: RestaurantImp
       base_units_per_purchase_unit: role === "ingredient" ? factor : null,
       lot_controlled: role === "ingredient" && booleanValue(mapped.lot_controlled, false),
     });
+  });
+  const firstRowByName = new Map<string, number>();
+  rows.forEach((row, index) => {
+    const key = canonicalName(row.name);
+    if (!key) return;
+    const firstRow = firstRowByName.get(key);
+    if (firstRow) {
+      errors.push(`Fila ${index + 2}: \"${row.name}\" repite el nombre de la fila ${firstRow}. Conserva un solo registro canónico.`);
+      return;
+    }
+    firstRowByName.set(key, index + 2);
   });
   if (!raw.length) errors.push("El archivo no contiene registros.");
   return { rows, errors, fileName: file.name };

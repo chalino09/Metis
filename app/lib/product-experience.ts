@@ -22,6 +22,14 @@ const RESTAURANT_VIEWS = new Set([
   "assortments",
   "sales_settings",
   "sales_audit",
+  "accounting_summary",
+  "accounting_accounts",
+  "accounting_periods",
+  "accounting_reports",
+  "accounting_journals",
+  "accounting_events",
+  "accounting_opening",
+  "accounting_settings",
 ]);
 
 export function normalizeProductExperience(value: unknown): ProductExperience {
