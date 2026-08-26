@@ -25,6 +25,8 @@ export async function POST(request:NextRequest,context:Context){
     const payload=JSON.parse(raw) as MetaPayload;const locationId=String(connection.configuration.location_id??"");if(!locationId)throw new Error("WHATSAPP_LOCATION_NOT_CONFIGURED");
     const jobs:Array<Promise<unknown>>=[];
     for(const entry of payload.entry??[])for(const change of entry.changes??[]){if(change.field!=="messages")continue;const configuredPhone=String(connection.configuration.phone_number_id??"");const incomingPhone=String(change.value?.metadata?.phone_number_id??"");if(configuredPhone&&incomingPhone&&configuredPhone!==incomingPhone)continue;for(const message of change.value?.messages??[]){if(message.type!=="text"||!message.id||!message.from||!message.text?.body)continue;jobs.push(processWhatsappText(admin,{companyId,connectionId:connection.id,locationId,messageId:message.id,sender:message.from,message:message.text.body,rawPayload:raw}));}}
-    await Promise.all(jobs);return NextResponse.json({received:true,processed:jobs.length},{status:200,headers:{"cache-control":"no-store"}});
+    const results=await Promise.allSettled(jobs);const failed=results.filter(result=>result.status==="rejected").length;
+    if(failed>0)return NextResponse.json({received:true,processed:jobs.length-failed,retry:true},{status:503,headers:{"cache-control":"no-store","retry-after":"30","x-content-type-options":"nosniff"}});
+    return NextResponse.json({received:true,processed:jobs.length},{status:200,headers:{"cache-control":"no-store","x-content-type-options":"nosniff"}});
   }catch(error){const code=error instanceof Error?error.message:"";if(code==="WHATSAPP_CONNECTION_NOT_FOUND"||code==="WHATSAPP_CREDENTIALS_NOT_CONFIGURED")return new NextResponse("Not configured",{status:404});return NextResponse.json({received:false},{status:500,headers:{"cache-control":"no-store"}});}
 }
