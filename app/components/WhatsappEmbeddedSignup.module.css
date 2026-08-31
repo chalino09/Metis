@@ -1,0 +1,13 @@
+.onboarding { display:grid; gap:24px; }
+.onboarding section { display:grid; gap:12px; }
+.onboarding h3 { margin:0; color:var(--ink); font-size:14px; font-weight:650; }
+.numberList { display:grid; gap:8px; }
+.numberList article { display:grid; grid-template-columns:38px minmax(0,1fr) auto; align-items:center; gap:11px; border-radius:var(--radius-lg); background:var(--surface-subtle); padding:11px 12px; }
+.numberList article>span { display:grid; width:36px; height:36px; place-items:center; border-radius:11px; background:#e8f6ed; color:#168449; }
+.numberList strong,.numberList small { display:block; }
+.numberList strong { font-size:12px; }
+.numberList small { margin-top:3px; color:var(--muted); font-size:10px; }
+.numberList article>svg { color:#2d8a5a; }
+.empty,.notice { margin:0; border-radius:var(--radius-md); background:var(--surface-subtle); padding:12px; color:var(--muted); font-size:11px; line-height:1.5; }
+.notice { background:#f1f7f4; color:#49635a; }
+.detail { display:block; margin-top:5px; color:var(--accent-strong); font-size:10px; font-weight:650; }

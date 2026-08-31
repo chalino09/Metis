@@ -11,7 +11,7 @@ type AdminClient=SupabaseClient<any>;
 export async function processWhatsappText(admin:AdminClient,input:{companyId:string;connectionId:string;locationId:string;customerId?:string|null;messageId:string;sender:string;message:string;rawPayload:string}){
   const startedAt=Date.now();
   const digest=createHash("sha256").update(input.rawPayload).digest("hex");
-  const registered=await admin.rpc("register_integration_webhook",{p_company_id:input.companyId,p_provider_code:"meta_whatsapp",p_provider_event_id:input.messageId,p_event_type:"messages",p_payload_sha256:digest,p_payload:{message_id:input.messageId,sender:input.sender,message:input.message,location_id:input.locationId}});
+  const registered=await admin.rpc("register_integration_webhook",{p_connection_id:input.connectionId,p_provider_event_id:input.messageId,p_event_type:"messages",p_payload_sha256:digest,p_payload:{message_id:input.messageId,sender:input.sender,message:input.message,location_id:input.locationId}});
   if(registered.error)throw new Error(registered.error.message);
   const receipt=registered.data as {receipt_id?:string;duplicate?:boolean;should_process?:boolean;retry?:boolean;status?:string};
   if(!receipt.receipt_id)throw new Error("No se registró el webhook.");
