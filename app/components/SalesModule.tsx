@@ -90,6 +90,11 @@ type ReceivableCustomerContext = { customer: { id: string; code: string; display
 type CustomerMaster = { id: string; code: string; display_name: string; tax_id: string | null; customer_type: "persona_fisica" | "persona_moral" | null; notes: string | null; is_active: boolean; is_imported: boolean; source_reference: string | null; migration_status: string; addresses: CustomerAddress[]; contacts: CustomerContact[]; commercial: { price_list_id: string | null; price_list_name: string | null; payment_manager: string | null; sales_agent: string | null; credit_enabled: boolean | null; credit_limit: number | null; credit_term_days: number | null; outstanding_amount: number | null; available_credit: number | null }; receivables_summary: ReceivablesSummary | null; open_receivables: CustomerReceivable[] };
 type PriceTier = { id: string; name: string; min_quantity: number; max_quantity: number | null; amount: number; price_list_id: string };
 type CartItem = { cart_item_id: string; product_id: string; code: string | null; name: string; unit: string | null; quantity: number; quantity_on_hand: number; inventory_tracked: boolean; unit_price_amount: number; price_tier_id?: string | null; price_tier_name?: string | null; price_tier_min_quantity?: number | null; price_tier_max_quantity?: number | null; price_tier_mode?: "automatic" | "manual"; available_price_tiers?: PriceTier[]; discount_percent: number; gross_amount: number; discount_amount: number; tax_amount: number; total_amount: number };
+type RestaurantBundleOption = { id: string; product_id: string; name: string; available: boolean };
+type RestaurantBundleGroup = { id: string; name: string; minimum: number; maximum: number; options: RestaurantBundleOption[] };
+type RestaurantBundleExtra = RestaurantBundleOption & { price: { amount?: number; currency_code?: string } | null };
+type RestaurantBundlePicker = { configured: boolean; bundle_id?: string; product_id?: string; solo_price?: number; combo_price?: number; groups: RestaurantBundleGroup[]; extras: RestaurantBundleExtra[] };
+type RestaurantBundleInstance = { id: string; cart_item_id: string; selections: Array<{ group: string; product_id: string; name: string; quantity: number }> };
 type VolumeDiscountTier = { tier_number: number; min_quantity: number; max_quantity: number | null; discount_percent: number; is_active: boolean };
 type CartQuote = { cart_id: string; revision: number; customer_id: string | null; currency_code: string | null; price_list_id: string | null; price_list_name: string | null; price_list_override_id: string | null; price_list_overridden: boolean; items: CartItem[]; subtotal_amount: number; discount_amount: number; tax_amount: number; total_amount: number; can_checkout: boolean; pending_discount_approval: boolean };
 type HeldSaleCart = { cart_id: string; revision: number; customer_id: string | null; customer_name: string | null; held_at: string; item_count: number; unit_count: number; preview_items: string[]; pending_discount_approval: boolean };
@@ -301,6 +306,13 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
   const [blockedTotal, setBlockedTotal] = useState(0);
   const [blockedOpen, setBlockedOpen] = useState(false);
   const [blockedLoading, setBlockedLoading] = useState(false);
+  const [bundleProduct, setBundleProduct] = useState<ProductSearchItem | null>(null);
+  const [bundlePicker, setBundlePicker] = useState<RestaurantBundlePicker | null>(null);
+  const [bundleMode, setBundleMode] = useState<"solo" | "complete">("solo");
+  const [bundleSelections, setBundleSelections] = useState<Record<string, string[]>>({});
+  const [bundleExtras, setBundleExtras] = useState<string[]>([]);
+  const [bundleLoading, setBundleLoading] = useState(false);
+  const [bundleInstances, setBundleInstances] = useState<RestaurantBundleInstance[]>([]);
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerResults, setCustomerResults] = useState<Customer[]>([]);
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
@@ -765,6 +777,94 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
     }
   }
 
+  const loadBundleInstances = useCallback(async (activeCartId: string) => {
+    if (experience !== "restaurant") return;
+    const { data } = await getSupabaseClient().rpc("list_sale_cart_bundle_instances", { p_cart_id: activeCartId });
+    setBundleInstances((data as RestaurantBundleInstance[] | null) ?? []);
+  }, [experience]);
+
+  useEffect(() => {
+    if (cartId) void Promise.resolve().then(() => loadBundleInstances(cartId));
+    else void Promise.resolve().then(() => setBundleInstances([]));
+  }, [cartId, loadBundleInstances]);
+
+  async function choosePosProduct(product: ProductSearchItem) {
+    if (experience !== "restaurant" || !cartId || !online) {
+      await changeItem(product.product_id, 1, true);
+      return;
+    }
+    setBundleLoading(true);
+    const { data, error } = await getSupabaseClient().rpc("get_pos_restaurant_bundle_choice", { p_cart_id: cartId, p_product_id: product.product_id });
+    setBundleLoading(false);
+    if (error) {
+      toast({ title: "No se pudo revisar el paquete", description: rpcError(error, "Intenta nuevamente."), tone: "error" });
+      return;
+    }
+    const picker = data as RestaurantBundlePicker;
+    if (!picker?.configured) {
+      await changeItem(product.product_id, 1, true);
+      return;
+    }
+    setBundleProduct(product);
+    setBundlePicker(picker);
+    setBundleMode("solo");
+    setBundleSelections(Object.fromEntries((picker.groups ?? []).map((group) => [group.id, []])));
+    setBundleExtras([]);
+  }
+
+  function toggleBundleOption(group: RestaurantBundleGroup, optionId: string) {
+    setBundleSelections((current) => {
+      const selected = current[group.id] ?? [];
+      if (selected.includes(optionId)) return { ...current, [group.id]: selected.filter((id) => id !== optionId) };
+      if (group.maximum === 1) return { ...current, [group.id]: [optionId] };
+      if (selected.length >= group.maximum) return current;
+      return { ...current, [group.id]: [...selected, optionId] };
+    });
+  }
+
+  async function addRestaurantBundle() {
+    if (!cartId || !quote || !bundleProduct || !bundlePicker) return;
+    const incomplete = bundleMode === "complete" && bundlePicker.groups.find((group) => {
+      const count = bundleSelections[group.id]?.length ?? 0;
+      return count < group.minimum || count > group.maximum;
+    });
+    if (incomplete) {
+      toast({ title: `Completa ${incomplete.name}`, description: incomplete.maximum === 1 ? "Elige una opción para continuar." : `Elige entre ${incomplete.minimum} y ${incomplete.maximum} opciones.`, tone: "error" });
+      return;
+    }
+    setBusy(true);
+    const { data, error } = await getSupabaseClient().rpc("add_restaurant_bundle_choice", {
+      p_cart_id: cartId,
+      p_product_id: bundleProduct.product_id,
+      p_mode: bundleMode,
+      p_selections: bundleSelections,
+      p_extra_product_ids: bundleExtras,
+      p_expected_revision: quote.revision,
+      p_client_request_id: crypto.randomUUID(),
+    });
+    setBusy(false);
+    if (error) {
+      toast({ title: "No se agregó la comida", description: rpcError(error, "Revisa las opciones e intenta nuevamente."), tone: "error" });
+      return;
+    }
+    const next = data as CartQuote;
+    setQuote(next); quoteRef.current = next;
+    await loadBundleInstances(cartId);
+    setBundleProduct(null); setBundlePicker(null); setSearch(""); searchRef.current?.focus();
+  }
+
+  async function removeRestaurantBundle(instanceId: string) {
+    if (!cartId || !quote) return;
+    setBusy(true);
+    const { data, error } = await getSupabaseClient().rpc("remove_restaurant_bundle_from_cart", { p_cart_id: cartId, p_instance_id: instanceId, p_expected_revision: quote.revision });
+    setBusy(false);
+    if (error) {
+      toast({ title: "No se quitó la comida", description: rpcError(error, "Actualiza la venta e intenta nuevamente."), tone: "error" });
+      return;
+    }
+    const next=data as CartQuote;setQuote(next);quoteRef.current=next;await loadBundleInstances(cartId);
+  }
+
   function setItemQuantity(productId: string, currentQuantity: number, input: HTMLInputElement) {
     const nextQuantity = Number(input.value.replace(",", "."));
     if (!Number.isFinite(nextQuantity) || nextQuantity < 0) {
@@ -1141,11 +1241,11 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
       </div>
       {posTab === "current" ? <div className="pos-shell" id="pos-panel-current" role="tabpanel" aria-labelledby="pos-tab-current">
         <section className="pos-catalog">
-          <label className="pos-search-field"><span>Buscar {productWords.plural}</span><div className="pos-search"><Search size={20} aria-hidden="true" /><Input ref={searchRef} value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && productTotal === 1 && products.length === 1) { event.preventDefault(); void changeItem(products[0].product_id, 1, true); } }} placeholder="Escanea o busca por nombre, SKU o código" aria-label={`Buscar ${productWords.plural}`} autoFocus /><kbd>F2 cliente</kbd></div></label>
+          <label className="pos-search-field"><span>Buscar {productWords.plural}</span><div className="pos-search"><Search size={20} aria-hidden="true" /><Input ref={searchRef} value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && productTotal === 1 && products.length === 1) { event.preventDefault(); void choosePosProduct(products[0]); } }} placeholder="Escanea o busca por nombre, SKU o código" aria-label={`Buscar ${productWords.plural}`} autoFocus /><kbd>F2 cliente</kbd></div></label>
           <div className="pos-search-meta" role="status" aria-live="polite"><span>{productLoading ? "Buscando…" : `${products.length} de ${productTotal} resultados${!online ? " en caché" : ""}`}</span><span>Enter agrega la coincidencia única · p95 búsqueda {metricP95.search === null ? "—" : `${Math.round(metricP95.search)} ms`} · agregar {metricP95.add_item === null ? "—" : `${Math.round(metricP95.add_item)} ms`}</span></div>
           <div className="pos-shortcuts" aria-label="Atajos de teclado disponibles"><span><kbd>F2</kbd> Cliente</span>{permissions.includes("apply_discount") && quote?.items.length ? <span><kbd>F4</kbd> Descuento</span> : null}{quote?.items.length ? <><span><kbd>F8</kbd> Cobrar</span><span><kbd>Esc</kbd> Cerrar</span><span><kbd>+</kbd><kbd>−</kbd> Partida enfocada</span></> : null}</div>
           <div className="pos-product-list">
-            {products.map((product) => <div className="pos-product-row" key={product.product_id}><button className="pos-product" disabled={busy} onClick={() => void changeItem(product.product_id, 1, true)}><span><strong>{highlightSearchMatch(product.name, search)}</strong><small>{highlightSearchMatch(product.code ?? "Sin código", search)} · {product.unit ?? "Unidad"}</small></span><span className="pos-product__right"><b>{money(product.price_amount, product.currency_code)}</b><small>Precio total</small>{product.inventory_tracked && <em className={product.quantity_on_hand <= 3 ? "is-low" : ""}>{product.quantity_on_hand} disp.</em>}</span></button>{product.inventory_tracked && permissions.includes("view_inventory") && <Button className="pos-product-stock" size="sm" variant="ghost" disabled={busy} onClick={() => openLocationStock(product)}><ClipboardList size={14} /> Otras sucursales</Button>}</div>)}
+            {products.map((product) => <div className="pos-product-row" key={product.product_id}><button className="pos-product" disabled={busy||bundleLoading} onClick={() => void choosePosProduct(product)}><span><strong>{highlightSearchMatch(product.name, search)}</strong><small>{highlightSearchMatch(product.code ?? "Sin código", search)} · {product.unit ?? "Unidad"}</small></span><span className="pos-product__right"><b>{money(product.price_amount, product.currency_code)}</b><small>Precio total</small>{product.inventory_tracked && <em className={product.quantity_on_hand <= 3 ? "is-low" : ""}>{product.quantity_on_hand} disp.</em>}</span></button>{product.inventory_tracked && permissions.includes("view_inventory") && <Button className="pos-product-stock" size="sm" variant="ghost" disabled={busy} onClick={() => openLocationStock(product)}><ClipboardList size={14} /> Otras sucursales</Button>}</div>)}
             {!productLoading && !products.length && <div className="pos-list-empty"><Search size={20} aria-hidden="true" /><strong>{search ? `Sin resultados para “${search}”` : `Sin ${productWords.plural} disponibles`}</strong><span>{search ? "Prueba con otro nombre, SKU o código." : `Los ${productWords.plural} listos para vender aparecerán aquí.`}</span>{search && <Button variant="secondary" size="sm" onClick={() => { setSearch(""); searchRef.current?.focus(); }}>Limpiar búsqueda</Button>}</div>}
             {!productLoading && products.length < productTotal && <Button className="pos-load-more" variant="secondary" loading={productLoadingMore} disabled={busy} onClick={() => void loadMoreProducts()}>Cargar más {productWords.plural}</Button>}
             {blockedLoading && <p className="pos-blocked-loading">Consultando existencias en otras sucursales…</p>}
@@ -1161,7 +1261,8 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
             const tiers = item.available_price_tiers ?? [];
             const tierValue = item.price_tier_mode === "manual" && item.price_tier_id ? item.price_tier_id : "automatic";
             const priceTierLabel = item.price_tier_name ? `${item.price_tier_mode === "manual" ? "Manual" : "Automático"}: ${item.price_tier_name}` : null;
-            return <article key={item.cart_item_id} tabIndex={0} aria-label={`${item.name}, cantidad ${item.quantity}. Usa más o menos para ajustar la partida.`} onKeyDown={(event) => { if (busy || event.target !== event.currentTarget) return; if (event.key === "+") { event.preventDefault(); void changeItem(item.product_id, 1); } if (event.key === "-") { event.preventDefault(); void changeItem(item.product_id, -1); } }}><div><strong title={item.name}>{item.name}</strong><small>{item.code ?? ""}{priceTierLabel ? <> · <span className={item.price_tier_mode === "manual" ? "pos-price-tier-note is-manual" : "pos-price-tier-note"}>{priceTierLabel}</span></> : null}{priceTierLabel ? " · " : " · "}{money(item.total_amount / item.quantity, quote.currency_code ?? "MXN")} por unidad{item.discount_percent > 0 ? ` · −${item.discount_percent}%` : ""}</small>{tiers.length > 0 && <div className="pos-price-tier-control">{permissions.includes("apply_discount") ? <Select className="pos-price-tier-select" ariaLabel={`Nivel de precio de ${item.name}`} value={tierValue} onValueChange={(value) => void selectItemPriceTier(item, value)} disabled={busy || !online} options={[{ value: "automatic", label: automaticTier ? `Automático · ${automaticTier.name}` : "Automático" }, ...tiers.map((tier) => ({ value: tier.id, label: `${tier.name} · ${priceTierRange(tier)} · ${money(tier.amount, quote.currency_code ?? "MXN")}` }))]} /> : <span className="pos-price-tier-readonly">{priceTierLabel ?? "Precio automático"}</span>}</div>}</div><div className="pos-line-controls"><button aria-label={`Restar ${item.name}`} disabled={busy} onClick={() => void changeItem(item.product_id, -1)}><Minus size={14} aria-hidden="true" /></button><Input key={`${item.cart_item_id}:${quote.revision}`} className="pos-quantity-input" type="number" min="0" max={item.inventory_tracked ? item.quantity_on_hand : undefined} step="any" inputMode="decimal" defaultValue={item.quantity} aria-label={`Cantidad de ${item.name}`} disabled={busy} onBlur={(event) => setItemQuantity(item.product_id, item.quantity, event.currentTarget)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); if (event.key === "Escape") { event.currentTarget.value = String(item.quantity); event.currentTarget.blur(); } }} /><button aria-label={`Sumar ${item.name}`} disabled={busy} onClick={() => void changeItem(item.product_id, 1)}><Plus size={14} aria-hidden="true" /></button><strong>{money(item.total_amount, quote.currency_code ?? "MXN")}</strong></div></article>;
+            const instances=bundleInstances.filter((instance)=>instance.cart_item_id===item.cart_item_id);
+            return <article key={item.cart_item_id} tabIndex={0} aria-label={`${item.name}, cantidad ${item.quantity}. Usa más o menos para ajustar la partida.`} onKeyDown={(event) => { if (busy || event.target !== event.currentTarget || instances.length > 0) return; if (event.key === "+") { event.preventDefault(); void changeItem(item.product_id, 1); } if (event.key === "-") { event.preventDefault(); void changeItem(item.product_id, -1); } }}><div><strong title={item.name}>{item.name}</strong><small>{item.code ?? ""}{priceTierLabel ? <> · <span className={item.price_tier_mode === "manual" ? "pos-price-tier-note is-manual" : "pos-price-tier-note"}>{priceTierLabel}</span></> : null}{priceTierLabel ? " · " : " · "}{money(item.total_amount / item.quantity, quote.currency_code ?? "MXN")} por unidad{item.discount_percent > 0 ? ` · −${item.discount_percent}%` : ""}</small>{instances.length>0&&<div className="pos-bundle-line-details">{instances.map((instance,index)=><p key={instance.id}><b>Comida {index+1}</b><span>{instance.selections.map((selection)=>selection.name).join(" · ")}</span><button type="button" disabled={busy} aria-label={`Quitar comida ${index+1} de ${item.name}`} onClick={()=>void removeRestaurantBundle(instance.id)}>Quitar</button></p>)}</div>}{tiers.length > 0 && <div className="pos-price-tier-control">{permissions.includes("apply_discount") ? <Select className="pos-price-tier-select" ariaLabel={`Nivel de precio de ${item.name}`} value={tierValue} onValueChange={(value) => void selectItemPriceTier(item, value)} disabled={busy || !online} options={[{ value: "automatic", label: automaticTier ? `Automático · ${automaticTier.name}` : "Automático" }, ...tiers.map((tier) => ({ value: tier.id, label: `${tier.name} · ${priceTierRange(tier)} · ${money(tier.amount, quote.currency_code ?? "MXN")}` }))]} /> : <span className="pos-price-tier-readonly">{priceTierLabel ?? "Precio automático"}</span>}</div>}</div><div className="pos-line-controls"><button aria-label={`Restar ${item.name}`} disabled={busy||instances.length>0} title={instances.length>0?"Quita una comida desde su detalle.":undefined} onClick={() => void changeItem(item.product_id, -1)}><Minus size={14} aria-hidden="true" /></button><Input key={`${item.cart_item_id}:${quote.revision}`} className="pos-quantity-input" type="number" min="0" max={item.inventory_tracked ? item.quantity_on_hand : undefined} step="any" inputMode="decimal" defaultValue={item.quantity} aria-label={`Cantidad de ${item.name}`} disabled={busy||instances.length>0} onBlur={(event) => setItemQuantity(item.product_id, item.quantity, event.currentTarget)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); if (event.key === "Escape") { event.currentTarget.value = String(item.quantity); event.currentTarget.blur(); } }} /><button aria-label={`Sumar ${item.name}`} disabled={busy||instances.length>0} title={instances.length>0?"Agrega otra comida desde el catálogo para elegir sus componentes.":undefined} onClick={() => void changeItem(item.product_id, 1)}><Plus size={14} aria-hidden="true" /></button><strong>{money(item.total_amount, quote.currency_code ?? "MXN")}</strong></div></article>;
           }) : <div className="pos-cart-empty"><ShoppingCart size={22} aria-hidden="true" /><strong>Carrito vacío</strong><span>Busca o escanea un {productWords.singular} para comenzar.</span></div>}</div>
           <div className="pos-settlement">
             <div className="pos-cart-summary"><dl><div><dt>Subtotal</dt><dd>{money(quote?.subtotal_amount, quote?.currency_code ?? "MXN")}</dd></div><div><dt>Descuentos</dt><dd>−{money(quote?.discount_amount, quote?.currency_code ?? "MXN")}</dd></div><div><dt>Impuestos</dt><dd>{money(quote?.tax_amount, quote?.currency_code ?? "MXN")}</dd></div><div className="pos-cart-summary__total"><dt>Total</dt><dd>{money(quote?.total_amount, quote?.currency_code ?? "MXN")}</dd></div></dl></div>
@@ -1211,6 +1312,13 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
         </DataState>
       </section>}
     </>}
+    <Modal className="pos-bundle-picker" open={Boolean(bundleProduct&&bundlePicker)} onOpenChange={(open)=>{if(!open&&!busy){setBundleProduct(null);setBundlePicker(null);}}} eyebrow="Personaliza el platillo" title={bundleProduct?.name??"Guisado"} description="Elige si lo vendes solo o como comida completa. Los extras se cobran aparte." footer={<><Button variant="secondary" disabled={busy} onClick={()=>{setBundleProduct(null);setBundlePicker(null);}}>Cancelar</Button><Button variant="primary" loading={busy} onClick={()=>void addRestaurantBundle()}>Agregar a la venta</Button></>}>
+      {bundlePicker&&<form className="pos-bundle-picker__form" onSubmit={(event)=>{event.preventDefault();void addRestaurantBundle();}}>
+        <fieldset className="pos-bundle-picker__mode"><legend><span>¿Cómo lo quieres?</span><small>Elige una opción</small></legend><div className="pos-bundle-picker__options"><label className={bundleMode==="solo"?"is-selected":undefined}><input type="radio" name="bundle-mode" checked={bundleMode==="solo"} onChange={()=>setBundleMode("solo")}/><span><strong>Solo guisado</strong><small>{money(bundlePicker.solo_price??bundleProduct?.price_amount,bundleProduct?.currency_code)}</small></span><CheckCircle2 size={18} aria-hidden="true"/></label><label className={bundleMode==="complete"?"is-selected":undefined}><input type="radio" name="bundle-mode" checked={bundleMode==="complete"} onChange={()=>setBundleMode("complete")}/><span><strong>Comida completa</strong><small>{money(bundlePicker.combo_price??80,bundleProduct?.currency_code)} · guisado + sopa + agua</small></span><CheckCircle2 size={18} aria-hidden="true"/></label></div></fieldset>
+        {bundleMode === "complete" && bundlePicker.groups.map((group)=><fieldset key={group.id}><legend><span>{group.name}</span><small>{group.maximum===1?"Elige 1":`Elige de ${group.minimum} a ${group.maximum}`}</small></legend><div className="pos-bundle-picker__options">{group.options.map((option)=>{const checked=(bundleSelections[group.id]??[]).includes(option.id);return <label className={checked?"is-selected":undefined} key={option.id}><input type={group.maximum===1?"radio":"checkbox"} name={`bundle-${group.id}`} checked={checked} disabled={!option.available||busy} onChange={()=>toggleBundleOption(group,option.id)}/><span><strong>{option.name}</strong><small>{option.available?"Incluido":"No disponible"}</small></span><CheckCircle2 size={18} aria-hidden="true"/></label>;})}</div></fieldset>)}
+        {bundlePicker.extras.length>0&&<fieldset className="pos-bundle-picker__extras"><legend><span>¿Agregar algo extra?</span><small>Opcional · se suma al precio de la comida</small></legend><div className="pos-bundle-picker__options">{bundlePicker.extras.map((extra)=>{const checked=bundleExtras.includes(extra.product_id);return <label className={checked?"is-selected":undefined} key={extra.id}><input type="checkbox" checked={checked} disabled={!extra.available||!extra.price||busy} onChange={()=>setBundleExtras((current)=>current.includes(extra.product_id)?current.filter((id)=>id!==extra.product_id):[...current,extra.product_id])}/><span><strong>{extra.name}</strong><small>{extra.price?`+ ${money(extra.price.amount,extra.price.currency_code)} antes de IVA`:"Sin precio vigente"}</small></span><Plus size={18} aria-hidden="true"/></label>;})}</div></fieldset>}
+      </form>}
+    </Modal>
     <Modal open={Boolean(ticket)} onOpenChange={(open) => { if (!open) finishTicket(); }} eyebrow="Venta confirmada" title={`Ticket ${ticket?.folio ?? ""}`} description="El cliente ve precios totales; el desglose fiscal permanece disponible internamente." footer={<><Button variant="secondary" loading={ticketDownloading} onClick={() => void printCompletedTicket()}><Printer size={15} /> Imprimir ticket</Button><Button variant="primary" onClick={finishTicket}>Nueva venta</Button></>}><TicketPreview ticket={ticket?.ticket} /></Modal>
     <Modal className="pos-location-stock-dialog" open={Boolean(stockProduct)} onOpenChange={(open) => { if (!open) { setStockProduct(null); setLocationStock(null); } }} eyebrow="Inventario por sucursal" title={stockProduct?.name ?? "Otras sucursales"} description={`${productWords.singularTitle} ${stockProduct?.code ?? "sin código"} · Sucursal activa: ${selectedLocation?.name ?? selectedRegister?.name ?? "sin seleccionar"}. Solo lectura. La venta sigue usando la existencia de la sucursal activa.`} footer={<Button onClick={() => { setStockProduct(null); setLocationStock(null); }}>Cerrar <kbd>Esc</kbd></Button>}>{locationStockLoading ? <DataState loading error={null} hasData={0} empty="">{null}</DataState> : locationStock ? <section className="pos-location-stock"><header><span>Disponibilidad en otras sucursales</span><strong>{locationStock.total} {locationStock.total === 1 ? "sucursal" : "sucursales"}</strong></header>{otherLocationStockItems.length ? <div className="pos-location-stock__rows">{otherLocationStockItems.map((item) => { const quantity = Number(item.quantity_on_hand); const status = otherLocationStockStatus(quantity); return <article className={`is-${status.tone}`} key={item.location_id}><span className="pos-location-stock__location"><strong>{item.location_name}</strong><small>{item.location_code}</small></span><span className="pos-location-stock__quantity"><small>{status.label}</small><b>{quantity.toLocaleString("es-MX", { maximumFractionDigits: 3 })} <em>{locationStock.unit ?? stockProduct?.unit ?? ""}</em></b></span></article>; })}</div> : <p>No hay otras sucursales autorizadas para consultar.</p>}{locationStock.total > locationStock.page_size && <DataPagination page={locationStock.page} total={locationStock.total} pageSize={locationStock.page_size} label="sucursales" onChange={(page) => { if (stockProduct) void loadLocationStock(stockProduct, page); }} />}</section> : null}</Modal>
     <Drawer open={quickCustomerOpen} onOpenChange={setQuickCustomerOpen} title="Alta rápida de cliente"><form className="sales-form" onSubmit={createQuickCustomer}><p className="settings-note">Solo lo necesario para continuar la venta. Se crea de contado y hereda la lista de precios de esta ubicación.</p><label>Nombre<Input required autoFocus value={quickCustomerName} onChange={(event) => setQuickCustomerName(event.target.value)} /></label><label>Teléfono opcional<Input inputMode="tel" value={quickCustomerPhone} onChange={(event) => setQuickCustomerPhone(event.target.value)} /></label><label>RFC opcional<Input value={quickCustomerTaxId} onChange={(event) => setQuickCustomerTaxId(event.target.value.toUpperCase())} /></label><Button type="submit" variant="primary" loading={busy}>Crear y seleccionar</Button></form></Drawer>

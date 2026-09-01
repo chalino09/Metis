@@ -52,6 +52,10 @@ begin
   if balance<>2000 then raise exception 'La entrada no convirtió 2 kg a 2000 g; saldo: %',balance;end if;
   select amount into cost from public.product_costs where company_id=c and product_id=ingredient_id and cost_type='replacement_cost' and valid_to is null;
   if cost<>0.06 then raise exception 'El costo vigente no quedó en 0.06 MXN por gramo: %',cost;end if;
+  result:=public.search_restaurant_purchase_ingredients(c,'JITOMATE',10);
+  if (result#>>'{items,0,current_cost}')::numeric<>0.06
+    or (result#>>'{items,0,current_purchase_unit_cost}')::numeric<>60
+  then raise exception 'El selector confundió costo por gramo con precio por kilogramo: %',result;end if;
   select count(*) into ledger_count from public.inventory_ledger where company_id=c and location_id=loc and product_id=ingredient_id and movement_type='purchase_receipt';
   if ledger_count<>1 then raise exception 'La compra no dejó un solo movimiento auditable.';end if;
   result:=public.confirm_restaurant_purchase_receipt(

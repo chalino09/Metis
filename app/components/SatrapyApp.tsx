@@ -73,6 +73,8 @@ import { IntegrationCenter } from "@/app/components/IntegrationCenter";
 import { CollaboratorsDirectoryView, PayrollView } from "@/app/components/CollaboratorsModule";
 import { BiModule } from "@/app/components/BiModule";
 import { RestaurantCostAnalysis } from "@/app/components/RestaurantCostAnalysis";
+import { RestaurantRecipeMigrationPanel, buildRestaurantRecipeImportPackage, prepareRestaurantRecipeImport } from "@/app/components/RestaurantRecipeMigrationPanel";
+import type { RestaurantRecipeImportPreview } from "@/app/lib/restaurant-recipe-import";
 import { CollectionAutomationModule } from "@/app/components/CollectionAutomationModule";
 import { InvoiceRequestsModule } from "@/app/components/InvoiceRequestsModule";
 import type {
@@ -1056,6 +1058,9 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
   const [budgetPromotionReason, setBudgetPromotionReason] = useState("");
   const [pendingPurchasingFileCount, setPendingPurchasingFileCount] = useState(0);
   const [linkedAlphaFolderAvailable, setLinkedAlphaFolderAvailable] = useState(false);
+  const [restaurantRecipePreview,setRestaurantRecipePreview]=useState<RestaurantRecipeImportPreview|null>(null);
+  const [restaurantRecipeError,setRestaurantRecipeError]=useState<string|null>(null);
+  const restaurantRecipeRequestId=useRef<string|null>(null);
   const pendingPurchasingFiles = useRef(new Map<string, File>());
   const actionRequestInFlight = useRef(false);
   const canImport = permissions.some((permission) => ["import_data", "import_prices", "import_costs", "import_accounting_opening"].includes(permission));
@@ -1068,6 +1073,14 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
   const visiblePurchasingMigrationBatches = purchasingMigrationBatches.filter((batch) => isCompletePurchasingMigrationBatch(batch)
     || !purchasingMigrationBatches.some((candidate) => candidate.cutoff_date === batch.cutoff_date && isCompletePurchasingMigrationBatch(candidate)));
   const active = visibleBatches.find((batch) => batch.id === activeBatchId) ?? visibleBatches[0] ?? null;
+
+  useEffect(()=>{
+    if(!isRestaurant)return;
+    const stored=window.sessionStorage.getItem(`satrapy:restaurant-recipe-preview:${companyId}`);
+    const requestId=window.sessionStorage.getItem(`satrapy:restaurant-recipe-request:${companyId}`);
+    restaurantRecipeRequestId.current=requestId;
+    if(stored)void Promise.resolve().then(()=>{try{setRestaurantRecipePreview(JSON.parse(stored) as RestaurantRecipeImportPreview);}catch{/* Se reemplaza al volver a cargar el archivo. */}});
+  },[companyId,isRestaurant]);
 
   const loadPreview = useCallback(async (batchId: string, requestedPage = page) => {
     setLoadingPreview(true);
@@ -1192,8 +1205,23 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
   }, [activeBatchId, errorCodeFilter, loadPreview, page, statusFilter]);
 
   async function addFiles(files: FileList | File[]) {
+    setBusy(true);setMessage(null);setRestaurantRecipeError(null);
+    const incoming=Array.from(files);const recipeResults:MigrationUploadResult[]=[];const consumedRecipeFiles=new Set<File>();
+    if(isRestaurant){
+      for(const file of incoming.filter(item=>/\.xlsx?$/i.test(item.name))){
+        try{
+          const prepared=await prepareRestaurantRecipeImport(companyId,file);
+          if(!prepared)continue;
+          consumedRecipeFiles.add(file);setRestaurantRecipePreview(prepared);
+          const requestId=crypto.randomUUID();restaurantRecipeRequestId.current=requestId;
+          window.sessionStorage.setItem(`satrapy:restaurant-recipe-preview:${companyId}`,JSON.stringify(prepared));
+          window.sessionStorage.setItem(`satrapy:restaurant-recipe-request:${companyId}`,requestId);
+          recipeResults.push({files:[file.name],kind:"restaurant_recipes",label:"Recetas e insumos de Restaurante",status:prepared.counts.blocked?"validation_failed":"staged",message:`${prepared.counts.recipes} recetas y ${prepared.ingredients.length} insumos canónicos preparados.`});
+        }catch(error){setRestaurantRecipeError(error instanceof Error?error.message:"No se pudo analizar el archivo de recetas.");consumedRecipeFiles.add(file);recipeResults.push({files:[file.name],kind:"restaurant_recipes",label:"Recetas e insumos de Restaurante",status:"validation_failed",message:"No se pudo preparar la vista previa."});}
+      }
+    }
     const readyFiles: File[] = [];
-    for (const file of Array.from(files)) {
+    for (const file of incoming.filter(item=>!consumedRecipeFiles.has(item))) {
       const kind = classifyAlphaUpload(file.name);
       if (isPurchasingAlphaUpload(kind)) pendingPurchasingFiles.current.set(kind, file);
       else readyFiles.push(file);
@@ -1202,12 +1230,11 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
     setPendingPurchasingFileCount(purchasingState.detected);
     if (purchasingState.complete) readyFiles.push(...pendingPurchasingFiles.current.values());
     if (!readyFiles.length) {
-      setUploadResults([]);
-      setMessage(`Compras/CxP: ${purchasingState.detected}/4 archivos detectados. Satrapy esperará el paquete completo antes de crear staging.`);
+      setUploadResults(recipeResults);
+      setMessage(recipeResults.length?"La carga quedó preparada. Revisa el resultado y confirma desde esta misma página.":`Compras/CxP: ${purchasingState.detected}/4 archivos detectados. Satrapy esperará el paquete completo antes de crear staging.`);
+      setBusy(false);
       return;
     }
-    setBusy(true);
-    setMessage(null);
     setUploadResults([]);
     try {
       const session = (await getSupabaseClient().auth.getSession()).data.session;
@@ -1219,7 +1246,7 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
       const result = await response.json() as { results?: MigrationUploadResult[]; message?: string };
       if (!response.ok) throw new Error(result.message ?? "No se pudo preparar la carga.");
       const results = result.results ?? [];
-      setUploadResults(results);
+      setUploadResults([...recipeResults,...results]);
       if (purchasingState.complete) {
         pendingPurchasingFiles.current.clear();
         setPendingPurchasingFileCount(0);
@@ -1246,6 +1273,27 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
     } finally {
       setBusy(false);
     }
+  }
+
+  function clearRestaurantRecipePreview(){
+    setRestaurantRecipePreview(null);setRestaurantRecipeError(null);restaurantRecipeRequestId.current=null;
+    window.sessionStorage.removeItem(`satrapy:restaurant-recipe-preview:${companyId}`);window.sessionStorage.removeItem(`satrapy:restaurant-recipe-request:${companyId}`);
+  }
+
+  async function confirmRestaurantRecipeImport(){
+    if(!restaurantRecipePreview||restaurantRecipePreview.counts.blocked)return;
+    setBusy(true);setRestaurantRecipeError(null);setMessage(null);
+    try{
+      const payload=buildRestaurantRecipeImportPackage(restaurantRecipePreview);
+      const requestId=restaurantRecipeRequestId.current??crypto.randomUUID();restaurantRecipeRequestId.current=requestId;
+      const {data,error}=await getSupabaseClient().rpc("import_restaurant_recipe_package",{p_company_id:companyId,p_ingredients:payload.ingredients,p_recipes:payload.recipes,p_reason:`Importación inicial desde ${restaurantRecipePreview.file_name}`,p_client_request_id:requestId});
+      if(error)throw error;
+      const result=data as {created_ingredients?:number;reused_ingredients?:number;recipes?:number};
+      setUploadResults(current=>current.map(item=>item.kind==="restaurant_recipes"?{...item,status:"promoted",message:`${result.recipes??10} recetas importadas; ${result.created_ingredients??0} insumos creados y ${result.reused_ingredients??0} reutilizados.`}:item));
+      clearRestaurantRecipePreview();setMessage("Las recetas y sus insumos quedaron importados como borradores auditados.");
+      toast({title:"Recetas importadas",description:"El paquete completo se guardó en una sola transacción, sin duplicar insumos.",tone:"success"});
+    }catch(error){setRestaurantRecipeError(error instanceof Error?error.message:typeof error==="object"&&error&&"message" in error?String(error.message):"No se pudo confirmar la importación.");}
+    finally{setBusy(false);}
   }
 
   async function promoteBudgetImport() {
@@ -1579,6 +1627,8 @@ function MigrationCenter({ companyId, permissions }: { companyId: string; permis
           </ul>
         </aside>
       </section>
+
+      {isRestaurant&&(restaurantRecipePreview||restaurantRecipeError)&&<RestaurantRecipeMigrationPanel preview={restaurantRecipePreview} busy={busy} error={restaurantRecipeError} canImport={canUploadAny} onClear={clearRestaurantRecipePreview} onConfirm={()=>void confirmRestaurantRecipeImport()}/>}
 
       {!isRestaurant && <section className="migration-specialized" aria-labelledby="specialized-imports-title">
         <header><div><span className="eyebrow">Importaciones por módulo</span><h2 id="specialized-imports-title">Carga cada archivo donde corresponde</h2><p>Los estados bancarios se gestionan en Bancos y las metas y presupuestos en BI.</p></div></header>
