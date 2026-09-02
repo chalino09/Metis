@@ -6,7 +6,7 @@ import { getRequestSupabaseClient } from "@/app/lib/supabase-server";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 
-type Body={company_id?:string;location_id?:string;display_name?:string;code?:string;waba_id?:string;phone_number_id?:string;phone_number?:string;onboarding_mode?:"cloud"|"coexistence"};
+type Body={company_id?:string;location_id?:string;display_name?:string;code?:string;waba_id?:string;phone_number_id?:string;phone_number?:string};
 type TokenResponse={access_token?:string;error?:{message?:string}};
 type PhoneResponse={data?:Array<{id?:string;display_phone_number?:string;verified_name?:string}>;error?:{message?:string}};
 
@@ -46,7 +46,7 @@ export async function POST(request:NextRequest){
     const saved=await admin.rpc("complete_whatsapp_connection",{
       p_company_id:companyId,p_actor_id:auth.user.id,p_display_name:String(body.display_name??"").trim()||verifiedName||phoneNumber||"WhatsApp",
       p_location_id:locationId,p_waba_id:wabaId,p_phone_number_id:phoneNumberId,p_phone_number:phoneNumber,
-      p_onboarding_mode:body.onboarding_mode==="cloud"?"cloud":"coexistence",p_secret_ciphertext:secretCiphertext
+      p_onboarding_mode:"coexistence",p_secret_ciphertext:secretCiphertext
     });
     if(saved.error)return json({message:"No fue posible asignar el número a la sucursal."},422);
     return json({message:"Número conectado y asignado a la sucursal.",connection_id:saved.data,phone_number_id:phoneNumberId,phone_number:phoneNumber},200);

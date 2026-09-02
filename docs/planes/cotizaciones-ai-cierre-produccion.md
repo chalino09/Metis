@@ -72,10 +72,10 @@ personal continúe contestando en la aplicación y Satrapy detecte solicitudes d
 cotización en paralelo. Las llamadas y los SMS continúan sin cambios.
 
 - [ ] Implementar el alta de Coexistence mediante el flujo autorizado de Meta.
-- [ ] Sustituir la unicidad actual por empresa/proveedor para admitir varios números de WhatsApp por empresa.
-- [ ] Conservar una asignación durable y auditada entre Phone Number ID y sucursal.
+- [x] Sustituir la unicidad actual por empresa/proveedor para admitir varios números de WhatsApp por empresa.
+- [x] Conservar una asignación durable y auditada entre Phone Number ID y sucursal.
 - [ ] Procesar mensajes entrantes sin duplicar ecos o mensajes enviados por el personal.
-- [ ] Iniciar en modo pasivo: detectar y preparar cotizaciones sin responder automáticamente.
+- [x] Iniciar en modo pasivo: detectar y preparar cotizaciones sin responder automáticamente.
 - [ ] Incorporar una bandeja de respuesta antes de permitir automatización saliente desde Satrapy.
 - [ ] Validar primero una sucursal y extender a las demás sólo después del UAT.
 
@@ -83,6 +83,59 @@ El webhook, la verificación de firma, la idempotencia y el procesamiento de
 cotizaciones existentes se reutilizan. Cambian el onboarding, el modelo
 multinumérico, el enrutamiento por sucursal y el tratamiento de eventos de
 Coexistence.
+
+### Plan de implementación de Coexistence — siguiente recorrido
+
+El número eSIM que ya está en Cloud API se conserva como laboratorio y no se
+intentará convertir. El piloto de Coexistence usará un número nuevo que siga
+activo en WhatsApp Business App, dentro de la empresa QA.
+
+#### A. Preparar Meta
+
+- [ ] Confirmar que la app de Satrapy puede usar Embedded Signup.
+- [x] Completar el alta como proveedor tecnológico si Meta la exige.
+- [ ] Solicitar/revisar App Review y Advanced Access para `business_management` y `whatsapp_business_management`.
+- [ ] Configurar el flujo de Embedded Signup para números existentes de WhatsApp Business App.
+- [ ] Definir el callback HTTPS y la suscripción de webhooks del WABA.
+- [ ] Documentar qué administrador de Meta autoriza cada conexión; nunca pedirle tokens manuales.
+
+#### B. Preparar Satrapy para varios números
+
+- [x] Sustituir la unicidad empresa/proveedor por un registro independiente por número.
+- [x] Persistir WABA ID, Phone Number ID, nombre, estado, empresa y sucursal.
+- [ ] Impedir que dos números activos apunten a la misma combinación operativa sin confirmación.
+- [ ] Crear alta, edición, desactivación y reasignación auditada de números.
+- [x] Enrutar cada webhook usando Phone Number ID, no el texto del mensaje.
+- [ ] Soportar `messages`, `message_template_*` y `smb_message_echoes`.
+- [ ] Ignorar ecos de mensajes enviados por personal y evitar cotizaciones duplicadas.
+- [ ] Mostrar salud, último evento, errores y sucursal de cada número.
+
+#### C. Piloto QA con número nuevo
+
+- [ ] Registrar el número nuevo en WhatsApp Business App.
+- [ ] Iniciar Embedded Signup desde Satrapy y elegir el modo Coexistence.
+- [ ] Completar la vinculación mediante QR/código y sincronización inicial.
+- [ ] Asociar el Phone Number ID a Sucursal QA Central.
+- [ ] Probar mensaje de cliente: debe preparar una cotización.
+- [ ] Probar respuesta del empleado desde WhatsApp Business: debe llegar como eco, sin crear otra cotización.
+- [ ] Probar mensaje duplicado, webhook fuera de orden, error temporal y reintento.
+- [ ] Probar que llamadas y uso cotidiano de WhatsApp Business continúan sin cambios.
+- [ ] Mantener el piloto en modo pasivo hasta aprobar UAT.
+
+#### D. Onboarding de números reales de Teza
+
+- [ ] Obtener autorización del administrador de cada WABA/sucursal.
+- [ ] Conectar cada número mediante Embedded Signup; no copiar credenciales al equipo.
+- [ ] Registrar automáticamente sus IDs y asignar la sucursal correcta.
+- [ ] Validar mensajes, ecos, plantillas, horarios y permisos por sucursal.
+- [ ] Activar una sucursal a la vez y conservar un procedimiento de desconexión.
+- [ ] Documentar la fecha, responsable, estado y resultado de cada alta.
+
+#### Criterio de salida de Coexistence
+
+No se agregan números reales hasta que el piloto QA demuestre: recepción,
+enrutamiento correcto, ausencia de duplicados, ecos controlados, reintentos,
+respuesta desde la app y auditoría completa.
 
 ## Pruebas finales obligatorias
 
