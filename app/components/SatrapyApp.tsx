@@ -42,6 +42,9 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { DataPagination, DataRefreshStatus, DataState, DataToolbar, InteractiveTableRow, PageHeading } from "@/app/components/ui/data";
 import { Badge, Button, Drawer, Field, Input, Modal, Select, ToastProvider, useToast } from "@/app/components/ui/primitives";
+import { Button as ReuiButton } from "@/app/components/reui/button";
+import { Card as ReuiCard } from "@/app/components/reui/card";
+import { Autocomplete, AutocompleteContent, AutocompleteInput, AutocompleteItem, AutocompleteList } from "@/components/reui/autocomplete";
 import { useDismissiblePopover } from "@/app/components/ui/use-dismissible-popover";
 import { getSupabaseClient } from "@/app/lib/supabase";
 import { classifyAlphaUpload, isPurchasingAlphaUpload } from "@/app/lib/alpha-upload-routing";
@@ -425,9 +428,11 @@ export function SatrapyShell({ children }: { children: ReactNode }) {
   const contextViews = activeSection?.views;
   const isSettingsArea = activeSection?.id === "settings";
   const settingsGroup = SETTINGS_GROUPS[activeView];
+  const isPosRoute = pathname === "/satrapy/ventas/pos";
+  const isSalesWorkspace = activeArea === "sales" || activeView === "sales_settings";
   return (
     <ToastProvider>
-    <main className={`app-shell ${pathname === "/satrapy/ventas/pos" ? "app-shell--pos" : ""}`}>
+    <main className={`app-shell ${isPosRoute ? "app-shell--pos" : ""} ${isSalesWorkspace ? "app-shell--sales" : ""}`}>
       <header className="global-header">
         <div className="brand-lockup">
           <span className="brand-mark">S</span>
@@ -449,11 +454,11 @@ export function SatrapyShell({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="global-header__controls">
-          {isSuperAdmin || companies.length > 1 ? <div className="global-session-switchers"><div className="global-company-selector"><Select ariaLabel="Cambiar empresa" value={appState.membership.companyId} onValueChange={(companyId) => void selectCompany(companyId)} options={companies.map((company) => ({ value: company.id, label: company.display_name }))} /></div>{isSuperAdmin && <RolePreview selectedRole={previewRole} onChange={(role) => setPreviewRole(role)} experience={experience} compact />}</div> : <div className="global-company-context" title={appState.membership.companyName}><Building2 size={14} /><span>{appState.membership.companyName}</span></div>}
-          {isSuperAdmin && <CreateCompanyAction onCreated={async () => { await refreshAccess(); router.push("/satrapy/configuracion"); }} />}
+          {isSuperAdmin || companies.length > 1 ? <div className="global-session-switchers">{isSalesWorkspace ? <PosCompanySwitcher key={appState.membership.companyId} companies={companies} companyId={appState.membership.companyId} companyName={appState.membership.companyName} onChange={selectCompany} /> : <div className="global-company-selector"><Select ariaLabel="Cambiar empresa" value={appState.membership.companyId} onValueChange={(companyId) => void selectCompany(companyId)} options={companies.map((company) => ({ value: company.id, label: company.display_name }))} /></div>}{isSuperAdmin && <RolePreview selectedRole={previewRole} onChange={(role) => setPreviewRole(role)} experience={experience} compact />}</div> : <div className="global-company-context" title={appState.membership.companyName}><Building2 size={14} /><span>{appState.membership.companyName}</span></div>}
+          {isSuperAdmin && <CreateCompanyAction reui={isSalesWorkspace} onCreated={async () => { await refreshAccess(); router.push("/satrapy/configuracion"); }} />}
           {activeRoleLabel && <Badge className="global-role-badge" tone={isSuperAdmin ? "primary" : "neutral"}>{activeRoleLabel}</Badge>}
           <div className="user-avatar">{appState.email.slice(0, 1).toUpperCase()}</div>
-          <button className="icon-button" aria-label="Cerrar sesión" onClick={() => void getSupabaseClient().auth.signOut()}><LogOut size={16} /></button>
+          {isSalesWorkspace ? <ReuiButton className="pos-signout" variant="ghost" size="icon" aria-label="Cerrar sesión" title="Cerrar sesión" onClick={() => void getSupabaseClient().auth.signOut()}><LogOut size={16} /></ReuiButton> : <button className="icon-button" aria-label="Cerrar sesión" onClick={() => void getSupabaseClient().auth.signOut()}><LogOut size={16} /></button>}
         </div>
       </header>
 
@@ -483,7 +488,7 @@ export function SatrapyShell({ children }: { children: ReactNode }) {
   );
 }
 
-function CreateCompanyAction({ onCreated }: { onCreated: () => Promise<void> }) {
+function CreateCompanyAction({ onCreated, reui = false }: { onCreated: () => Promise<void>; reui?: boolean }) {
   const { toast } = useToast();
   const idempotencyKeys = useRef(new OperationIdempotencyKeys()).current;
   const legalNameRef = useRef<HTMLInputElement>(null);
@@ -560,7 +565,7 @@ function CreateCompanyAction({ onCreated }: { onCreated: () => Promise<void> }) 
   }
 
   return <>
-    <Button className="global-create-company" onClick={() => setOpen(true)}><Plus size={16} /> Crear empresa</Button>
+    {reui ? <ReuiButton className="global-create-company" variant="outline" size="lg" onClick={() => setOpen(true)}><Plus size={16} /> Crear empresa</ReuiButton> : <Button className="global-create-company" onClick={() => setOpen(true)}><Plus size={16} /> Crear empresa</Button>}
     <Modal open={open} onOpenChange={handleOpenChange} eyebrow="Superadmin" title="Crear empresa" description="La empresa inicia vacía y en Satrapy completo. Podrás elegir Restaurant después de crearla." footer={<><Button disabled={saving} onClick={() => handleOpenChange(false)}>Cancelar</Button><Button type="submit" form="create-company" variant="primary" loading={saving}>Crear empresa</Button></>}>
       <form id="create-company" className="create-company-form" onSubmit={createCompany} noValidate>
         <Field label="Razón social" error={invalidField === "legalName" ? error ?? undefined : undefined}><Input ref={legalNameRef} required autoFocus maxLength={240} value={legalName} onChange={(event) => { setLegalName(event.target.value); if (invalidField === "legalName") { setInvalidField(null); setError(null); } }} placeholder="Ej. Comercializadora del Valle, S.A. de C.V." aria-invalid={invalidField === "legalName" || undefined} /></Field>
@@ -570,6 +575,41 @@ function CreateCompanyAction({ onCreated }: { onCreated: () => Promise<void> }) 
       </form>
     </Modal>
   </>;
+}
+
+function PosCompanySwitcher({
+  companies,
+  companyId,
+  companyName,
+  onChange,
+}: {
+  companies: Array<{ id: string; display_name: string }>;
+  companyId: string;
+  companyName: string;
+  onChange: (companyId: string) => void | Promise<void>;
+}) {
+  const [query, setQuery] = useState(companyName);
+  const [open, setOpen] = useState(false);
+
+  const matchingCompanies = companies.filter((company) => company.display_name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+
+  function handleOpenChange(nextOpen: boolean) {
+    setOpen(nextOpen);
+    setQuery(nextOpen ? "" : companyName);
+  }
+
+  return <ReuiCard size="sm" className="pos-company-switcher">
+    <Autocomplete items={matchingCompanies} value={query} open={open} onOpenChange={handleOpenChange} onValueChange={setQuery} itemToStringValue={(company) => company.display_name} openOnInputClick>
+      <AutocompleteInput aria-label="Cambiar empresa" placeholder="Buscar empresa" showTrigger />
+      <AutocompleteContent className="pos-company-results">
+        <AutocompleteList>
+          {matchingCompanies.map((company) => <AutocompleteItem value={company} key={company.id} onClick={() => { setQuery(company.display_name); void onChange(company.id); }}>
+            <span>{company.display_name}</span>{company.id === companyId && <small>Actual</small>}
+          </AutocompleteItem>)}
+        </AutocompleteList>
+      </AutocompleteContent>
+    </Autocomplete>
+  </ReuiCard>;
 }
 
 export function SatrapyRouteContent() {

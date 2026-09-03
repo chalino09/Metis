@@ -4,7 +4,8 @@
 import { ImagePlus, ReceiptText, Save, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { Button, Input, Select, useToast } from "@/app/components/ui/primitives";
+import { useToast } from "@/app/components/ui/primitives";
+import { SalesButton as Button, SalesInput as Input, SalesSelect as Select } from "@/app/components/reui/sales-controls";
 import { DataState } from "@/app/components/ui/data";
 import { getSupabaseClient } from "@/app/lib/supabase";
 

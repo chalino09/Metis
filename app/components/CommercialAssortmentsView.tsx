@@ -2,8 +2,9 @@
 
 import { Boxes, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { DataPagination, DataState, DataToolbar } from "@/app/components/ui/data";
-import { Badge, Button, Modal, Select, useToast } from "@/app/components/ui/primitives";
+import { DataState } from "@/app/components/ui/data";
+import { Badge, Modal, useToast } from "@/app/components/ui/primitives";
+import { SalesButton as Button, SalesDataPagination as DataPagination, SalesDataToolbar as DataToolbar, SalesSelect as Select } from "@/app/components/reui/sales-controls";
 import { getSupabaseClient } from "@/app/lib/supabase";
 
 const PAGE_SIZE = 50;

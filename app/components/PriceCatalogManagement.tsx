@@ -3,8 +3,9 @@
 import { FileUp, Pencil, Plus, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { DataPagination, DataRefreshStatus, DataState, DataToolbar, InteractiveTableRow, Table } from "@/app/components/ui/data";
-import { Badge, Button, Drawer, Field, Input, Select, Tabs, useToast } from "@/app/components/ui/primitives";
+import { DataRefreshStatus, DataState, InteractiveTableRow, Table } from "@/app/components/ui/data";
+import { Badge, Drawer, Tabs, useToast } from "@/app/components/ui/primitives";
+import { SalesButton as Button, SalesDataPagination as DataPagination, SalesDataToolbar as DataToolbar, SalesField as Field, SalesInput as Input, SalesSelect as Select } from "@/app/components/reui/sales-controls";
 import { OperationIdempotencyKeys } from "@/app/lib/operation-idempotency";
 import { presentImportedSourceText } from "@/app/lib/presentation-text";
 import { getSupabaseClient } from "@/app/lib/supabase";

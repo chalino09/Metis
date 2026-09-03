@@ -4,7 +4,8 @@
 import { Building2, FileText, ImagePlus, Palette, Save, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ChangeEvent, type FormEvent } from "react";
 import { DataState } from "@/app/components/ui/data";
-import { Button, Input, useToast } from "@/app/components/ui/primitives";
+import { useToast } from "@/app/components/ui/primitives";
+import { SalesButton as Button, SalesInput as Input } from "@/app/components/reui/sales-controls";
 import { getSupabaseClient } from "@/app/lib/supabase";
 
 type Branding = { display_name:string; legal_name:string|null; tax_id:string|null; fiscal_address:string|null; document_title:string; contact_line:string|null; header_message:string|null; footer_message:string; terms_and_conditions:string|null; website:string|null; accent_color:string; logo_path:string|null };

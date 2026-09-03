@@ -1,6 +1,27 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:is(.dark *));
+
 :root {
+  /* ReUI / shadcn semantic bridge.  Satrapy's tokens stay the source of truth. */
+  --background: var(--canvas);
+  --foreground: var(--ink);
+  --card: var(--surface);
+  --card-foreground: var(--ink);
+  --popover: var(--surface);
+  --popover-foreground: var(--ink);
+  --primary: var(--accent);
+  --primary-foreground: #ffffff;
+  --secondary: var(--surface-strong);
+  --secondary-foreground: var(--ink);
+  --muted: #66716d;
+  --muted-foreground: #66716d;
+  --accent: #1f5c53;
+  --accent-foreground: #ffffff;
+  --destructive: #b5423c;
+  --border: var(--line);
+  --input: var(--line-strong);
+  --ring: var(--focus);
   --canvas: #f6f8f7;
   --surface: #ffffff;
   --surface-subtle: #f1f4f2;
@@ -45,6 +66,36 @@
   --bi-positive: var(--success);
   --bi-caution: var(--warning);
   --bi-critical: var(--danger);
+  --destructive-foreground: var(--color-red-800);
+  --success-foreground: var(--color-emerald-900);
+  --info-foreground: var(--color-violet-900);
+  --warning-foreground: var(--color-yellow-900);
+  --invert: var(--color-zinc-900);
+  --invert-foreground: var(--color-zinc-50);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--surface-subtle);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent-soft);
+  --color-accent-foreground: var(--ink);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-lg: var(--radius-lg);
+  --radius-md: var(--radius-md);
+  --radius-sm: var(--radius-sm);
 }
 
 /* Quote branding presentation: keep choices distinct at desktop density. */
@@ -3013,7 +3064,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .app-shell--pos .pos-held-list > button { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:16px; min-height:76px; border:1px solid #dedad3; border-radius:14px; background:#fff; padding:12px 14px; color:#242320; text-align:left; cursor:pointer; }
 .app-shell--pos .pos-held-list > button:hover { border-color:#aaa49b; background:#faf9f7; }
 .app-shell--pos .pos-held-list > button:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
-.app-shell--pos .pos-held-list > button.is-selected { border-color:#242320; background:#f3f1ed; box-shadow:inset 3px 0 0 #242320; }
+.app-shell--pos .pos-held-list > button.is-selected { border-color:#242320; background:#f3f1ed; box-shadow:none; }
 .app-shell--pos .pos-held-list__main,.app-shell--pos .pos-held-list__meta { display:grid; min-width:0; gap:4px; }
 .app-shell--pos .pos-held-list__main strong { overflow:hidden; font-size:13px; text-overflow:ellipsis; white-space:nowrap; }
 .app-shell--pos .pos-held-list__main small { overflow:hidden; color:#68655f; font-size:10px; text-overflow:ellipsis; white-space:nowrap; }
@@ -4204,3 +4255,1195 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .integration-simulator__message { width:100%; min-height:128px; resize:vertical; line-height:1.5; }
 @media (max-width:1050px) { .integration-list { grid-template-columns:1fr; column-gap:0; } }
  @media (max-width:760px) { .integration-center { padding-block-start:22px; }.integration-marketplace__heading h1 { font-size:26px; }.integration-search { min-height:52px; }.integration-filters { flex-wrap:nowrap; overflow-x:auto; padding-bottom:3px; }.integration-filters button { white-space:nowrap; }.integration-trust { display:none; }.integration-list,.integration-form__pair { grid-template-columns:1fr; }.integration-row { grid-template-columns:50px minmax(0,1fr); gap:12px; }.integration-row__icon { width:48px; height:48px; border-radius:13px; }.integration-row__action { grid-column:2; grid-row:2; display:flex; justify-items:initial; align-items:center; justify-content:flex-start; }.integration-event-list article { grid-template-columns:32px minmax(0,1fr); }.integration-event-list time { grid-column:2; } }
+
+ .dark {
+  --destructive-foreground: var(--color-red-600);
+  --success: var(--color-emerald-500);
+  --success-foreground: var(--color-emerald-600);
+  --info: var(--color-violet-500);
+  --info-foreground: var(--color-violet-600);
+  --warning: var(--color-yellow-500);
+  --warning-foreground: var(--color-yellow-600);
+  --invert: var(--color-zinc-700);
+  --invert-foreground: var(--color-zinc-50);
+}
+
+ @theme inline {
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-invert: var(--invert);
+  --color-invert-foreground: var(--invert-foreground);
+}
+
+/* POS · ReUI checkout station
+   The POS intentionally uses a distinct transaction surface instead of a dashboard.
+   ReUI primitives own tabs, alerts, autocomplete, number fields, scroll areas and empty states. */
+.app-shell--pos {
+  --canvas: #f7f8fa;
+  --surface: #ffffff;
+  --surface-subtle: #f3f5f8;
+  --surface-strong: #e7ebf0;
+  --ink: #18212f;
+  --muted: #667085;
+  --line: #e3e7ee;
+  --line-strong: #cfd6e1;
+  --accent: #2563eb;
+  --accent-strong: #1d4ed8;
+  --accent-soft: #eaf1ff;
+  --focus: #2563eb;
+  background: var(--canvas);
+}
+.app-shell--pos .content-frame {
+  width:100%;
+  max-width:none;
+  margin-inline:0;
+  padding:18px clamp(20px,3.2vw,56px) 42px;
+}
+.app-shell--pos > .main-panel,
+.app-shell--pos .content-frame.pos-page,
+.app-shell--pos .pos-reui-tabs,
+.app-shell--pos [data-slot="tabs-content"].pos-shell {
+  width:100%;
+  min-width:0;
+  max-width:none;
+  align-self:stretch;
+}
+.app-shell--pos .pos-reui-heading { align-items:center; margin-bottom:14px; }
+.app-shell--pos .pos-reui-heading h1 { margin:2px 0 3px; font-size:clamp(23px,2vw,30px); font-weight:680; letter-spacing:-.045em; }
+.app-shell--pos .pos-reui-heading p { margin:0; font-size:12px; }
+.app-shell--pos .pos-reui-heading .eyebrow { color:#64748b; font-size:10px; }
+.app-shell--pos .pos-exit-link { border:1px solid var(--line); border-radius:10px; background:var(--surface); color:#475569; font-weight:600; box-shadow:var(--shadow-xs); }
+.app-shell--pos .pos-exit-link:hover { border-color:#b9c6d7; background:#f8fafc; color:#1e293b; }
+.app-shell--pos .pos-connection-status,
+.app-shell--pos .pos-sync-conflict { align-items:center; margin-bottom:12px; border-radius:12px; box-shadow:none; }
+.app-shell--pos .pos-connection-status [data-slot="alert-description"],
+.app-shell--pos .pos-sync-conflict [data-slot="alert-description"] { font-size:12px; line-height:1.45; }
+.app-shell--pos .pos-reui-tabs { gap:12px; min-height:calc(100dvh - 164px); }
+.app-shell--pos .pos-workspace-tabs { gap:4px; width:max-content; border:1px solid var(--line); border-radius:11px; background:var(--surface); padding:4px; box-shadow:var(--shadow-xs); }
+.app-shell--pos .pos-workspace-tabs [data-slot="tabs-trigger"] { min-height:34px; flex:none; border-radius:8px; padding-inline:12px; color:#64748b; font-size:12px; font-weight:620; }
+.app-shell--pos .pos-workspace-tabs [data-slot="tabs-trigger"][data-active] { background:#18212f; color:#fff; box-shadow:none; }
+.app-shell--pos .pos-workspace-tabs [data-slot="tabs-trigger"]::after { display:none; }
+.app-shell--pos .pos-workspace-tabs span { display:inline-grid; min-width:19px; place-items:center; border-radius:999px; background:rgb(255 255 255 / .16); padding:1px 5px; font-size:10px; font-variant-numeric:tabular-nums; }
+.app-shell--pos .pos-shell { display:grid; grid-template-columns:minmax(0,1.38fr) minmax(400px,.82fr); align-items:stretch; gap:16px; margin:0; }
+.app-shell--pos .pos-catalog,
+.app-shell--pos .pos-cart { border:1px solid var(--line); border-radius:16px; background:var(--surface); box-shadow:0 1px 2px rgb(15 23 42 / .03),0 10px 30px rgb(15 23 42 / .035); }
+.app-shell--pos .pos-catalog { display:grid; grid-template-rows:auto auto auto minmax(0,1fr); min-height:calc(100dvh - 218px); padding:18px; }
+.app-shell--pos .pos-search-field { gap:8px; color:#475569; font-size:10px; letter-spacing:.065em; }
+.app-shell--pos .pos-search { min-height:56px; border-color:#ccd5e1; border-radius:12px; background:#fff; padding-inline:14px; box-shadow:inset 0 1px 2px rgb(15 23 42 / .03); }
+.app-shell--pos .pos-search > svg { color:#64748b; }
+.app-shell--pos .pos-search:focus-within { border-color:var(--accent); background:#fff; box-shadow:0 0 0 3px rgb(37 99 235 / .13); }
+.app-shell--pos .pos-search .ui-input { min-height:54px; font-size:15px; }
+.app-shell--pos .pos-search kbd,
+.app-shell--pos .pos-shortcuts kbd { border-color:#d7dee8; background:#f8fafc; color:#64748b; }
+.app-shell--pos .pos-search-meta { justify-content:space-between; margin:9px 2px 11px; color:#7a8798; }
+.app-shell--pos .pos-shortcuts { margin:0 2px 12px; color:#7a8798; }
+.app-shell--pos .pos-product-list { min-height:0; height:100%; max-height:none; padding-inline-end:2px; }
+.app-shell--pos .pos-product-list [data-slot="scroll-area-viewport"] { max-height:calc(100dvh - 390px); }
+.app-shell--pos .pos-product-list [data-slot="scroll-area-scrollbar"] { width:9px; }
+.app-shell--pos .pos-product-list [data-slot="scroll-area-thumb"] { background:#cbd5e1; }
+.app-shell--pos .pos-product-row { grid-template-columns:minmax(0,1fr) auto; gap:7px; margin-bottom:7px; border:1px solid transparent; border-radius:12px; }
+.app-shell--pos .pos-product { min-height:72px; border:1px solid #edf0f4; border-radius:11px; background:#fff; padding:10px 12px; }
+.app-shell--pos .pos-product:hover { border-color:#bfdbfe; background:#f8fbff; box-shadow:0 5px 14px rgb(37 99 235 / .075); }
+.app-shell--pos .pos-product:focus-visible { outline-color:var(--accent); background:#f8fbff; }
+.app-shell--pos .pos-product::after { width:34px; height:34px; border-radius:9px; background:#eaf1ff; color:#2563eb; font-size:19px; }
+.app-shell--pos .pos-product:hover::after { background:#2563eb; color:#fff; }
+.app-shell--pos .pos-product strong { color:#1e293b; font-size:13px; }
+.app-shell--pos .pos-product small { color:#7b8797; }
+.app-shell--pos .pos-product__right b { color:#172554; font-size:14px; }
+.app-shell--pos .pos-product__right em { background:#e8f7ef; color:#16794d; }
+.app-shell--pos .pos-product__right em.is-low { background:#fff5df; color:#9a6213; }
+.app-shell--pos .pos-product-stock { min-width:40px; align-self:center; border:1px solid #e2e8f0; border-radius:9px; color:#64748b; }
+.app-shell--pos .pos-product-stock:hover:not(:disabled) { background:#f8fafc; color:#2563eb; }
+.app-shell--pos .pos-list-empty { min-height:260px; border:1px dashed #cfd8e5; border-radius:12px; background:#fbfcfe; }
+.app-shell--pos .pos-list-empty [data-slot="empty-icon"] { margin-bottom:0; }
+.app-shell--pos .pos-list-empty [data-slot="empty-description"] { color:#7a8798; font-size:12px; }
+.app-shell--pos .pos-cart { position:sticky; top:74px; display:grid; grid-template-rows:auto auto minmax(0,1fr) auto; gap:14px; height:calc(100dvh - 94px); overflow:visible; padding:16px; }
+.app-shell--pos .pos-cart__top { align-items:flex-start; margin:0; border:0; border-bottom:1px solid var(--line); border-radius:0; background:transparent; padding:0 0 13px; color:var(--ink); }
+.app-shell--pos .pos-cart__top .eyebrow { color:#64748b; }
+.app-shell--pos .pos-cart__top h2 { color:#18212f; font-size:19px; }
+.app-shell--pos .pos-cart__top .ui-button--ghost { min-height:32px; color:#596779; }
+.app-shell--pos .pos-cart__top .ui-button--ghost:hover:not(:disabled) { background:#f1f5f9; color:#1e293b; }
+.app-shell--pos .pos-cart__top .ui-badge--success { background:#e8f7ef; color:#16794d; }
+.app-shell--pos .pos-customer-picker__heading { color:#64748b; }
+.app-shell--pos .pos-customer-picker [data-slot="autocomplete-input"] { height:42px; border-color:#d8e0ea; background:#fbfcfe; }
+.app-shell--pos .pos-customer-picker [data-slot="autocomplete-input"]:focus-visible { border-color:#2563eb; box-shadow:0 0 0 3px rgb(37 99 235 / .12); }
+.app-shell--pos .pos-customer-results { overflow:hidden; border:1px solid #dce3ec; border-radius:11px; background:#fff; box-shadow:0 18px 42px rgb(15 23 42 / .16); }
+.app-shell--pos .pos-customer-results [data-slot="autocomplete-item"] { display:grid; min-height:47px; align-content:center; border-radius:7px; padding:8px 10px; }
+.app-shell--pos .pos-customer-results [data-slot="autocomplete-item"] > span { display:grid; gap:2px; }
+.app-shell--pos .pos-customer-results strong { color:#1e293b; font-size:12px; }
+.app-shell--pos .pos-customer-results small { color:#7a8798; font-size:10px; }
+.app-shell--pos .pos-customer-chip { border:1px solid #bfdbfe; border-radius:8px; background:#eff6ff; color:#1d4ed8; }
+.app-shell--pos .pos-credit-alert { border-color:#cde7d8; background:#f2fbf6; color:#16794d; }
+.app-shell--pos .pos-cart-scroll { min-height:0; height:100%; }
+.app-shell--pos .pos-cart-scroll [data-slot="scroll-area-viewport"] { height:100%; overscroll-behavior:contain; }
+.app-shell--pos .pos-cart-scroll [data-slot="scroll-area-scrollbar"] { width:9px; padding:1px; }
+.app-shell--pos .pos-cart-scroll [data-slot="scroll-area-thumb"] { background:#94a3b8; }
+.app-shell--pos .pos-cart-lines { max-height:none; padding-right:3px; }
+.app-shell--pos .pos-cart-lines article { border:1px solid #e8edf3; border-radius:11px; background:#fff; padding:10px; }
+.app-shell--pos .pos-cart-lines article:hover { border-color:#d7e2f2; background:#fbfdff; }
+.app-shell--pos .pos-cart-lines article strong { color:#253044; font-size:12px; }
+.app-shell--pos .pos-cart-lines small { color:#788598; }
+.app-shell--pos .pos-reui-line-controls { grid-template-columns:minmax(132px,1fr) auto; align-items:center; }
+.app-shell--pos .pos-reui-line-controls [data-slot="number-field"] { min-width:132px; }
+.app-shell--pos .pos-reui-line-controls [data-slot="number-field-group"] { height:38px; border-color:#dbe3ed; background:#f8fafc; }
+.app-shell--pos .pos-reui-line-controls [data-slot="number-field-decrement"],
+.app-shell--pos .pos-reui-line-controls [data-slot="number-field-increment"] { min-width:38px; color:#475569; }
+.app-shell--pos .pos-reui-line-controls [data-slot="number-field-decrement"]:hover,
+.app-shell--pos .pos-reui-line-controls [data-slot="number-field-increment"]:hover { background:#e7effb; color:#2563eb; }
+.app-shell--pos .pos-reui-line-controls > strong { color:#172554; font-size:12px; }
+.app-shell--pos .pos-cart-empty { min-height:180px; border:1px dashed #d5deea; border-radius:12px; background:#fbfcfe; }
+.app-shell--pos .pos-settlement { gap:10px; margin:0 -16px -16px; border-top:1px solid var(--line); background:#fff; padding:13px 16px 16px; }
+.app-shell--pos .pos-cart-summary { border:1px solid #dce8fa; border-radius:12px; background:#f4f8ff; padding:11px 12px; }
+.app-shell--pos .pos-cart-summary dl > div { color:#637085; }
+.app-shell--pos .pos-cart-summary dd { color:#334155; }
+.app-shell--pos .pos-cart-summary__total { border-top-color:#ccdaef; }
+.app-shell--pos .pos-cart-summary__total dt,
+.app-shell--pos .pos-cart-summary__total dd { color:#172554!important; font-size:23px!important; }
+.app-shell--pos .pos-sale-type { border:1px solid #e2e8f0; border-radius:10px; background:#f8fafc; padding:3px; }
+.app-shell--pos .pos-sale-type button { min-height:38px; color:#64748b; }
+.app-shell--pos .pos-sale-type button.is-active { background:#fff; color:#1e293b; box-shadow:0 1px 3px rgb(15 23 42 / .14); }
+.app-shell--pos .pos-checkout .ui-select,
+.app-shell--pos .pos-received .ui-input { border-color:#d6dee9; background:#fff; }
+.app-shell--pos .pos-payment-context { background:#f8fafc; color:#334155; }
+.app-shell--pos .pos-change-summary { border-color:#dce8fa; background:#f4f8ff; color:#475569; }
+.app-shell--pos .pos-change-summary strong { color:#1d4ed8; }
+.app-shell--pos .pos-checkout > .ui-button--primary { border-radius:11px; background:#2563eb; box-shadow:0 8px 18px rgb(37 99 235 / .22); }
+.app-shell--pos .pos-checkout > .ui-button--primary:hover:not(:disabled) { background:#1d4ed8; box-shadow:0 10px 22px rgb(37 99 235 / .28); }
+.app-shell--pos .pos-quick-cash { border-top-color:#e7ebf0; }
+.app-shell--pos .pos-quick-cash button { border-color:#dbe3ed; color:#475569; }
+.app-shell--pos .pos-quick-cash button[aria-pressed="true"] { border-color:#2563eb; background:#2563eb; }
+@media (max-width:1180px) {
+  .app-shell--pos .pos-shell { grid-template-columns:minmax(0,1.1fr) minmax(360px,.9fr); gap:12px; }
+  .app-shell--pos .pos-catalog { padding:15px; }
+  .app-shell--pos .pos-cart { padding:14px; }
+  .app-shell--pos .pos-settlement { margin:0 -14px -14px; padding:12px 14px 14px; }
+}
+@media (max-width:900px) {
+  .app-shell--pos .pos-shell { grid-template-columns:1fr; }
+  .app-shell--pos .pos-catalog { min-height:0; }
+  .app-shell--pos .pos-product-list [data-slot="scroll-area-viewport"] { max-height:460px; }
+  .app-shell--pos .pos-cart { position:static; height:auto; }
+  .app-shell--pos .pos-cart-scroll { height:320px; }
+}
+
+/* POS fixed workstation: the browser page never scrolls at desktop sizes.
+   The catalog and cart own their individual scroll areas, keeping checkout
+   controls visible for long cashier sessions. */
+@media (min-width:901px) {
+  .app-shell--pos {
+    display:grid;
+    grid-template-rows:auto minmax(0,1fr);
+    height:100dvh;
+    overflow:hidden;
+  }
+  .app-shell--pos > .main-panel {
+    display:grid;
+    grid-template-rows:auto minmax(0,1fr);
+    min-height:0;
+    overflow:hidden;
+  }
+  .app-shell--pos .content-frame.pos-page {
+    display:flex;
+    min-height:0;
+    width:100vw;
+    max-width:100vw;
+    height:100%;
+    flex-direction:column;
+    overflow:hidden;
+    padding-bottom:18px;
+  }
+  .app-shell--pos .pos-reui-heading,
+  .app-shell--pos .pos-connection-status,
+  .app-shell--pos .pos-sync-conflict,
+  .app-shell--pos .pos-workspace-tabs { flex:0 0 auto; }
+  .app-shell--pos .pos-reui-tabs,
+  .app-shell--pos [data-slot="tabs-content"] { min-height:0; }
+  .app-shell--pos .pos-reui-tabs {
+    width:calc(100vw - (2 * clamp(20px,3.2vw,56px)));
+    max-width:none;
+    flex:1 1 auto;
+  }
+  .app-shell--pos [data-slot="tabs-content"] {
+    flex:1 1 auto;
+    overflow:hidden;
+  }
+  .app-shell--pos [data-slot="tabs-content"]:not(.pos-shell) { display:flex; }
+  .app-shell--pos .pos-shell {
+    grid-template-columns:minmax(0,1fr) minmax(360px,430px);
+    min-height:0;
+    width:100%;
+    height:100%;
+  }
+  .app-shell--pos .pos-catalog,
+  .app-shell--pos .pos-cart {
+    min-height:0;
+    height:100%;
+  }
+  .app-shell--pos .pos-cart {
+    position:static;
+    top:auto;
+    overflow:hidden;
+  }
+  .app-shell--pos .pos-product-list [data-slot="scroll-area-viewport"],
+  .app-shell--pos .pos-cart-scroll [data-slot="scroll-area-viewport"] { max-height:none; }
+}
+
+/* ReUI NumberField is intrinsically full-width. In a cart line it is a compact
+   quantity control, so its operating width must not participate in the text column. */
+@media (min-width:701px) {
+  .app-shell--pos .pos-cart-lines article { grid-template-columns:minmax(0,1fr) max-content; }
+  .app-shell--pos .pos-reui-line-controls {
+    display:flex;
+    flex:0 0 auto;
+    width:auto;
+    min-width:0;
+    align-items:center;
+    gap:8px;
+  }
+  .app-shell--pos .pos-reui-line-controls [data-slot="number-field"] {
+    width:132px;
+    min-width:132px;
+    flex:0 0 132px;
+  }
+  .app-shell--pos .pos-reui-line-controls > strong {
+    min-width:72px;
+    margin-inline-start:0;
+    text-align:end;
+    white-space:nowrap;
+  }
+}
+
+/* The workstation keeps its split flow down to landscape tablet width. Each
+   range changes only density and panel allocation; neither creates page scroll. */
+@media (min-width:1381px) {
+  .app-shell--pos .pos-shell { grid-template-columns:minmax(0,1.08fr) minmax(560px,.92fr); }
+  .app-shell--pos .pos-cart-lines article { min-height:62px; padding:8px 10px; }
+}
+@media (min-width:1141px) and (max-width:1380px) {
+  .app-shell--pos .content-frame.pos-page { padding-inline:24px; }
+  .app-shell--pos .pos-reui-tabs { width:calc(100vw - 48px); }
+  .app-shell--pos .pos-shell { grid-template-columns:minmax(0,1.08fr) minmax(460px,.92fr); gap:14px; }
+  .app-shell--pos .pos-catalog { padding:16px; }
+  .app-shell--pos .pos-cart { padding:14px; gap:12px; }
+  .app-shell--pos .pos-settlement { margin:0 -14px -14px; padding:12px 14px 14px; }
+}
+@media (min-width:901px) and (max-width:1140px) {
+  .app-shell--pos .content-frame.pos-page { padding:14px 16px 16px; }
+  .app-shell--pos .pos-reui-tabs { width:calc(100vw - 32px); }
+  .app-shell--pos .pos-reui-heading { margin-bottom:10px; }
+  .app-shell--pos .pos-shell { grid-template-columns:minmax(0,1fr) 352px; gap:12px; }
+  .app-shell--pos .pos-catalog { padding:14px; }
+  .app-shell--pos .pos-cart { padding:13px; gap:10px; }
+  .app-shell--pos .pos-settlement { margin:0 -13px -13px; padding:11px 13px 13px; }
+  .app-shell--pos .pos-cart__top { gap:8px; padding-bottom:10px; }
+  .app-shell--pos .pos-cart__actions { gap:3px; }
+  .app-shell--pos .pos-cart__top .ui-button--ghost { min-height:30px; padding-inline:6px; font-size:10px; }
+  .app-shell--pos .pos-product-row { grid-template-columns:minmax(0,1fr) 40px; }
+  .app-shell--pos .pos-product-stock { min-width:40px; padding-inline:0; font-size:0; }
+  .app-shell--pos .pos-product-stock svg { width:15px; height:15px; }
+  .app-shell--pos .pos-cart-summary__total dt,
+  .app-shell--pos .pos-cart-summary__total dd { font-size:21px!important; }
+  .app-shell--pos .pos-sale-type button { min-height:36px; font-size:10px; }
+  .app-shell--pos .pos-payment-context { min-height:40px; padding:8px; }
+}
+
+/* POS header: a single, compact operational strip. It deliberately retains
+   the existing neutral palette while grouping context, administration and user actions. */
+@media (min-width:701px) {
+  .app-shell--pos .global-header {
+    display:flex;
+    justify-content:flex-start;
+    gap:18px;
+  }
+  .app-shell--pos .brand-lockup { flex:0 0 auto; }
+  .app-shell--pos .global-header__controls {
+    flex:0 1 auto;
+    gap:10px;
+  }
+  .app-shell--pos .global-session-switchers {
+    min-width:0;
+    padding:3px;
+  }
+  .app-shell--pos .global-company-selector .ui-select {
+    min-width:210px;
+    max-width:min(300px,30vw);
+  }
+  .app-shell--pos .global-session-switchers .role-preview--compact .ui-select {
+    min-width:76px;
+  }
+  .app-shell--pos .global-create-company {
+    min-height:42px;
+    border-radius:10px;
+    padding-inline:14px;
+    white-space:nowrap;
+  }
+  .app-shell--pos .global-role-badge { margin-inline-start:2px; }
+  .app-shell--pos .global-header__controls .icon-button { margin-inline-start:2px; }
+}
+@media (min-width:701px) and (max-width:1140px) {
+  .app-shell--pos .global-header { gap:12px; padding-inline:16px; }
+  .app-shell--pos .global-company-selector .ui-select { min-width:180px; max-width:220px; }
+  .app-shell--pos .global-create-company { padding-inline:10px; }
+}
+
+/* ReUI control cluster in the POS shell. The existing selectors keep their
+   business behavior; ReUI supplies the searchable company picker and actions. */
+.app-shell--pos .global-session-switchers { gap:7px; border:0; background:transparent; padding:0; }
+.app-shell--pos .pos-company-switcher {
+  display:block;
+  width:min(300px,30vw);
+  overflow:visible;
+  border:1px solid #dedad2;
+  border-radius:10px;
+  background:#fff;
+  padding:3px;
+  box-shadow:none;
+  --card-spacing:0px;
+}
+.app-shell--pos .pos-company-switcher [data-slot="autocomplete-input"] {
+  height:34px;
+  border:0;
+  background:transparent;
+  padding-inline:10px 32px;
+  color:#3f4d47;
+  font-size:11px;
+  font-weight:650;
+}
+.app-shell--pos .pos-company-switcher [data-slot="autocomplete-input"]:focus-visible {
+  box-shadow:0 0 0 2px rgb(37 99 235 / .18);
+}
+.app-shell--pos .pos-company-switcher [data-slot="autocomplete-trigger"] { right:10px; color:#64748b; }
+.app-shell--pos .pos-company-results { min-width:var(--anchor-width); border-color:#dce3ec; }
+.app-shell--pos .pos-company-results [data-slot="autocomplete-item"] { align-items:center; justify-content:space-between; min-height:36px; padding-inline:10px; font-size:11px; }
+.app-shell--pos .pos-company-results small { color:#64748b; font-size:9px; font-weight:700; }
+.app-shell--pos .global-create-company[data-slot="button"] { height:42px; border-color:#d8dee8; background:#fff; color:#334155; box-shadow:none; }
+.app-shell--pos .global-create-company[data-slot="button"]:hover { border-color:#bfcad9; background:#f8fafc; }
+.app-shell--pos .pos-signout[data-slot="button"] { color:#64748b; }
+.app-shell--pos .pos-signout[data-slot="button"]:hover { background:#f1f5f9; color:#1e293b; }
+@media (min-width:701px) and (max-width:1140px) {
+  .app-shell--pos .pos-company-switcher { width:220px; }
+}
+
+/* Sales workspace — ReUI-inspired black, white and blue system.
+   Scoped outside POS so its dedicated workstation layout stays untouched. */
+.app-shell--sales:not(.app-shell--pos) {
+  --accent:#2563eb;
+  --accent-strong:#1d4ed8;
+  --accent-soft:#eff6ff;
+  --surface:#fff;
+  --surface-subtle:#f8fafc;
+  --line:#e2e8f0;
+  --line-strong:#cbd5e1;
+  --ink:#111827;
+  --muted:#64748b;
+  --focus:#2563eb;
+  background:#f8fafc;
+}
+.app-shell--sales:not(.app-shell--pos) .global-header {
+  min-height:64px;
+  border-bottom-color:#e2e8f0;
+  background:rgb(255 255 255 / .96);
+  box-shadow:0 1px 0 rgb(15 23 42 / .03);
+}
+.app-shell--sales:not(.app-shell--pos) .brand-mark { background:#111827; box-shadow:none; }
+.app-shell--sales:not(.app-shell--pos) .brand-copy strong { color:#111827; }
+.app-shell--sales:not(.app-shell--pos) .global-session-switchers { gap:7px; border:0; background:transparent; padding:0; }
+.app-shell--sales:not(.app-shell--pos) .pos-company-switcher { display:block; width:min(280px,28vw); overflow:visible; border:1px solid #e2e8f0; border-radius:10px; background:#fff; padding:3px; box-shadow:none; --card-spacing:0px; }
+.app-shell--sales:not(.app-shell--pos) .pos-company-switcher [data-slot="autocomplete-input"] { height:34px; border:0; background:transparent; padding-inline:10px 32px; color:#334155; font-size:11px; font-weight:650; }
+.app-shell--sales:not(.app-shell--pos) .pos-company-switcher [data-slot="autocomplete-input"]:focus-visible { box-shadow:0 0 0 2px rgb(37 99 235 / .18); }
+.app-shell--sales:not(.app-shell--pos) .pos-company-switcher [data-slot="autocomplete-trigger"] { right:10px; color:#64748b; }
+.app-shell--sales:not(.app-shell--pos) .pos-company-results { min-width:var(--anchor-width); border-color:#dbeafe; }
+.app-shell--sales:not(.app-shell--pos) .pos-company-results [data-slot="autocomplete-item"] { align-items:center; justify-content:space-between; min-height:36px; padding-inline:10px; font-size:11px; }
+.app-shell--sales:not(.app-shell--pos) .pos-company-results small { color:#64748b; font-size:9px; font-weight:700; }
+.app-shell--sales:not(.app-shell--pos) .global-create-company[data-slot="button"] { height:42px; border-color:#dbe3ef; background:#fff; color:#334155; box-shadow:none; }
+.app-shell--sales:not(.app-shell--pos) .global-create-company[data-slot="button"]:hover { border-color:#bfdbfe; background:#f8fbff; }
+.app-shell--sales:not(.app-shell--pos) .pos-signout[data-slot="button"] { color:#64748b; }
+.app-shell--sales:not(.app-shell--pos) .pos-signout[data-slot="button"]:hover { background:#eff6ff; color:#1d4ed8; }
+.app-shell--sales:not(.app-shell--pos) .context-nav {
+  top:64px;
+  min-height:52px;
+  gap:10px;
+  border-bottom-color:#e2e8f0;
+  background:rgb(255 255 255 / .94);
+}
+.app-shell--sales:not(.app-shell--pos) .context-nav__item {
+  min-height:52px;
+  border-bottom-width:2px;
+  color:#64748b;
+  font-size:12px;
+  font-weight:650;
+}
+.app-shell--sales:not(.app-shell--pos) .context-nav__item:hover { color:#111827; background:#f8fafc; }
+.app-shell--sales:not(.app-shell--pos) .context-nav__item.is-active { border-bottom-color:#2563eb; color:#1d4ed8; }
+.app-shell--sales:not(.app-shell--pos) .content-frame { width:min(1440px,100%); padding:30px clamp(20px,3vw,44px) 44px; }
+.app-shell--sales:not(.app-shell--pos) .page-heading { align-items:flex-end; gap:20px; margin-bottom:22px; }
+.app-shell--sales:not(.app-shell--pos) .page-heading h1 { color:#111827; font-size:clamp(28px,2.55vw,38px); font-weight:700; letter-spacing:-.05em; }
+.app-shell--sales:not(.app-shell--pos) .page-heading p { max-width:660px; color:#64748b; }
+.app-shell--sales:not(.app-shell--pos) .eyebrow { color:#2563eb; font-weight:750; letter-spacing:.1em; }
+.app-shell--sales:not(.app-shell--pos) .ui-button--primary,
+.app-shell--sales:not(.app-shell--pos) button[data-variant="default"] { background:#111827; box-shadow:none; }
+.app-shell--sales:not(.app-shell--pos) .ui-button--primary:hover,
+.app-shell--sales:not(.app-shell--pos) button[data-variant="default"]:hover { background:#1f2937; }
+.app-shell--sales:not(.app-shell--pos) .data-toolbar {
+  min-height:56px;
+  align-items:center;
+  gap:9px;
+  margin:0 0 16px;
+  border:1px solid #e2e8f0;
+  border-radius:14px;
+  background:#fff;
+  padding:8px;
+  box-shadow:0 1px 2px rgb(15 23 42 / .025);
+}
+.app-shell--sales:not(.app-shell--pos) .data-toolbar__search {
+  flex:1 1 320px;
+  width:auto;
+  min-height:38px;
+  border-color:transparent;
+  border-radius:9px;
+  background:#f8fafc;
+}
+.app-shell--sales:not(.app-shell--pos) .data-toolbar__search:focus-within { border-color:#93c5fd; box-shadow:0 0 0 3px rgb(37 99 235 / .12); }
+.app-shell--sales:not(.app-shell--pos) .data-toolbar__filters { flex:0 1 auto; gap:7px; }
+.app-shell--sales:not(.app-shell--pos) .data-toolbar__filters .ui-select { min-height:38px; border-color:#e2e8f0; border-radius:9px; background:#fff; }
+.app-shell--sales:not(.app-shell--pos) .data-toolbar__meta { margin-left:auto; padding-inline:5px; font-size:11px; font-variant-numeric:tabular-nums; }
+.app-shell--sales:not(.app-shell--pos) .table-wrap,
+.app-shell--sales:not(.app-shell--pos) .data-table-wrap,
+.app-shell--sales:not(.app-shell--pos) [data-slot="card"] { border-color:#e2e8f0; box-shadow:0 1px 2px rgb(15 23 42 / .03); }
+.app-shell--sales:not(.app-shell--pos) table { background:#fff; }
+.app-shell--sales:not(.app-shell--pos) table thead { background:#f8fafc; }
+.app-shell--sales:not(.app-shell--pos) table th { color:#64748b; font-size:10px; font-weight:750; letter-spacing:.065em; text-transform:uppercase; }
+.app-shell--sales:not(.app-shell--pos) table tbody tr { transition:background-color 120ms ease; }
+.app-shell--sales:not(.app-shell--pos) table tbody tr:hover { background:#f8fbff; }
+.app-shell--sales:not(.app-shell--pos) .table-subline,
+.app-shell--sales:not(.app-shell--pos) table small,
+.app-shell--sales:not(.app-shell--pos) .sales-history small { color:#7b879b; font-size:11px; }
+.app-shell--sales:not(.app-shell--pos) .data-state { border-style:dashed; border-color:#cbd5e1; border-radius:16px; background:#fff; }
+.app-shell--sales:not(.app-shell--pos) .sales-history { gap:8px; }
+.app-shell--sales:not(.app-shell--pos) .sales-history > button {
+  min-height:68px;
+  border-color:#e2e8f0;
+  border-radius:12px;
+  background:#fff;
+  box-shadow:0 1px 2px rgb(15 23 42 / .025);
+}
+.app-shell--sales:not(.app-shell--pos) .sales-history > button:hover { border-color:#bfdbfe; background:#f8fbff; box-shadow:0 4px 14px rgb(37 99 235 / .07); }
+.app-shell--sales:not(.app-shell--pos) .sales-history > button > span:last-child { gap:12px; }
+.app-shell--sales:not(.app-shell--pos) .sales-history b,
+.app-shell--sales:not(.app-shell--pos) .number-cell { font-variant-numeric:tabular-nums; }
+.app-shell--sales:not(.app-shell--pos) .sales-reui-tabs { margin:0 0 18px; }
+.app-shell--sales:not(.app-shell--pos) .sales-reui-tabs [data-slot="tabs-list"] { border:1px solid #e2e8f0; border-radius:11px; background:#f8fafc; padding:4px; }
+.app-shell--sales:not(.app-shell--pos) .sales-reui-tabs [data-slot="tabs-trigger"] { min-height:34px; border-radius:8px; color:#64748b; font-size:12px; font-weight:700; }
+.app-shell--sales:not(.app-shell--pos) .sales-reui-tabs [data-slot="tabs-trigger"][data-state="active"] { background:#fff; color:#111827; box-shadow:0 1px 3px rgb(15 23 42 / .1); }
+.app-shell--sales:not(.app-shell--pos) .sales-quote-form,
+.app-shell--sales:not(.app-shell--pos) .sales-quote-detail__body,
+.app-shell--sales:not(.app-shell--pos) .sales-order-detail__body { color:#111827; }
+.app-shell--sales:not(.app-shell--pos) .receivables-overview { gap:10px; }
+.app-shell--sales:not(.app-shell--pos) .receivables-overview article {
+  border-color:#e2e8f0 !important;
+  border-radius:12px !important;
+  background:#fff !important;
+  box-shadow:0 1px 2px rgb(15 23 42 / .025);
+}
+.app-shell--sales:not(.app-shell--pos) .receivables-overview article.is-warning { border-color:#bfdbfe !important; background:#eff6ff !important; }
+.app-shell--sales:not(.app-shell--pos) .receivables-overview strong { color:#111827; font-size:20px; }
+.app-shell--sales:not(.app-shell--pos) .receivables-search,
+.app-shell--sales:not(.app-shell--pos) .receivables-payment,
+.app-shell--sales:not(.app-shell--pos) .cash-card { border-color:#e2e8f0; border-radius:16px; box-shadow:0 1px 2px rgb(15 23 42 / .035); }
+.app-shell--sales:not(.app-shell--pos) .receivables-customer-list > button.is-selected,
+.app-shell--sales:not(.app-shell--pos) .receivables-customer-list > button:hover { border-color:#bfdbfe; background:#eff6ff; }
+.app-shell--sales:not(.app-shell--pos) .receivables-debtor-card { border-color:#dbeafe; background:#f8fbff; }
+.app-shell--sales:not(.app-shell--pos) .cash-session-context { border-color:#e2e8f0; background:#e2e8f0; }
+.app-shell--sales:not(.app-shell--pos) .cash-live-summary article { border-color:#e2e8f0; border-radius:12px; box-shadow:0 1px 2px rgb(15 23 42 / .025); }
+.app-shell--sales:not(.app-shell--pos) .cash-live-summary .is-warning { border-color:#bfdbfe; background:#eff6ff; }
+.app-shell--sales:not(.app-shell--pos) .cash-card--info { background:#fbfdff; }
+.app-shell--sales:not(.app-shell--pos) .cash-card--info > svg { color:#2563eb; }
+.app-shell--sales:not(.app-shell--pos) .cash-count-total { border-top-color:#e2e8f0; }
+.app-shell--sales:not(.app-shell--pos) .settings-workspace,
+.app-shell--sales:not(.app-shell--pos) .first-sale-setup { border-color:#e2e8f0; box-shadow:0 1px 2px rgb(15 23 42 / .025); }
+.app-shell--sales:not(.app-shell--pos) :is(button,input,textarea,[role="combobox"]):focus-visible { outline:2px solid #2563eb; outline-offset:2px; }
+
+@media (min-width:701px) and (max-width:1160px) {
+  .app-shell--sales:not(.app-shell--pos) .content-frame { padding:24px 20px 36px; }
+  .app-shell--sales:not(.app-shell--pos) .receivables-overview,
+  .app-shell--sales:not(.app-shell--pos) .cash-session-context,
+  .app-shell--sales:not(.app-shell--pos) .cash-live-summary { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+  .app-shell--sales:not(.app-shell--pos) .receivables-layout,
+  .app-shell--sales:not(.app-shell--pos) .cash-workspace { grid-template-columns:minmax(0,1fr); max-width:none; }
+  .app-shell--sales:not(.app-shell--pos) .cash-card { min-width:0; }
+  .app-shell--sales:not(.app-shell--pos) .data-toolbar__search { flex-basis:260px; }
+  .app-shell--sales:not(.app-shell--pos) .pos-company-switcher { width:210px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-shell--sales:not(.app-shell--pos) table tbody tr { transition:none; }
+}
+
+/* ReUI form controls: compact, searchable and consistent across Sales. */
+.app-shell--sales .reui-compact-select { display:block; min-width:0; }
+.app-shell--sales .reui-compact-select [data-slot="autocomplete-input"],
+.app-shell--sales .sales-reui-autocomplete [data-slot="autocomplete-input"] {
+  min-height:40px;
+  border-color:#dbe3ef;
+  border-radius:10px;
+  background:#fff;
+  color:#172033;
+  font-size:12px;
+  font-weight:650;
+  box-shadow:none;
+}
+.app-shell--sales .reui-compact-select [data-slot="autocomplete-input"] { padding-inline:11px 34px; }
+.app-shell--sales .reui-compact-select [data-slot="autocomplete-input"]:focus-visible,
+.app-shell--sales .sales-reui-autocomplete [data-slot="autocomplete-input"]:focus-visible { border-color:#60a5fa; box-shadow:0 0 0 3px rgb(37 99 235 / .12); }
+.app-shell--sales .reui-compact-select [data-slot="autocomplete-trigger"],
+.app-shell--sales .sales-reui-autocomplete [data-slot="autocomplete-trigger"] { right:11px; color:#64748b; }
+.app-shell--sales .reui-compact-select__content,
+.app-shell--sales .sales-reui-autocomplete [data-slot="autocomplete-popup"] {
+  overflow:hidden;
+  border:1px solid #dbe3ef;
+  border-radius:12px;
+  background:#fff;
+  box-shadow:0 12px 28px rgb(15 23 42 / .14),0 2px 6px rgb(15 23 42 / .05);
+}
+.app-shell--sales .reui-compact-select__content [data-slot="autocomplete-item"],
+.app-shell--sales .sales-reui-autocomplete [data-slot="autocomplete-item"] { min-height:36px; align-items:center; justify-content:space-between; gap:10px; padding:8px 10px; color:#334155; font-size:12px; font-weight:600; }
+.app-shell--sales .reui-compact-select__content [data-slot="autocomplete-item"][data-highlighted],
+.app-shell--sales .sales-reui-autocomplete [data-slot="autocomplete-item"][data-highlighted] { color:#1d4ed8; }
+.app-shell--sales .reui-compact-select__content svg { width:15px; color:#2563eb; }
+.app-shell--sales .sales-filter-select { width:190px; }
+.app-shell--sales:not(.app-shell--pos) .ui-select {
+  min-height:38px;
+  min-width:0;
+  border-color:#dbe3ef;
+  border-radius:10px;
+  background:#fff;
+  padding:7px 10px;
+  color:#334155;
+  font-size:12px;
+  font-weight:650;
+  box-shadow:none;
+}
+.app-shell--sales:not(.app-shell--pos) .ui-select[data-state="open"] { border-color:#60a5fa; box-shadow:0 0 0 3px rgb(37 99 235 / .12); }
+.app-shell--sales:not(.app-shell--pos) .ui-select__content { border-color:#dbe3ef; border-radius:12px; background:#fff; box-shadow:0 12px 28px rgb(15 23 42 / .14),0 2px 6px rgb(15 23 42 / .05); padding:4px; }
+.app-shell--sales:not(.app-shell--pos) .ui-select__item { min-height:36px; border-radius:8px; padding:7px 9px; color:#334155; font-size:12px; font-weight:600; }
+.app-shell--sales:not(.app-shell--pos) .ui-select__item[data-highlighted] { background:#eff6ff; color:#1d4ed8; }
+.app-shell--sales:not(.app-shell--pos) .ui-select__item[data-state="checked"] { color:#1d4ed8; }
+.app-shell--sales:not(.app-shell--pos) .sales-quote-drawer {
+  width:min(900px,calc(100vw - 48px));
+  border-color:#dbe3ef;
+  border-radius:18px;
+  background:#fff;
+  padding:26px;
+  box-shadow:0 24px 70px rgb(15 23 42 / .18);
+}
+.app-shell--sales:not(.app-shell--pos) .sales-quote-drawer > h2 { color:#111827; font-size:24px; font-weight:700; letter-spacing:-.04em; }
+.app-shell--sales:not(.app-shell--pos) .quote-composer { gap:18px; }
+.app-shell--sales:not(.app-shell--pos) .quote-composer__context { gap:14px; }
+.app-shell--sales:not(.app-shell--pos) .quote-composer__context .ui-field { gap:6px; }
+.app-shell--sales:not(.app-shell--pos) .quote-composer__context .ui-field > span { color:#475569; font-size:11px; font-weight:750; letter-spacing:.04em; text-transform:uppercase; }
+.app-shell--sales:not(.app-shell--pos) .quote-composer__context .ui-input { min-height:40px; border-color:#dbe3ef; border-radius:10px; background:#fff; font-size:13px; font-weight:650; box-shadow:none; }
+.app-shell--sales:not(.app-shell--pos) .quote-composer__customer { gap:12px; border-color:#dbe3ef; border-radius:14px; background:#f8fbff; padding:14px; }
+.app-shell--sales:not(.app-shell--pos) .quote-composer__customer header strong { color:#172033; font-size:14px; }
+.app-shell--sales:not(.app-shell--pos) .quote-composer__customer header small { font-size:11px; }
+.app-shell--sales:not(.app-shell--pos) .sales-reui-autocomplete { position:relative; display:block; }
+.app-shell--sales:not(.app-shell--pos) .sales-reui-autocomplete [data-slot="autocomplete-popup"] { z-index:30; }
+.app-shell--sales:not(.app-shell--pos) .sales-reui-autocomplete [data-slot="autocomplete-item"] span { display:grid; gap:2px; min-width:0; }
+.app-shell--sales:not(.app-shell--pos) .sales-reui-autocomplete [data-slot="autocomplete-item"] strong { overflow:hidden; font-size:12px; text-overflow:ellipsis; white-space:nowrap; }
+.app-shell--sales:not(.app-shell--pos) .sales-reui-autocomplete [data-slot="autocomplete-item"] small { color:#64748b; font-size:10px; }
+.app-shell--sales:not(.app-shell--pos) .sales-quote-lines { gap:12px; border-top-color:#e2e8f0; padding-top:18px; }
+.app-shell--sales:not(.app-shell--pos) .sales-quote-lines__list article { border-color:#e2e8f0; border-radius:10px; background:#fff; padding:10px; }
+.app-shell--sales:not(.app-shell--pos) .quote-composer__summary { border-color:#bfdbfe; border-radius:14px; background:#eff6ff; padding:15px; }
+.app-shell--sales:not(.app-shell--pos) .quote-composer__summary > span,.app-shell--sales:not(.app-shell--pos) .quote-composer__summary > p { color:#1d4ed8; }
+.app-shell--sales:not(.app-shell--pos) .quote-composer__summary > strong { color:#111827; font-size:24px; }
+.app-shell--sales:not(.app-shell--pos) .quote-composer > footer { position:sticky; bottom:-4px; z-index:2; margin:0 -4px -4px; border-top-color:#e2e8f0; background:rgb(255 255 255 / .96); padding:14px 4px 4px; backdrop-filter:blur(10px); }
+.app-shell--sales:not(.app-shell--pos) .sales-ticket-detail-dialog { width:min(760px,calc(100vw - 48px)); border-color:#dbe3ef; border-radius:18px; box-shadow:0 24px 70px rgb(15 23 42 / .2); }
+.app-shell--sales:not(.app-shell--pos) .historical-ticket-preview { gap:0; border:1px solid #e2e8f0; border-radius:14px; background:#fff; padding:4px 16px; }
+.app-shell--sales:not(.app-shell--pos) .historical-ticket-preview > div:first-child { padding-block:14px; }
+.app-shell--pos .pos-deferred-sale { grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; border-color:#dbeafe; border-radius:14px; background:#f8fbff; padding:12px; }
+.app-shell--pos .pos-deferred-explainer { grid-column:1 / -1; border-color:#dbeafe; border-radius:10px; background:#fff; padding:10px; }
+.app-shell--pos .pos-deferred-explainer > svg { color:#2563eb; }
+.app-shell--pos .pos-deferred-sale > label { color:#334155; font-size:10px; letter-spacing:.04em; text-transform:uppercase; }
+.app-shell--pos .pos-deferred-sale label .ui-input { border-color:#bfdbfe; border-radius:10px; background:#fff; color:#111827; }
+.app-shell--pos .pos-deferred-balance { align-self:stretch; border:1px solid #dbeafe; border-radius:10px; background:#eff6ff; padding:10px; }
+.app-shell--pos .pos-deferred-balance strong { color:#1e3a8a; }
+@media (min-width:701px) and (max-width:980px) {
+  .app-shell--sales:not(.app-shell--pos) .sales-quote-drawer { width:calc(100vw - 32px); top:16px; right:16px; height:calc(100dvh - 32px); }
+  .app-shell--sales .sales-filter-select { width:174px; }
+}
+
+/* POS held carts use the same focused workstation language. */
+.app-shell--pos .pos-held-workspace { border:1px solid #dbe3ef; border-radius:18px; background:#fff; padding:18px; box-shadow:0 10px 26px rgb(15 23 42 / .05); }
+.app-shell--pos .pos-held-heading h2 { color:#111827; }
+.app-shell--pos .pos-held-heading p { color:#64748b; }
+.app-shell--pos .pos-held-list { border-color:#e2e8f0; border-radius:12px; background:#fff; padding-inline:10px; }
+.app-shell--pos .pos-held-list > button { border-bottom-color:#e2e8f0; color:#172033; }
+.app-shell--pos .pos-held-list > button:hover { background:#f8fbff; }
+.app-shell--pos .pos-held-list > button.is-selected { background:#eff6ff; box-shadow:none; color:#1d4ed8; }
+.app-shell--pos .pos-held-list__main small,.app-shell--pos .pos-held-list__meta small { color:#64748b; }
+.app-shell--pos .pos-held-detail { border:1px solid #dbeafe; border-radius:14px; background:#f8fbff; }
+.app-shell--pos .pos-held-detail__lines { border:1px solid #e2e8f0; background:#fff; box-shadow:none; }
+.app-shell--pos .pos-held-detail__total { border-top-color:#dbeafe; }
+@media (min-width:701px) and (max-width:1100px) {
+  .app-shell--pos .pos-held-layout { grid-template-columns:minmax(280px,.82fr) minmax(0,1.18fr); }
+}
+
+/* Sales ReUI pass — final visual contract for desktop and tablet.
+   Keep the transaction logic untouched while giving every Sales control the
+   same black / white / blue language. */
+.app-shell--sales {
+  --accent:#2563eb;
+  --accent-strong:#1d4ed8;
+  --accent-soft:#eff6ff;
+  --focus:#2563eb;
+  --success:#2563eb;
+  --success-soft:#eff6ff;
+  --surface:#fff;
+  --surface-subtle:#f8fafc;
+  --surface-strong:#eaf1ff;
+  --canvas:#f8fafc;
+  --ink:#111827;
+  --muted:#64748b;
+  --muted-soft:#94a3b8;
+  --line:#e2e8f0;
+  --line-strong:#cbd5e1;
+  background:var(--canvas);
+}
+
+.app-shell--sales .sales-reui-button {
+  min-height:40px;
+  border-radius:10px;
+  font-weight:700;
+  transition-property:background-color,border-color,color,box-shadow,transform;
+  transition-duration:140ms;
+}
+.app-shell--sales .sales-reui-button.ui-button--primary,
+.app-shell--sales .sales-reui-button[data-variant="default"] { border-color:#2563eb; background:#2563eb; color:#fff; box-shadow:0 4px 12px rgb(37 99 235 / .16); }
+.app-shell--sales .sales-reui-button.ui-button--primary:hover:not(:disabled),
+.app-shell--sales .sales-reui-button[data-variant="default"]:hover:not(:disabled) { border-color:#1d4ed8; background:#1d4ed8; box-shadow:0 6px 16px rgb(37 99 235 / .22); }
+.app-shell--sales .sales-reui-button.ui-button--secondary,
+.app-shell--sales .sales-reui-button[data-variant="outline"] { border-color:#cbd5e1; background:#fff; color:#1f2937; box-shadow:none; }
+.app-shell--sales .sales-reui-button.ui-button--secondary:hover:not(:disabled),
+.app-shell--sales .sales-reui-button[data-variant="outline"]:hover:not(:disabled) { border-color:#93c5fd; background:#f8fbff; color:#1d4ed8; }
+.app-shell--sales .sales-reui-button.ui-button--ghost:hover:not(:disabled) { background:#eff6ff; color:#1d4ed8; }
+.app-shell--sales .sales-reui-button:active:not(:disabled) { transform:scale(.96); }
+
+.app-shell--sales .sales-reui-input {
+  min-height:40px;
+  height:auto;
+  border-color:#dbe3ef;
+  border-radius:10px;
+  background:#fff;
+  color:#111827;
+  box-shadow:none;
+}
+.app-shell--sales .sales-reui-input:focus,
+.app-shell--sales .sales-reui-input:focus-visible { border-color:#60a5fa; box-shadow:0 0 0 3px rgb(37 99 235 / .13); outline:0; }
+.app-shell--sales .sales-reui-input::placeholder { color:#94a3b8; }
+.app-shell--sales input.sales-reui-input[type="number"] { appearance:textfield; }
+.app-shell--sales input.sales-reui-input[type="number"]::-webkit-inner-spin-button,
+.app-shell--sales input.sales-reui-input[type="number"]::-webkit-outer-spin-button { margin:0; appearance:none; }
+.app-shell--sales .sales-reui-select { display:block; width:100%; min-width:0; }
+.app-shell--sales .sales-reui-select [data-slot="autocomplete-input"] {
+  min-height:40px;
+  height:auto;
+  border-color:#dbe3ef;
+  border-radius:10px;
+  background:#fff;
+  color:#172033;
+  font-size:13px;
+  font-weight:650;
+  box-shadow:none;
+}
+.app-shell--sales .sales-reui-select [data-slot="autocomplete-input"]:focus-visible { border-color:#60a5fa; box-shadow:0 0 0 3px rgb(37 99 235 / .13); }
+.app-shell--sales .sales-reui-select [data-slot="autocomplete-trigger"] { right:11px; color:#64748b; }
+.app-shell--sales .sales-reui-select [data-slot="autocomplete-popup"],
+.app-shell--sales .sales-reui-select .reui-compact-select__content { z-index:80; border:1px solid #dbe3ef; border-radius:12px; background:#fff; box-shadow:0 18px 42px rgb(15 23 42 / .16); }
+.app-shell--sales .sales-reui-select [data-slot="autocomplete-item"] { min-height:38px; padding:8px 10px; color:#334155; font-size:12px; font-weight:650; }
+.app-shell--sales .sales-reui-select [data-slot="autocomplete-item"][data-highlighted] { color:#1d4ed8; }
+
+/* POS catalog/search: cards are the interaction surface, not unbounded text. */
+.app-shell--pos .pos-catalog { border:1px solid #dbe3ef; background:#fff; box-shadow:0 8px 26px rgb(15 23 42 / .05); }
+.app-shell--pos .pos-search { min-height:58px; border-color:#bfdbfe; border-radius:14px; background:#fff; box-shadow:inset 0 1px 0 #fff; }
+.app-shell--pos .pos-search:focus-within { border-color:#2563eb; background:#fff; box-shadow:0 0 0 3px rgb(37 99 235 / .14),0 8px 22px rgb(37 99 235 / .08); }
+.app-shell--pos .pos-search > svg { color:#2563eb; }
+.app-shell--pos .pos-search .sales-reui-input { min-height:56px; border-color:transparent; background:transparent; font-size:15px; }
+.app-shell--pos .pos-search .sales-reui-input:focus-visible { border-color:transparent; box-shadow:none; }
+.app-shell--pos .pos-search kbd { border-color:#bfdbfe; background:#eff6ff; color:#1d4ed8; }
+.app-shell--pos .pos-product-row { grid-template-columns:minmax(0,1fr) 132px; gap:8px; }
+.app-shell--pos .pos-product { min-height:74px; border:1px solid #e2e8f0 !important; border-radius:14px; background:#fff; box-shadow:0 1px 2px rgb(15 23 42 / .03); }
+.app-shell--pos .pos-product:hover { border-color:#93c5fd !important; background:#f8fbff; box-shadow:0 6px 18px rgb(37 99 235 / .08); }
+.app-shell--pos .pos-product:focus-visible { border-color:#2563eb !important; outline:2px solid #2563eb; outline-offset:2px; background:#eff6ff; }
+.app-shell--pos .pos-product::after { background:#eff6ff; color:#2563eb; }
+.app-shell--pos .pos-product:hover::after { background:#dbeafe; }
+.app-shell--pos .pos-product strong,.app-shell--pos .pos-product__right b { color:#111827; }
+.app-shell--pos .pos-product small,.app-shell--pos .pos-product__right > small { color:#64748b; }
+.app-shell--pos .pos-product__right em { border:1px solid #bfdbfe; background:#eff6ff; color:#1d4ed8; }
+.app-shell--pos .pos-product-stock { min-height:40px; border:1px solid #dbe3ef; border-radius:10px; background:#fff; color:#1d4ed8; }
+.app-shell--pos .pos-product-stock:hover:not(:disabled) { border-color:#93c5fd; background:#eff6ff; color:#1d4ed8; }
+
+/* POS checkout controls. */
+.app-shell--pos .pos-cart { border:1px solid #dbe3ef; background:#fff; box-shadow:0 12px 38px rgb(15 23 42 / .10); }
+.app-shell--pos .pos-cart__top { background:#111827; }
+.app-shell--pos .pos-cart__top .ui-badge--success { border-color:#bfdbfe; background:#eff6ff; color:#1d4ed8; }
+.app-shell--pos .pos-customer-picker .sales-reui-input { min-height:42px; }
+.app-shell--pos .pos-customer-chip { border:1px solid #bfdbfe; background:#eff6ff; color:#1d4ed8; }
+.app-shell--pos .pos-customer-results { border:1px solid #dbe3ef; background:#fff; }
+.app-shell--pos .pos-customer-results button:hover { background:#eff6ff; }
+.app-shell--pos .pos-cart-lines article { border:1px solid #e2e8f0; background:#f8fafc; }
+.app-shell--pos .pos-line-controls button { border:1px solid #bfdbfe; background:#eff6ff; color:#1d4ed8; }
+.app-shell--pos .pos-line-controls button:hover:not(:disabled) { background:#dbeafe; }
+.app-shell--pos .pos-quantity-input.sales-reui-input { border-color:#bfdbfe; }
+.app-shell--pos .pos-cart-summary { border:1px solid #dbeafe; background:#eff6ff; }
+.app-shell--pos .pos-cart-summary__total dt,.app-shell--pos .pos-cart-summary__total dd { color:#111827 !important; }
+.app-shell--pos .pos-sale-type { border:1px solid #dbe3ef; background:#f8fafc; }
+.app-shell--pos .pos-sale-type button { color:#64748b; }
+.app-shell--pos .pos-sale-type button:hover:not(.is-active) { background:#eff6ff; color:#1d4ed8; }
+.app-shell--pos .pos-sale-type button.is-active { background:#2563eb; color:#fff; box-shadow:0 3px 8px rgb(37 99 235 / .2); }
+.app-shell--pos .pos-payment-context { border:1px solid #dbeafe; background:#eff6ff; color:#1d4ed8; }
+.app-shell--pos .pos-change-summary { border:1px solid #dbeafe; background:#f8fbff; }
+.app-shell--pos .pos-change-summary strong,.app-shell--pos .pos-deferred-balance strong { color:#1d4ed8; }
+.app-shell--pos .pos-quick-cash button { border-color:#bfdbfe; color:#1d4ed8; }
+.app-shell--pos .pos-quick-cash button:hover:not(:disabled) { border-color:#60a5fa; background:#eff6ff; }
+.app-shell--pos .pos-quick-cash button[aria-pressed="true"] { border-color:#2563eb; background:#2563eb; color:#fff; }
+.app-shell--pos .pos-checkout > .sales-reui-button.ui-button--primary { border-color:#2563eb; background:#2563eb; box-shadow:0 10px 22px rgb(37 99 235 / .22); }
+.app-shell--pos .pos-checkout > .sales-reui-button.ui-button--primary:hover:not(:disabled) { border-color:#1d4ed8; background:#1d4ed8; }
+.app-shell--pos .pos-price-tier-note,.app-shell--pos .pos-price-tier-note.is-manual { color:#1d4ed8; }
+.app-shell--pos .pos-deferred-sale { border-color:#dbeafe; background:#f8fbff; }
+.app-shell--pos .pos-deferred-explainer { border-color:#dbeafe; }
+.app-shell--pos .pos-deferred-sale label .sales-reui-input { border-color:#bfdbfe; }
+
+/* Held sales: every row is a complete, bordered ReUI-like card. */
+.app-shell--pos .pos-held-workspace { border:1px solid #dbe3ef; border-radius:18px; background:#fff; }
+.app-shell--pos .pos-held-list { gap:10px; border:0; background:transparent; padding:2px; }
+.app-shell--pos .pos-held-list > button { min-height:86px; border:1px solid #dbe3ef !important; border-radius:14px !important; background:#fff !important; box-shadow:0 1px 2px rgb(15 23 42 / .04); padding:14px; }
+.app-shell--pos .pos-held-list > button:hover { border-color:#93c5fd !important; background:#f8fbff !important; box-shadow:0 5px 15px rgb(37 99 235 / .08); }
+.app-shell--pos .pos-held-list > button.is-selected { margin:0; border-color:#2563eb !important; background:#eff6ff !important; box-shadow:0 5px 15px rgb(37 99 235 / .08); }
+.app-shell--pos .pos-held-list > button:last-of-type { border-bottom:1px solid #dbe3ef; }
+.app-shell--pos .pos-held-list__main strong,.app-shell--pos .pos-held-list__meta b { color:#111827; }
+.app-shell--pos .pos-held-list__main small,.app-shell--pos .pos-held-list__meta small { color:#64748b; }
+.app-shell--pos .pos-held-list__meta em { border:1px solid #bfdbfe; background:#eff6ff; color:#1d4ed8; }
+.app-shell--pos .pos-held-detail { border:1px solid #dbeafe; background:#f8fbff; }
+.app-shell--pos .pos-held-detail__lines { border:1px solid #e2e8f0; background:#fff; }
+.app-shell--pos .pos-held-detail__total { border-top-color:#bfdbfe; }
+
+/* Customers and every Sales form use ReUI controls with blue state, never green. */
+.app-shell--sales .sales-form > label,
+.app-shell--sales .sales-form__row label,
+.app-shell--sales .customer-master-grid > label,
+.app-shell--sales .customer-master-form > label,
+.app-shell--sales .ui-field > span { color:#475569; }
+.app-shell--sales .sales-reui-field { display:grid; gap:6px; min-width:0; }
+.app-shell--sales .sales-reui-field > [data-slot="label"] { color:#475569; font-size:11px; font-weight:700; }
+.app-shell--sales .sales-reui-field > small { color:#64748b; font-size:10px; }
+.app-shell--sales .sales-form textarea,
+.app-shell--sales .customer-master-form textarea,
+.app-shell--sales .ui-field textarea { border-color:#dbe3ef; border-radius:10px; background:#fff; color:#111827; }
+.app-shell--sales .sales-form textarea:focus,
+.app-shell--sales .customer-master-form textarea:focus,
+.app-shell--sales .ui-field textarea:focus { border-color:#60a5fa; box-shadow:0 0 0 3px rgb(37 99 235 / .13); outline:0; }
+.app-shell--sales .sales-checkbox input,
+.app-shell--sales input[type="checkbox"],
+.app-shell--sales input[type="radio"] { accent-color:#2563eb; }
+.app-shell--sales .customer-master-tabs-reui { width:100%; }
+.app-shell--sales .customer-master-tabs-reui [data-slot="tabs-list"] { width:100%; overflow-x:auto; border-bottom:1px solid #e2e8f0; border-radius:0; background:transparent; padding:0; }
+.app-shell--sales .customer-master-tabs-reui [data-slot="tabs-trigger"] { min-height:44px; flex:0 0 auto; border-radius:0; color:#64748b; font-size:12px; font-weight:700; }
+.app-shell--sales .customer-master-tabs-reui [data-slot="tabs-trigger"][data-state="active"] { color:#1d4ed8; }
+.app-shell--sales .customer-master-form .sales-reui-input,
+.app-shell--sales .customer-master-form .sales-reui-select { min-width:0; }
+.app-shell--sales .customer-record-list article { border-color:#dbe3ef; background:#fff; }
+.app-shell--sales .customer-record-list article:hover { border-color:#93c5fd; background:#f8fbff; }
+.app-shell--sales .customer-financial-summary { border-color:#bfdbfe; background:#eff6ff; }
+.app-shell--sales .inline-status { border-color:#dbeafe; background:#f8fbff; color:#475569; }
+.app-shell--sales .inline-status strong { color:#1d4ed8; }
+.app-shell--sales .customer-credit-summary .settings-note { color:#64748b; }
+.app-shell--sales .ui-drawer.customer-drawer { border-color:#dbe3ef; box-shadow:0 24px 70px rgb(15 23 42 / .18); }
+.app-shell--sales .ui-badge--success,.app-shell--sales .ui-badge--info { border-color:#bfdbfe; background:#eff6ff; color:#1d4ed8; }
+
+/* Inline legacy links inherit the same ReUI button treatment. */
+.app-shell--sales :is(.ui-button--secondary,.button--secondary) { border-color:#cbd5e1; background:#fff; color:#1f2937; }
+.app-shell--sales :is(.ui-button--secondary,.button--secondary):hover { border-color:#93c5fd; background:#f8fbff; color:#1d4ed8; }
+
+@media (min-width:701px) and (max-width:1160px) {
+  .app-shell--pos .pos-shell { grid-template-columns:minmax(0,1fr) minmax(350px,.78fr); }
+  .app-shell--pos .pos-held-layout { grid-template-columns:minmax(260px,.8fr) minmax(0,1.2fr); }
+  .app-shell--sales .customer-master-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+
+@media (max-width:700px) {
+  .app-shell--pos .pos-product-row { grid-template-columns:minmax(0,1fr) 44px; }
+  .app-shell--pos .pos-product-stock { width:44px; min-width:44px; border:1px solid #dbe3ef; }
+  .app-shell--pos .pos-held-list > button { min-height:78px; }
+  .app-shell--sales .customer-master-grid { grid-template-columns:1fr; }
+}
+
+/* Sales drawers and dialogs are Radix portals, so they sit outside the shell.
+   Scope the same ReUI blue/white/black contract to their surface class too. */
+:is(.ui-drawer.sales-quote-drawer,.ui-drawer.sales-quote-detail,.ui-drawer.customer-drawer,.ui-dialog.sales-ticket-detail-dialog,.ui-dialog.quote-document-dialog) {
+  --accent:#2563eb;
+  --accent-strong:#1d4ed8;
+  --accent-soft:#eff6ff;
+  --focus:#2563eb;
+  --success:#2563eb;
+  --success-soft:#eff6ff;
+  --surface:#fff;
+  --surface-subtle:#f8fafc;
+  --ink:#111827;
+  --muted:#64748b;
+  --line:#e2e8f0;
+  --line-strong:#cbd5e1;
+  border-color:#dbe3ef;
+  background:#fff;
+  color:#111827;
+}
+
+:is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer,.sales-ticket-detail-dialog,.quote-document-dialog) .sales-reui-button,
+:is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer,.sales-ticket-detail-dialog,.quote-document-dialog) .ui-button {
+  border-radius:10px;
+  font-weight:700;
+}
+:is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer,.sales-ticket-detail-dialog,.quote-document-dialog) .sales-reui-button.ui-button--primary,
+:is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer,.sales-ticket-detail-dialog,.quote-document-dialog) .sales-reui-button[data-variant="default"],
+:is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer,.sales-ticket-detail-dialog,.quote-document-dialog) .ui-button--primary {
+  border-color:#2563eb;
+  background:#2563eb;
+  color:#fff;
+}
+:is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer,.sales-ticket-detail-dialog,.quote-document-dialog) .sales-reui-button.ui-button--primary:hover:not(:disabled),
+:is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer,.sales-ticket-detail-dialog,.quote-document-dialog) .sales-reui-button[data-variant="default"]:hover:not(:disabled),
+:is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer,.sales-ticket-detail-dialog,.quote-document-dialog) .ui-button--primary:hover:not(:disabled) {
+  border-color:#1d4ed8;
+  background:#1d4ed8;
+}
+:is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer,.sales-ticket-detail-dialog,.quote-document-dialog) .sales-reui-button.ui-button--secondary,
+:is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer,.sales-ticket-detail-dialog,.quote-document-dialog) .sales-reui-button[data-variant="outline"],
+:is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer,.sales-ticket-detail-dialog,.quote-document-dialog) .ui-button--secondary {
+  border-color:#cbd5e1;
+  background:#fff;
+  color:#1f2937;
+}
+:is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer,.sales-ticket-detail-dialog,.quote-document-dialog) .sales-reui-button.ui-button--secondary:hover:not(:disabled),
+:is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer,.sales-ticket-detail-dialog,.quote-document-dialog) .sales-reui-button[data-variant="outline"]:hover:not(:disabled),
+:is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer,.sales-ticket-detail-dialog,.quote-document-dialog) .ui-button--secondary:hover:not(:disabled) {
+  border-color:#93c5fd;
+  background:#f8fbff;
+  color:#1d4ed8;
+}
+:is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer,.sales-ticket-detail-dialog,.quote-document-dialog) .sales-reui-input,
+:is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer,.sales-ticket-detail-dialog,.quote-document-dialog) .ui-input,
+:is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer,.sales-ticket-detail-dialog,.quote-document-dialog) [data-slot="autocomplete-input"] {
+  min-height:40px;
+  border-color:#dbe3ef;
+  border-radius:10px;
+  background:#fff;
+  color:#111827;
+  box-shadow:none;
+}
+:is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer,.sales-ticket-detail-dialog,.quote-document-dialog) .sales-reui-input:focus-visible,
+:is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer,.sales-ticket-detail-dialog,.quote-document-dialog) .ui-input:focus-visible,
+:is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer,.sales-ticket-detail-dialog,.quote-document-dialog) [data-slot="autocomplete-input"]:focus-visible {
+  border-color:#60a5fa;
+  box-shadow:0 0 0 3px rgb(37 99 235 / .13);
+  outline:0;
+}
+
+/* Quote composer: replace the old green treatment on the portal surface. */
+.sales-quote-drawer .sales-quote-form__notice {
+  border-color:#bfdbfe;
+  background:#eff6ff;
+  color:#475569;
+}
+.sales-quote-drawer .quote-composer__customer {
+  border-color:#dbe3ef;
+  background:#f8fbff;
+}
+.sales-quote-drawer .quote-composer__customer-chip,
+.sales-quote-drawer .quote-composer__summary {
+  border-color:#bfdbfe;
+  background:#eff6ff;
+}
+.sales-quote-drawer .quote-composer__customer-chip strong,
+.sales-quote-drawer .quote-composer__summary > span,
+.sales-quote-drawer .quote-composer__summary > p { color:#1d4ed8; }
+.sales-quote-drawer .quote-composer__customer-chip small,
+.sales-quote-drawer .quote-composer__summary > small { color:#64748b; }
+.sales-quote-drawer .sales-quote-lines__empty { border-color:#cbd5e1; background:#fff; color:#64748b; }
+.sales-quote-drawer .sales-quote-lines__list article { border-color:#e2e8f0; background:#fff; }
+.sales-quote-drawer .sales-quote-lines__list article:hover { border-color:#93c5fd; background:#f8fbff; }
+
+/* Customer detail and ticket dialogs keep summaries/statuses blue, not green. */
+.customer-drawer .customer-financial-summary,
+.customer-drawer .inline-status {
+  border-color:#bfdbfe;
+  background:#eff6ff;
+  color:#475569;
+}
+.customer-drawer .customer-financial-summary strong,
+.customer-drawer .inline-status strong { color:#1d4ed8; }
+.customer-drawer [data-slot="tabs-list"] { border-bottom-color:#e2e8f0; background:#fff; }
+.customer-drawer [data-slot="tabs-trigger"][data-state="active"] { color:#1d4ed8; }
+.customer-drawer .ui-field > span,
+.customer-drawer .sales-reui-field > [data-slot="label"] { color:#475569; }
+.sales-quote-detail .sales-quote-approval-record,
+.sales-quote-detail .sales-quote-availability,
+.sales-quote-detail .sales-quote-detail__totals { border-color:#bfdbfe; background:#eff6ff; }
+.sales-quote-detail .sales-quote-approval-record { color:#1d4ed8; }
+.sales-quote-detail .sales-quote-detail__totals b,
+.sales-quote-detail .sales-quote-detail__body > header > b { color:#111827; }
+.sales-ticket-detail-dialog .historical-ticket-preview { border-color:#e2e8f0; background:#fff; }
+.sales-ticket-detail-dialog .ui-badge--success,
+.sales-ticket-detail-dialog .ui-badge--warning,
+.sales-ticket-detail-dialog .ui-badge--info { border-color:#bfdbfe; background:#eff6ff; color:#1d4ed8; }
+
+/* Adapter controls can also appear in smaller Sales dialogs whose legacy
+   wrapper predates the shell class; keep those controls on the same palette. */
+.sales-reui-button.ui-button--primary,
+.sales-reui-button[data-variant="default"] { border-color:#2563eb; background:#2563eb; color:#fff; }
+.sales-reui-button.ui-button--primary:hover:not(:disabled),
+.sales-reui-button[data-variant="default"]:hover:not(:disabled) { border-color:#1d4ed8; background:#1d4ed8; }
+.sales-reui-button.ui-button--secondary,
+.sales-reui-button[data-variant="outline"] { border-color:#cbd5e1; background:#fff; color:#1f2937; }
+.sales-reui-button.ui-button--secondary:hover:not(:disabled),
+.sales-reui-button[data-variant="outline"]:hover:not(:disabled) { border-color:#93c5fd; background:#f8fbff; color:#1d4ed8; }
+.sales-reui-input { border-color:#dbe3ef; background:#fff; color:#111827; box-shadow:none; }
+.sales-reui-input:focus-visible { border-color:#60a5fa; box-shadow:0 0 0 3px rgb(37 99 235 / .13); outline:0; }
+.sales-reui-select [data-slot="autocomplete-input"] { border-color:#dbe3ef; background:#fff; color:#172033; box-shadow:none; }
+.sales-reui-select [data-slot="autocomplete-input"]:focus-visible { border-color:#60a5fa; box-shadow:0 0 0 3px rgb(37 99 235 / .13); outline:0; }
+.sales-form textarea,
+.collection-policy-form textarea,
+.collection-action-form textarea,
+.collection-review-form textarea,
+.sales-quote-follow-up-form textarea,
+.sale-return-form textarea { border-color:#dbe3ef; border-radius:10px; background:#fff; color:#111827; }
+.sales-form textarea:focus-visible,
+.collection-policy-form textarea:focus-visible,
+.collection-action-form textarea:focus-visible,
+.collection-review-form textarea:focus-visible,
+.sales-quote-follow-up-form textarea:focus-visible,
+.sale-return-form textarea:focus-visible { border-color:#60a5fa; box-shadow:0 0 0 3px rgb(37 99 235 / .13); outline:0; }
+
+/* POS checkout header: dark is structural, never a low-contrast disabled wash. */
+.app-shell--pos .pos-cart__top {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:10px 14px;
+  align-items:start;
+  margin:0;
+  border:1px solid #0f172a;
+  border-radius:14px;
+  background:#111827;
+  padding:14px;
+  color:#f8fafc;
+}
+.app-shell--pos .pos-cart__top .eyebrow { color:#cbd5e1; }
+.app-shell--pos .pos-cart__top h2 { color:#f8fafc; font-size:20px; }
+.app-shell--pos .pos-cart__top .pos-cart-discount {
+  border-color:rgb(251 191 36 / .42);
+  background:rgb(251 191 36 / .14);
+  color:#fde68a;
+}
+.app-shell--pos .pos-cart__session-status {
+  align-self:center;
+  border:1px solid #cbd5e1 !important;
+  background:#f8fafc !important;
+  color:#1f2937 !important;
+  white-space:nowrap;
+}
+.app-shell--pos .pos-cart__actions {
+  grid-column:1 / -1;
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:4px;
+  padding-top:8px;
+  border-top:1px solid rgb(203 213 225 / .22);
+}
+.app-shell--pos .pos-cart__top .sales-reui-button.ui-button--ghost {
+  min-height:36px;
+  border-color:transparent;
+  background:transparent;
+  padding-inline:8px;
+  color:#e2e8f0;
+}
+.app-shell--pos .pos-cart__top .sales-reui-button.ui-button--ghost:hover:not(:disabled) {
+  border-color:rgb(203 213 225 / .28);
+  background:rgb(255 255 255 / .10);
+  color:#fff;
+}
+.app-shell--pos .pos-cart__top .sales-reui-button.ui-button--ghost:disabled {
+  opacity:.68;
+  color:#cbd5e1;
+}
+.app-shell--pos .pos-cart__top .sales-reui-button:focus-visible {
+  outline:2px solid #f8fafc;
+  outline-offset:2px;
+}
+
+@media (min-width:701px) and (max-width:980px) {
+  .app-shell--pos .pos-cart__top { gap:8px 10px; padding:12px; }
+  .app-shell--pos .pos-cart__actions { gap:2px; padding-top:6px; }
+  .app-shell--pos .pos-cart__top .sales-reui-button.ui-button--ghost { min-height:34px; padding-inline:6px; font-size:11px; }
+}
+
+/* Sales palette: blue is reserved for an action, selection, or focus.
+   Readiness and completed states stay neutral; amber carries attention. */
+.app-shell--sales {
+  --primary:#2563eb;
+  --primary-foreground:#fff;
+  --ring:#2563eb;
+  --success:#334155;
+  --success-soft:#f8fafc;
+  --warning:#d97706;
+  --warning-soft:#fff7ed;
+  --info:#475569;
+  --info-soft:#f8fafc;
+}
+
+/* ReUI's utility class is emitted after the legacy Sales skin. This final
+   component rule intentionally owns the primary-action fill for Sales. */
+.app-shell--sales .sales-reui-button.ui-button--primary,
+.app-shell--sales button.sales-reui-button[data-variant="default"] {
+  border-color:#2563eb !important;
+  background:#2563eb !important;
+  color:#fff !important;
+}
+.app-shell--sales .sales-reui-button.ui-button--primary:hover:not(:disabled),
+.app-shell--sales button.sales-reui-button[data-variant="default"]:hover:not(:disabled) {
+  border-color:#1d4ed8 !important;
+  background:#1d4ed8 !important;
+}
+
+.app-shell--sales :is(.ui-badge--success,.ui-badge--info) {
+  border:1px solid #e2e8f0;
+  background:#f8fafc;
+  color:#334155;
+}
+.app-shell--sales .ui-badge--warning {
+  border:1px solid #fed7aa;
+  background:#fff7ed;
+  color:#b45309;
+}
+.app-shell--sales :is(.inline-status.is-success,.sales-missing-sku-continuation-review,.sales-missing-sku-continuation-dialog,.cash-card--info > ul,.price-management__tax-ready,.inventory-replenishment-created) {
+  border-color:#e2e8f0;
+  background:#f8fafc;
+  color:#475569;
+}
+.app-shell--sales :is(.sales-missing-sku-continuation-summary,.sales-missing-sku-continuation-dialog,.inventory-replenishment-created strong) { color:#475569; }
+.app-shell--sales :is(.settings-note.is-warning,.volume-discount-note.is-draft,.price-management__tax-warning,.receivables-overview article.is-warning,.cash-live-summary .is-warning,.pos-state-warning,.collection-policy,.collection-policy-empty) {
+  border-color:#fed7aa;
+  background:#fff7ed;
+  color:#92400e;
+}
+.app-shell--sales :is(.settings-note.is-warning,.volume-discount-note.is-draft,.price-management__tax-warning p,.pos-state-warning strong,.pos-state-warning p) { color:#92400e; }
+
+/* Search and inventory availability are supporting information, never calls to action. */
+.app-shell--pos .pos-search { border-color:#cbd5e1; }
+.app-shell--pos .pos-search > svg { color:#64748b; }
+.app-shell--pos .pos-search kbd {
+  border-color:#e2e8f0;
+  background:#f8fafc;
+  color:#475569;
+}
+.app-shell--pos .pos-product:hover { border-color:#cbd5e1 !important; background:#f8fafc; box-shadow:0 5px 14px rgb(15 23 42 / .06); }
+.app-shell--pos .pos-product__right em {
+  border-color:#e2e8f0;
+  background:#f8fafc;
+  color:#475569;
+}
+.app-shell--pos .pos-product__right em.is-low {
+  border-color:#fed7aa;
+  background:#fff7ed;
+  color:#b45309;
+}
+.app-shell--pos .pos-product-stock {
+  border-color:#cbd5e1;
+  background:#fff;
+  color:#334155;
+}
+.app-shell--pos .pos-product-stock:hover:not(:disabled) {
+  border-color:#94a3b8;
+  background:#f8fafc;
+  color:#111827;
+}
+.app-shell--pos .pos-blocked-local { color:#b45309; }
+.app-shell--pos .pos-blocked-remote { color:#475569; }
+
+/* POS keeps the payment decision legible without turning every panel blue. */
+.app-shell--pos .pos-customer-chip,
+.app-shell--pos .pos-credit-alert,
+.app-shell--pos .pos-payment-context,
+.app-shell--pos .pos-change-summary,
+.app-shell--pos .pos-deferred-sale,
+.app-shell--pos .pos-held-detail,
+.app-shell--pos .pos-cart-summary {
+  border-color:#e2e8f0;
+  background:#f8fafc;
+  color:#334155;
+}
+.app-shell--pos .pos-payment-context > svg,
+.app-shell--pos .pos-change-summary > svg,
+.app-shell--pos .pos-change-summary strong,
+.app-shell--pos .pos-deferred-balance strong { color:#334155; }
+.app-shell--pos .pos-customer-results button:hover { background:#f8fafc; }
+.app-shell--pos .pos-line-controls button {
+  border-color:#cbd5e1;
+  background:#fff;
+  color:#334155;
+}
+.app-shell--pos .pos-line-controls button:hover:not(:disabled) { border-color:#94a3b8; background:#f8fafc; color:#111827; }
+.app-shell--pos .pos-quantity-input.sales-reui-input { border-color:#cbd5e1; }
+.app-shell--pos .pos-sale-type button:hover:not(.is-active) { background:#f8fafc; color:#111827; }
+.app-shell--pos .pos-quick-cash button { border-color:#cbd5e1; color:#334155; }
+.app-shell--pos .pos-quick-cash button:hover:not(:disabled) { border-color:#94a3b8; background:#f8fafc; color:#111827; }
+.app-shell--pos .pos-price-tier-note { color:#475569; }
+.app-shell--pos .pos-price-tier-note.is-manual { color:#b45309; }
+.app-shell--pos .pos-held-list > button:hover { border-color:#cbd5e1 !important; background:#f8fafc !important; box-shadow:0 5px 14px rgb(15 23 42 / .06); }
+.app-shell--pos .pos-held-list__meta em { border-color:#e2e8f0; background:#f8fafc; color:#475569; }
+
+/* Sales lists, quotations, collections, and customer summaries share neutral
+   surfaces. Their selected item is the sole blue state in each group. */
+.app-shell--sales :is(.customer-financial-summary,.inline-status,.sales-quote-detail .sales-quote-approval-record,.sales-quote-detail .sales-quote-availability,.sales-quote-detail .sales-quote-detail__totals,.sales-quote-drawer .quote-composer__customer-chip,.sales-quote-drawer .quote-composer__summary,.sales-quote-drawer .sales-quote-form__notice,.sales-quote-drawer .quote-composer__customer,.volume-discount-settings,.fifo-preview,.receivables-debtor-card) {
+  border-color:#e2e8f0;
+  background:#f8fafc;
+  color:#475569;
+}
+.app-shell--sales :is(.customer-financial-summary strong,.inline-status strong,.sales-quote-drawer .quote-composer__customer-chip strong,.sales-quote-drawer .quote-composer__summary > span,.sales-quote-drawer .quote-composer__summary > p,.sales-quote-detail .sales-quote-approval-record,.volume-discount-grid fieldset > strong,.volume-discount-note,.fifo-preview__heading > strong) { color:#334155; }
+.app-shell--sales :is(.collection-case-list > button,.collection-proposal-list article,.receivables-customer-list > button,.pos-prep-assortments > button) { border-color:transparent; background:#fff; }
+.app-shell--sales :is(.collection-case-list > button:hover,.collection-case-list > button.is-selected,.collection-proposal-list article:hover,.receivables-customer-list > button:hover,.receivables-customer-list > button.is-selected,.pos-prep-assortments > button.is-selected) {
+  border-color:#bfdbfe;
+  background:#eff6ff;
+}
+.app-shell--sales :is(.collection-policy.is-configured,.collection-policy__steps li.is-done > span) { border-color:#bfdbfe; background:#eff6ff; color:#1d4ed8; }
+
+/* Portaled Sales dialogs do not inherit the shell tokens. Keep the exact same
+   semantic palette without leaking it into other modules. */
+:is(.ui-drawer.sales-quote-drawer,.ui-drawer.sales-quote-detail,.ui-drawer.customer-drawer,.ui-dialog.sales-ticket-detail-dialog,.ui-dialog.quote-document-dialog) {
+  --primary:#2563eb;
+  --primary-foreground:#fff;
+  --ring:#2563eb;
+  --success:#334155;
+  --success-soft:#f8fafc;
+  --warning:#d97706;
+  --warning-soft:#fff7ed;
+  --info:#475569;
+  --info-soft:#f8fafc;
+}
+:is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer,.sales-ticket-detail-dialog,.quote-document-dialog) :is(.ui-badge--success,.ui-badge--info) {
+  border-color:#e2e8f0;
+  background:#f8fafc;
+  color:#334155;
+}
+:is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer,.sales-ticket-detail-dialog,.quote-document-dialog) .ui-badge--warning {
+  border-color:#fed7aa;
+  background:#fff7ed;
+  color:#b45309;
+}
+:is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer) :is(.customer-financial-summary,.inline-status,.sales-quote-approval-record,.sales-quote-availability,.sales-quote-detail__totals,.quote-composer__customer-chip,.quote-composer__summary,.sales-quote-form__notice,.quote-composer__customer) {
+  border-color:#e2e8f0;
+  background:#f8fafc;
+  color:#475569;
+}
+:is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer) :is(.customer-financial-summary strong,.inline-status strong,.quote-composer__customer-chip strong,.quote-composer__summary > span,.quote-composer__summary > p,.sales-quote-approval-record) { color:#334155; }

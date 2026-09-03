@@ -3,8 +3,10 @@
 import { AlertTriangle, Banknote, Boxes, CreditCard, ExternalLink, PackageCheck, RefreshCw, ShoppingCart } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { DataPagination, DataRefreshStatus, DataState, DataToolbar, InteractiveTableRow, Table } from "@/app/components/ui/data";
-import { Badge, Button, CurrencyInput, Drawer, Field, Input, Modal, Select, useToast } from "@/app/components/ui/primitives";
+import { DataRefreshStatus, DataState, InteractiveTableRow, Table } from "@/app/components/ui/data";
+import { Badge, Drawer, Modal, useToast } from "@/app/components/ui/primitives";
+import { SalesButton as Button, SalesCurrencyInput as CurrencyInput, SalesDataPagination as DataPagination, SalesDataToolbar as DataToolbar, SalesField as Field, SalesInput as Input, SalesSelect as Select } from "@/app/components/reui/sales-controls";
+import { CompactSelect } from "@/components/reui/compact-select";
 import { OperationIdempotencyKeys } from "@/app/lib/operation-idempotency";
 import { getSupabaseClient } from "@/app/lib/supabase";
 
@@ -175,9 +177,9 @@ export function SalesOrdersView({ companyId, permissions }: { companyId: string;
   const inventoryReady = detail?.inventory_reservation_status === "reserved" || detail?.inventory_reservation_status === "consumed";
   const shortages = detail?.lines.filter((line) => Number(line.shortage_quantity) > 0) ?? [];
 
-  return <div className="content-frame sales-orders">
+  return <div className="content-frame sales-orders sales-reui-page">
     <div className="page-heading"><div><span className="eyebrow">Cumplimiento de pedidos</span><h1>Pedidos</h1><p>Administra anticipos, saldos y entregas de pedidos creados desde POS o cotizaciones aceptadas.</p></div><Link className="ui-button ui-button--primary ui-button--md" href="/satrapy/ventas/pos"><ShoppingCart size={16} /> Iniciar en POS</Link></div>
-    <DataToolbar search={query} onSearchChange={(value) => { setQuery(value); setPage(1); }} placeholder="Buscar folio o cliente" results={total} activeFilters={status === "all" ? 0 : 1} onClear={() => { setStatus("all"); setPage(1); }} filters={<Select ariaLabel="Filtrar pedidos por entrega" value={status} onValueChange={(value) => { setStatus(value); setPage(1); }} options={[{ value: "all", label: "Todos los pedidos" }, { value: "open", label: "Pendientes de entrega" }, { value: "completed", label: "Entregados" }, { value: "cancelled", label: "Cancelados" }]} />} />
+    <DataToolbar search={query} onSearchChange={(value) => { setQuery(value); setPage(1); }} placeholder="Buscar folio o cliente" results={total} activeFilters={status === "all" ? 0 : 1} onClear={() => { setStatus("all"); setPage(1); }} filters={<CompactSelect className="sales-filter-select" ariaLabel="Filtrar pedidos por entrega" value={status} onValueChange={(value) => { setStatus(value as OrderStatus | "all"); setPage(1); }} options={[{ value: "all", label: "Todos los pedidos" }, { value: "open", label: "Pendientes de entrega" }, { value: "completed", label: "Entregados" }, { value: "cancelled", label: "Cancelados" }]} />} />
     <DataRefreshStatus loading={loading} hasData={rows.length} />
     <DataState loading={loading && !rows.length} error={error} hasData={rows.length} emptyTitle="Aún no hay pedidos." empty="Inicia una entrega posterior en POS o crea un pedido desde una cotización aceptada.">
       <Table><thead><tr><th>Pedido</th><th>Cliente</th><th>Entrega esperada</th><th>Pago</th><th>Surtido</th><th className="number-cell">Saldo</th></tr></thead><tbody>{rows.map((order) => <InteractiveTableRow key={order.id} label={"Abrir pedido " + order.folio} onActivate={() => void openDetail(order.id)}><td><strong className="mono">{order.folio}</strong><small>{order.location_name}</small></td><td>{order.customer_name}</td><td>{order.expected_delivery_date ? new Date(order.expected_delivery_date + "T12:00:00").toLocaleDateString("es-MX") : "Por acordar"}</td><td><Badge tone={order.outstanding_amount <= 0 ? "success" : order.paid_amount > 0 ? "info" : "neutral"}>{paymentLabel(order)}</Badge><small>{money(order.paid_amount, order.currency_code)} de {money(order.total_amount, order.currency_code)}</small></td><td><Badge tone={order.inventory_reservation_status === "reserved" || order.inventory_reservation_status === "consumed" ? "success" : "warning"}>{reservationLabel(order.inventory_reservation_status)}</Badge></td><td className="number-cell"><strong>{money(order.outstanding_amount, order.currency_code)}</strong></td></InteractiveTableRow>)}</tbody></Table>

@@ -2,8 +2,9 @@
 
 import { AlertTriangle, CheckCircle2, MessageSquareText, Plus, Search, Sparkles, Trash2, UserPlus } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { DataPagination, DataRefreshStatus, DataState, InteractiveTableRow, Table } from "@/app/components/ui/data";
-import { Badge, Button, Drawer, Field, Input, Modal, Select, useToast } from "@/app/components/ui/primitives";
+import { DataRefreshStatus, DataState, InteractiveTableRow, Table } from "@/app/components/ui/data";
+import { Badge, Drawer, Modal, useToast } from "@/app/components/ui/primitives";
+import { SalesButton as Button, SalesDataPagination as DataPagination, SalesField as Field, SalesInput as Input, SalesSelect as Select } from "@/app/components/reui/sales-controls";
 import { getSupabaseClient } from "@/app/lib/supabase";
 
 type Location = { id: string; name: string; code: string };

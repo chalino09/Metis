@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Input, Modal, Select, useToast } from "@/app/components/ui/primitives";
-import { DataPagination, DataState } from "@/app/components/ui/data";
+import { Badge, Modal, useToast } from "@/app/components/ui/primitives";
+import { SalesButton as Button, SalesDataPagination as DataPagination, SalesInput as Input, SalesSelect as Select } from "@/app/components/reui/sales-controls";
+import { DataState } from "@/app/components/ui/data";
 import { getSupabaseClient } from "@/app/lib/supabase";
 import { ReceivablesModuleHeader } from "@/app/components/ReceivablesNavigation";
 
