@@ -48,8 +48,10 @@ import {
   appendPosQueue,
   getPosMetricP95,
   groupConsecutiveCartChanges,
+  isPosCartRevisionConflict,
   readPosCachedValue,
   readPosQueue,
+  rebasePosCartQuantityDelta,
   recordPosMetric,
   removePosQueueItems,
   writePosCache,
@@ -678,13 +680,39 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
           continue;
         }
         const startedAt = performance.now();
-        const { data, error } = await getSupabaseClient().rpc("change_sale_cart_item_and_quote", {
+        const expectedQuantity = Number(authoritative.items.find((item) => item.product_id === group.productId)?.quantity ?? 0);
+        const submitQueuedChange = (currentQuote: CartQuote, quantityDelta: number) => getSupabaseClient().rpc("change_sale_cart_item_and_quote", {
           p_cart_id: group.cartId,
           p_product_id: group.productId,
-          p_quantity_delta: group.quantityDelta,
-          p_expected_revision: authoritative.revision,
+          p_quantity_delta: quantityDelta,
+          p_expected_revision: currentQuote.revision,
           p_client_request_id: group.requestId,
         });
+        let { data, error } = await submitQueuedChange(authoritative, group.quantityDelta);
+        const initialMessage = error ? rpcError(error, "El cambio sigue pendiente de sincronizar.") : "";
+
+        // Another POS action can advance the cart revision while this local
+        // change is queued. Refresh once and replay the user's delta against
+        // the authoritative cart instead of forcing them to discard it.
+        if (error && isPosCartRevisionConflict(initialMessage)) {
+          const { data: refreshedData, error: refreshError } = await getSupabaseClient().rpc("quote_sale_cart", { p_cart_id: group.cartId });
+          if (!refreshError && refreshedData) {
+            authoritative = refreshedData as CartQuote;
+            authoritativeQuoteRef.current = authoritative;
+            const refreshedItem = authoritative.items.find((item) => item.product_id === group.productId);
+            const rebasedDelta = rebasePosCartQuantityDelta(expectedQuantity, group.quantityDelta, Number(refreshedItem?.quantity ?? 0));
+            if (rebasedDelta === 0) {
+              const remaining = await removePosQueueItems<ProductSearchItem>(storageScope, group.ids);
+              setPendingChanges(remaining.length);
+              let displayed = authoritative;
+              for (const pending of remaining.filter((item) => item.cartId === authoritative?.cart_id)) displayed = optimisticCartChange(displayed, pending.product, pending.quantityDelta);
+              setQuote(displayed);
+              quoteRef.current = displayed;
+              continue;
+            }
+            ({ data, error } = await submitQueuedChange(authoritative, rebasedDelta));
+          }
+        }
         if (error || !data) {
           const message = rpcError(error, "El cambio sigue pendiente de sincronizar.");
           if (/fetch|network|conexi[oó]n/i.test(message)) setOnline(false);
@@ -1263,7 +1291,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
   return <div className="content-frame pos-page">
     <header className="pos-page__heading pos-reui-heading"><div><span className="eyebrow">Estación de venta</span><h1>Punto de venta</h1><p>{ownSession && selectedRegister ? `${selectedLocation?.name ?? selectedRegister.code} · ${selectedRegister.name} · ${cashierName}` : companyName}</p></div><Link className="pos-exit-link" href="/satrapy/ventas/historial">Historial de ventas</Link></header>
     {(connectionDegraded || showSlowSyncStatus) && <ReuiAlert variant="warning" className="pos-connection-status" role="status" aria-live="polite"><CloudOff size={18} aria-hidden="true" /><ReuiAlertTitle>{connectionDegraded ? "Sin conexión: venta pendiente de sincronizar" : syncing ? "Sincronizando cambios pendientes" : "Venta pendiente de sincronizar"}</ReuiAlertTitle><ReuiAlertDescription>{connectionDegraded ? "Puedes buscar en caché y preparar el carrito. El cobro, inventario y ticket se habilitan al recuperar la conexión." : `${pendingChanges} cambio${pendingChanges === 1 ? "" : "s"} en cola; el cobro se habilitará al terminar.`}</ReuiAlertDescription>{connectionDegraded && <ReuiAlertAction><Button size="sm" variant="secondary" onClick={() => { setOnline(navigator.onLine); void reloadContext(); setQueueVersion((current) => current + 1); }}>Reintentar</Button></ReuiAlertAction>}</ReuiAlert>}
-    {syncConflict && <ReuiAlert variant="destructive" className="pos-sync-conflict"><AlertCircle size={18} aria-hidden="true" /><ReuiAlertTitle>Revisa el carrito</ReuiAlertTitle><ReuiAlertDescription>{syncConflict.message}</ReuiAlertDescription><ReuiAlertAction><Button size="sm" variant="secondary" onClick={() => void resolveSyncConflict()}>{syncConflict.discardIds?.length ? "Descartar cambio pendiente" : "Confirmar revisión"}</Button></ReuiAlertAction></ReuiAlert>}
+    {syncConflict && <ReuiAlert variant="destructive" className="pos-sync-conflict"><AlertCircle size={18} aria-hidden="true" /><ReuiAlertTitle>Revisa el carrito</ReuiAlertTitle><ReuiAlertDescription>{syncConflict.message}</ReuiAlertDescription><ReuiAlertAction><Button size="sm" variant="secondary" onClick={() => void resolveSyncConflict()}>{syncConflict.discardIds?.length ? "Usar versión del servidor" : "Confirmar revisión"}</Button></ReuiAlertAction></ReuiAlert>}
     {!ownSession ? <section className="pos-start-card"><Banknote size={22} /><div><strong>Abre tu caja para iniciar.</strong><span>La apertura requiere un conteo formal por denominación. Si hay varias cajas, la selección se hace explícitamente en Caja.</span></div><Link href="/satrapy/ventas/caja" className="button button--primary">Ir a Caja</Link></section> : <>
       <ReuiTabs value={posTab} onValueChange={(value) => setPosTab(value as "current" | "held")} className="pos-reui-tabs">
         <div className="pos-workspace-header">

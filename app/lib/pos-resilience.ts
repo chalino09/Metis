@@ -209,6 +209,15 @@ export function groupConsecutiveCartChanges<TProduct>(queue: Array<PosQueuedCart
   return groups;
 }
 
+export function isPosCartRevisionConflict(message: string) {
+  return /carrito cambi[oó] en otra operaci[oó]n/i.test(message);
+}
+
+export function rebasePosCartQuantityDelta(expectedQuantity: number, requestedDelta: number, authoritativeQuantity: number) {
+  const intendedQuantity = Math.max(0, expectedQuantity + requestedDelta);
+  return intendedQuantity - authoritativeQuantity;
+}
+
 export function percentile95(values: number[]) {
   if (!values.length) return null;
   const sorted = [...values].sort((left, right) => left - right);
