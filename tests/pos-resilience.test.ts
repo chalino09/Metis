@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { groupConsecutiveCartChanges, isPosCartRevisionConflict, percentile95, rebasePosCartQuantityDelta, type PosQueuedCartChange } from "../app/lib/pos-resilience.ts";
+import { groupConsecutiveCartChanges, isPosCartDecreaseAlreadySatisfied, isPosCartRevisionConflict, percentile95, rebasePosCartQuantityDelta, type PosQueuedCartChange } from "../app/lib/pos-resilience.ts";
 
 function change(id: string, productId: string, quantityDelta: number, requestId = id): PosQueuedCartChange<{ name: string }> {
   return {
@@ -63,4 +63,11 @@ test("reaplica la intención absoluta después de un conflicto", () => {
   assert.equal(rebasePosCartQuantityDelta(1, -1, 2), -2, "mantiene la intención de eliminar aunque el servidor tenga dos");
   assert.equal(rebasePosCartQuantityDelta(1, -1, 0), 0, "no repite una eliminación ya aplicada");
   assert.equal(rebasePosCartQuantityDelta(2, 1, 1), 2, "lleva la cantidad autoritativa al valor que vio el cajero");
+});
+
+test("retira decrementos pendientes cuando el producto ya está eliminado", () => {
+  assert.equal(isPosCartDecreaseAlreadySatisfied(-1, 0), true);
+  assert.equal(isPosCartDecreaseAlreadySatisfied(-3, 0), true);
+  assert.equal(isPosCartDecreaseAlreadySatisfied(-1, 2), false);
+  assert.equal(isPosCartDecreaseAlreadySatisfied(1, 0), false);
 });

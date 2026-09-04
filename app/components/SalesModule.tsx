@@ -48,6 +48,7 @@ import {
   appendPosQueue,
   getPosMetricP95,
   groupConsecutiveCartChanges,
+  isPosCartDecreaseAlreadySatisfied,
   isPosCartRevisionConflict,
   readPosCachedValue,
   readPosQueue,
@@ -681,6 +682,16 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
         }
         const startedAt = performance.now();
         const expectedQuantity = Number(authoritative.items.find((item) => item.product_id === group.productId)?.quantity ?? 0);
+        if (isPosCartDecreaseAlreadySatisfied(group.quantityDelta, expectedQuantity)) {
+          const remaining = await removePosQueueItems<ProductSearchItem>(storageScope, group.ids);
+          setPendingChanges(remaining.length);
+          setSyncConflict(null);
+          let displayed = authoritative;
+          for (const pending of remaining.filter((item) => item.cartId === authoritative?.cart_id)) displayed = optimisticCartChange(displayed, pending.product, pending.quantityDelta);
+          setQuote(displayed);
+          quoteRef.current = displayed;
+          continue;
+        }
         const submitQueuedChange = (currentQuote: CartQuote, quantityDelta: number) => getSupabaseClient().rpc("change_sale_cart_item_and_quote", {
           p_cart_id: group.cartId,
           p_product_id: group.productId,

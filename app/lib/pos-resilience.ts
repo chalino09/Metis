@@ -218,6 +218,10 @@ export function rebasePosCartQuantityDelta(expectedQuantity: number, requestedDe
   return intendedQuantity - authoritativeQuantity;
 }
 
+export function isPosCartDecreaseAlreadySatisfied(quantityDelta: number, authoritativeQuantity: number) {
+  return quantityDelta < 0 && authoritativeQuantity <= 0;
+}
+
 export function percentile95(values: number[]) {
   if (!values.length) return null;
   const sorted = [...values].sort((left, right) => left - right);
