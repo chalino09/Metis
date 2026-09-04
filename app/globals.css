@@ -5448,32 +5448,81 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 :is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer) :is(.customer-financial-summary strong,.inline-status strong,.quote-composer__customer-chip strong,.quote-composer__summary > span,.quote-composer__summary > p,.sales-quote-approval-record) { color:#334155; }
 
-/* POS cart: keep the line viewport visible when the header or settlement grows.
-   On short desktop/tablet windows the cart itself becomes the scroll surface so
-   neither the products nor the checkout controls are clipped. */
+/* POS workstation: status lives in the stable top rail, checkout stays fixed,
+   and only the cart lines consume the remaining scrollable space. */
 @media (min-width:901px) {
+  .app-shell--pos .pos-workspace-header {
+    display:flex;
+    min-width:0;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    flex:0 0 auto;
+  }
+  .app-shell--pos .pos-workspace-tabs { margin:0; }
+  .app-shell--pos .pos-workspace-header .pos-cart__top {
+    display:flex;
+    min-width:0;
+    height:44px;
+    flex:1 1 auto;
+    align-items:center;
+    justify-content:flex-end;
+    gap:8px;
+    overflow:hidden;
+    border:1px solid #263247;
+    border-radius:11px;
+    padding:4px 7px 4px 12px;
+  }
+  .app-shell--pos .pos-workspace-header .pos-cart__heading { margin-inline-end:auto; }
+  .app-shell--pos .pos-workspace-header .pos-cart__heading .eyebrow { display:none; }
+  .app-shell--pos .pos-workspace-header .pos-cart__title-row { display:flex; align-items:center; gap:7px; }
+  .app-shell--pos .pos-workspace-header .pos-cart__top h2 { margin:0; font-size:15px; white-space:nowrap; }
+  .app-shell--pos .pos-workspace-header .pos-cart__actions {
+    display:flex;
+    width:auto;
+    flex:0 1 auto;
+    flex-wrap:nowrap;
+    gap:2px;
+    border:0;
+    padding:0;
+  }
+  .app-shell--pos .pos-workspace-header .pos-cart__top .sales-reui-button.ui-button--ghost {
+    min-height:32px;
+    padding-inline:7px;
+    font-size:11px;
+    white-space:nowrap;
+  }
   .app-shell--pos .pos-cart {
-    grid-template-rows:auto auto minmax(220px,1fr) auto;
-  }
-  .app-shell--pos .pos-cart-scroll {
-    min-height:220px;
-    height:auto;
-  }
-  .app-shell--pos .pos-cart-scroll [data-slot="scroll-area-viewport"] {
-    min-height:220px;
-    height:100%;
-  }
-}
-@media (min-width:901px) and (max-height:860px) {
-  .app-shell--pos .pos-cart {
-    height:100%;
+    grid-template-rows:auto minmax(0,1fr) auto;
     min-height:0;
-    max-height:none;
-    overflow-y:auto;
-    grid-template-rows:auto auto 220px auto;
+    overflow:hidden;
   }
-  .app-shell--pos .pos-cart-scroll,
+  .app-shell--pos .pos-cart__customer { display:grid; gap:8px; }
+  .app-shell--pos .pos-cart-scroll {
+    min-height:0;
+    height:100%;
+  }
   .app-shell--pos .pos-cart-scroll [data-slot="scroll-area-viewport"] {
-    height:220px;
+    min-height:0;
+    height:100%;
+  }
+  .app-shell--pos .pos-settlement__overview {
+    display:grid;
+    grid-template-columns:minmax(145px,.72fr) minmax(0,1.28fr);
+    align-items:stretch;
+    gap:8px;
+  }
+  .app-shell--pos .pos-settlement__overview .pos-cart-summary,
+  .app-shell--pos .pos-settlement__overview .pos-sale-type { min-width:0; height:100%; }
+  .app-shell--pos .pos-settlement__overview .pos-cart-summary { display:grid; align-content:center; padding:7px 10px; }
+  .app-shell--pos .pos-settlement__overview .pos-cart-summary__total { margin:0; border:0; padding:0; }
+  .app-shell--pos .pos-settlement__overview .pos-cart-summary__total :is(dt,dd) { font-size:17px!important; }
+  .app-shell--pos .pos-settlement__overview .pos-sale-type button { min-height:42px; }
+}
+@media (min-width:901px) and (max-width:1180px) {
+  .app-shell--pos .pos-workspace-header .pos-cart__session-status { display:none; }
+  .app-shell--pos .pos-workspace-header .pos-cart__top .sales-reui-button.ui-button--ghost {
+    padding-inline:5px;
+    font-size:10px;
   }
 }
