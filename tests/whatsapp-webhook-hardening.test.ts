@@ -9,7 +9,8 @@ const baseMigration = readFileSync("supabase/migrations/202608220005_integration
 
 test("Meta webhook verifies signatures before parsing or processing", () => {
   assert.match(route, /x-hub-signature-256/);
-  assert.match(route, /createHmac\("sha256",secrets\.app_secret\)/);
+  assert.match(route, /const appSecret=process\.env\.META_APP_SECRET\?\.trim\(\)\|\|secretsFor\(connections\[0\]\)\.app_secret/);
+  assert.match(route, /createHmac\("sha256",appSecret\)/);
   assert.match(route, /timingSafeEqual/);
   assert.ok(route.indexOf("timingSafeEqual") < route.indexOf("JSON.parse(raw)"));
 });

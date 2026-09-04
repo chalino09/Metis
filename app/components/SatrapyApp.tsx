@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import { DataPagination, DataRefreshStatus, DataState, DataToolbar, InteractiveTableRow, PageHeading } from "@/app/components/ui/data";
 import { Badge, Button, Drawer, Field, Input, Modal, Select, ToastProvider, useToast } from "@/app/components/ui/primitives";
@@ -55,31 +56,8 @@ import { purchasingUploadPackageState } from "@/app/lib/purchasing-upload-packag
 import { COMMERCIAL_ASSORTMENTS_PATH, LEGACY_POS_PREPARATION_PATH, MANAGE_ASSORTMENTS_REQUIREMENT, matchesNavigationRequirement, ROLE_PREVIEW_PERMISSIONS, type NavigationRequirement } from "@/app/lib/navigation-access";
 import { useSatrapy, type SatrapyAccessIssue } from "@/app/components/SatrapyProvider";
 import { roleDisplayName } from "@/app/lib/role-labels";
-import { CashDeskView, CustomersView, PosSalesView, ReceivablesView, SalesAuditView, SalesHistoryView, SalesSettingsView } from "@/app/components/SalesModule";
-import { SalesQuotesView } from "@/app/components/SalesQuotesModule";
-import { SalesOrdersView } from "@/app/components/SalesOrdersModule";
-import { SuppliersView } from "@/app/components/SuppliersModule";
-import { PurchaseOrderPromotionAudit, PurchaseOrdersView } from "@/app/components/PurchaseOrdersModule";
-import { ProcurementView } from "@/app/components/ProcurementModule";
-import { PurchaseReceiptsView } from "@/app/components/PurchaseReceiptsModule";
-import { RestaurantPurchaseReceiptsView } from "@/app/components/RestaurantPurchaseReceiptsView";
-import { SupplierInvoicesView, SupplierPayingAccountsView } from "@/app/components/SupplierInvoicesModule";
-import { AccountingModule } from "@/app/components/AccountingModule";
-import { BankingModule } from "@/app/components/BankingModule";
-import { CompanyLocationsView } from "@/app/components/CompanyLocationsView";
-import { CompanyUsersView } from "@/app/components/CompanyUsersView";
-import { ConfigurationHome } from "@/app/components/ConfigurationHome";
-import { InitialMigrationView } from "@/app/components/InitialMigrationView";
-import { ProductCatalogView } from "@/app/components/ProductCatalogView";
-import { EcommerceModule } from "@/app/components/EcommerceModule";
-import { IntegrationCenter } from "@/app/components/IntegrationCenter";
-import { CollaboratorsDirectoryView, PayrollView } from "@/app/components/CollaboratorsModule";
-import { BiModule } from "@/app/components/BiModule";
-import { RestaurantCostAnalysis } from "@/app/components/RestaurantCostAnalysis";
 import { RestaurantRecipeMigrationPanel, buildRestaurantRecipeImportPackage, prepareRestaurantRecipeImport } from "@/app/components/RestaurantRecipeMigrationPanel";
 import type { RestaurantRecipeImportPreview } from "@/app/lib/restaurant-recipe-import";
-import { CollectionAutomationModule } from "@/app/components/CollectionAutomationModule";
-import { InvoiceRequestsModule } from "@/app/components/InvoiceRequestsModule";
 import type {
   AppRoleCode,
   ImportBatchRow,
@@ -91,6 +69,43 @@ import type {
 
 type ViewName = "collection_automation" | "invoice_requests" | "bi_summary" | "restaurant_costs" | "bi_alerts" | "bi_explorer" | "bi_reports" | "bi_budgets" | "bi_network" | "settings_home" | "integrations" | "initial_migration" | "migration" | "users_access" | "suppliers" | "procurement" | "purchase_orders" | "purchase_receipts" | "supplier_invoices" | "supplier_paying_accounts" | "products" | "inventory" | "inventory_counts" | "inventory_transfers" | "inventory_replenishment" | "ecommerce_readiness" | "locations" | "audit" | "sales_audit" | "assortments" | "pos" | "sales_history" | "sales_quotes" | "sales_orders" | "customers" | "receivables" | "cash" | "sales_settings" | "collaborators_directory" | "payroll" | "accounting_summary" | "accounting_accounts" | "accounting_periods" | "accounting_reports" | "accounting_journals" | "accounting_events" | "accounting_banking" | "accounting_opening" | "accounting_settings";
 type AreaName = "bi" | "sales" | "ecommerce" | "purchasing" | "inventory" | "collaborators" | "accounting" | "settings";
+
+function RouteModuleLoading() {
+  return <div className="route-loading" role="status" aria-live="polite"><LoaderCircle className="spin" size={18} aria-hidden="true" /> Cargando módulo…</div>;
+}
+
+const CashDeskView = dynamic(() => import("@/app/components/SalesModule").then((module) => module.CashDeskView), { loading: RouteModuleLoading });
+const CustomersView = dynamic(() => import("@/app/components/SalesModule").then((module) => module.CustomersView), { loading: RouteModuleLoading });
+const PosSalesView = dynamic(() => import("@/app/components/SalesModule").then((module) => module.PosSalesView), { loading: RouteModuleLoading });
+const ReceivablesView = dynamic(() => import("@/app/components/SalesModule").then((module) => module.ReceivablesView), { loading: RouteModuleLoading });
+const SalesAuditView = dynamic(() => import("@/app/components/SalesModule").then((module) => module.SalesAuditView), { loading: RouteModuleLoading });
+const SalesHistoryView = dynamic(() => import("@/app/components/SalesModule").then((module) => module.SalesHistoryView), { loading: RouteModuleLoading });
+const SalesSettingsView = dynamic(() => import("@/app/components/SalesModule").then((module) => module.SalesSettingsView), { loading: RouteModuleLoading });
+const SalesQuotesView = dynamic(() => import("@/app/components/SalesQuotesModule").then((module) => module.SalesQuotesView), { loading: RouteModuleLoading });
+const SalesOrdersView = dynamic(() => import("@/app/components/SalesOrdersModule").then((module) => module.SalesOrdersView), { loading: RouteModuleLoading });
+const SuppliersView = dynamic(() => import("@/app/components/SuppliersModule").then((module) => module.SuppliersView), { loading: RouteModuleLoading });
+const PurchaseOrderPromotionAudit = dynamic(() => import("@/app/components/PurchaseOrdersModule").then((module) => module.PurchaseOrderPromotionAudit), { loading: RouteModuleLoading });
+const PurchaseOrdersView = dynamic(() => import("@/app/components/PurchaseOrdersModule").then((module) => module.PurchaseOrdersView), { loading: RouteModuleLoading });
+const ProcurementView = dynamic(() => import("@/app/components/ProcurementModule").then((module) => module.ProcurementView), { loading: RouteModuleLoading });
+const PurchaseReceiptsView = dynamic(() => import("@/app/components/PurchaseReceiptsModule").then((module) => module.PurchaseReceiptsView), { loading: RouteModuleLoading });
+const RestaurantPurchaseReceiptsView = dynamic(() => import("@/app/components/RestaurantPurchaseReceiptsView").then((module) => module.RestaurantPurchaseReceiptsView), { loading: RouteModuleLoading });
+const SupplierInvoicesView = dynamic(() => import("@/app/components/SupplierInvoicesModule").then((module) => module.SupplierInvoicesView), { loading: RouteModuleLoading });
+const SupplierPayingAccountsView = dynamic(() => import("@/app/components/SupplierInvoicesModule").then((module) => module.SupplierPayingAccountsView), { loading: RouteModuleLoading });
+const AccountingModule = dynamic(() => import("@/app/components/AccountingModule").then((module) => module.AccountingModule), { loading: RouteModuleLoading });
+const BankingModule = dynamic(() => import("@/app/components/BankingModule").then((module) => module.BankingModule), { loading: RouteModuleLoading });
+const CompanyLocationsView = dynamic(() => import("@/app/components/CompanyLocationsView").then((module) => module.CompanyLocationsView), { loading: RouteModuleLoading });
+const CompanyUsersView = dynamic(() => import("@/app/components/CompanyUsersView").then((module) => module.CompanyUsersView), { loading: RouteModuleLoading });
+const ConfigurationHome = dynamic(() => import("@/app/components/ConfigurationHome").then((module) => module.ConfigurationHome), { loading: RouteModuleLoading });
+const InitialMigrationView = dynamic(() => import("@/app/components/InitialMigrationView").then((module) => module.InitialMigrationView), { loading: RouteModuleLoading });
+const ProductCatalogView = dynamic(() => import("@/app/components/ProductCatalogView").then((module) => module.ProductCatalogView), { loading: RouteModuleLoading });
+const EcommerceModule = dynamic(() => import("@/app/components/EcommerceModule").then((module) => module.EcommerceModule), { loading: RouteModuleLoading });
+const IntegrationCenter = dynamic(() => import("@/app/components/IntegrationCenter").then((module) => module.IntegrationCenter), { loading: RouteModuleLoading });
+const CollaboratorsDirectoryView = dynamic(() => import("@/app/components/CollaboratorsModule").then((module) => module.CollaboratorsDirectoryView), { loading: RouteModuleLoading });
+const PayrollView = dynamic(() => import("@/app/components/CollaboratorsModule").then((module) => module.PayrollView), { loading: RouteModuleLoading });
+const BiModule = dynamic(() => import("@/app/components/BiModule").then((module) => module.BiModule), { loading: RouteModuleLoading });
+const RestaurantCostAnalysis = dynamic(() => import("@/app/components/RestaurantCostAnalysis").then((module) => module.RestaurantCostAnalysis), { loading: RouteModuleLoading });
+const CollectionAutomationModule = dynamic(() => import("@/app/components/CollectionAutomationModule").then((module) => module.CollectionAutomationModule), { loading: RouteModuleLoading });
+const InvoiceRequestsModule = dynamic(() => import("@/app/components/InvoiceRequestsModule").then((module) => module.InvoiceRequestsModule), { loading: RouteModuleLoading });
 
 const ALL_ROLES: RoleOption[] = [
   { code: "super_admin", display_name: "Superadmin" },

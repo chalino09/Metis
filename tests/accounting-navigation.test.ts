@@ -7,11 +7,12 @@ const css=readFileSync(new URL("../app/globals.css",import.meta.url),"utf8");
 
 test("la navegación contable restaura ocho accesos directos con icono",()=>{
   assert.match(shell,/context-nav--accounting/);
+  assert.match(shell,/NAVIGATION_SECTIONS[\s\S]*id: "accounting", label: "Contabilidad", views: \["accounting_summary", "accounting_accounts", "accounting_reports", "accounting_periods", "accounting_journals", "accounting_events", "accounting_banking", "accounting_opening"\]/);
   assert.match(shell,/accounting_accounts: \{ label: "Catálogo de cuentas", icon: BookOpen/);
   assert.match(shell,/accounting_reports: \{ label: "Estados financieros", icon: BarChart3/);
-  assert.match(css,/\.context-nav--accounting \.accounting-context-nav \{[^}]*grid-template-columns:repeat\(8/);
-  assert.match(css,/\.context-nav--accounting \.accounting-context-nav \{[^}]*overflow:visible/);
+  assert.match(css,/\.context-nav--accounting \.accounting-context-nav \{[^}]*overflow-x:auto/);
   assert.match(css,/\.context-nav--accounting \.context-nav__item \{[^}]*flex-direction:row/);
+  assert.match(css,/\.context-nav--accounting \.context-nav__item \{[^}]*min-width:max-content/);
   assert.match(css,/\.context-nav--accounting \.context-nav__item svg \{[^}]*flex:0 0 auto/);
   assert.doesNotMatch(css,/\.context-nav--accounting \.topbar__status \{ display:none/);
 });
