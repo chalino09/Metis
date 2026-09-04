@@ -5447,3 +5447,33 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   color:#475569;
 }
 :is(.sales-quote-drawer,.sales-quote-detail,.customer-drawer) :is(.customer-financial-summary strong,.inline-status strong,.quote-composer__customer-chip strong,.quote-composer__summary > span,.quote-composer__summary > p,.sales-quote-approval-record) { color:#334155; }
+
+/* POS cart: keep the line viewport visible when the header or settlement grows.
+   On short desktop/tablet windows the cart itself becomes the scroll surface so
+   neither the products nor the checkout controls are clipped. */
+@media (min-width:901px) {
+  .app-shell--pos .pos-cart {
+    grid-template-rows:auto auto minmax(220px,1fr) auto;
+  }
+  .app-shell--pos .pos-cart-scroll {
+    min-height:220px;
+    height:auto;
+  }
+  .app-shell--pos .pos-cart-scroll [data-slot="scroll-area-viewport"] {
+    min-height:220px;
+    height:100%;
+  }
+}
+@media (min-width:901px) and (max-height:860px) {
+  .app-shell--pos .pos-cart {
+    height:auto;
+    min-height:calc(100dvh - 94px);
+    max-height:calc(100dvh - 74px);
+    overflow-y:auto;
+    grid-template-rows:auto auto 220px auto;
+  }
+  .app-shell--pos .pos-cart-scroll,
+  .app-shell--pos .pos-cart-scroll [data-slot="scroll-area-viewport"] {
+    height:220px;
+  }
+}
