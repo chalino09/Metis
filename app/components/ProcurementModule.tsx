@@ -3,23 +3,13 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Pencil, Plus } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  DataPagination,
-  DataState,
-  DataToolbar,
-  InteractiveTableRow,
-} from "@/app/components/ui/data";
-import {
-  Badge,
-  Button,
-  Drawer,
-  Field,
-  Input,
-  Modal,
-  Select,
-  useToast,
-} from "@/app/components/ui/primitives";
+import { DataPagination, DataState, InteractiveTableRow } from "@/app/components/ui/data";
+import { Badge, Field, useToast } from "@/app/components/ui/primitives";
 import { useSatrapy } from "@/app/components/SatrapyProvider";
+import { OperationalButton as Button, OperationalInput as Input, OperationalSelect as Select, OperationalDataToolbar as DataToolbar } from "@/app/components/reui/operational-controls";
+import { PurchasingDrawer as Drawer, PurchasingModal as Modal } from "@/app/components/reui/purchasing-panels";
+import { Card } from "@/app/components/reui/card";
+import { PurchasingDocumentTabs } from "@/app/components/reui/purchasing-panels";
 import { getSupabaseClient } from "@/app/lib/supabase";
 
 type Row = {
@@ -729,8 +719,7 @@ export function ProcurementView({
         className="purchase-order-detail-drawer procurement-detail-drawer"
       >
         {detail && (
-          <div className="procurement-detail">
-            <header className="procurement-detail__header">
+          <div className="procurement-detail"><Card className="purchasing-document-summary"><header className="procurement-detail__header">
               <div>
                 <span className="eyebrow">Destino</span>
                 <strong>{detail.location_name}</strong>
@@ -739,9 +728,23 @@ export function ProcurementView({
               <Badge tone={detail.status === "approved" ? "success" : detail.status === "recommended" ? "warning" : "neutral"}>
                 {requisitionStatusLabel({ ...detail, quote_count: detail.quotes.length })}
               </Badge>
-            </header>
-
-            <section className="procurement-detail__need">
+            </header><dl className="purchasing-request-metrics"><div><dt>Partidas</dt><dd>{detail.lines.length}</dd></div><div><dt>Cotizaciones recibidas</dt><dd>{detail.quotes.length}</dd></div><div><dt>Órdenes generadas</dt><dd>{detail.award?.purchase_order_ids.length ?? 0}</dd></div></dl></Card>{detail.status === "quoting" && (
+              <section className="procurement-next-action" aria-labelledby="procurement-next-action-title">
+                <div>
+                  <span className="eyebrow">Siguiente paso</span>
+                  <h3 id="procurement-next-action-title">{detail.quotes.length === 0 ? "Registra la propuesta del proveedor" : hasCompleteQuote ? "Elige cómo atender la necesidad" : "Completa una propuesta que cubra la necesidad"}</h3>
+                  <p>{detail.quotes.length === 0 ? "Captura proveedor, precio y fecha estimada. Después podrás crear la orden de compra." : hasCompleteQuote ? "La cotización más conveniente se propone automáticamente; puedes cambiarla antes de confirmar." : "La disponibilidad actual no cubre todas las partidas. Registra otra cotización o actualiza la existente."}</p>
+                </div>
+                <div>
+                  {detail.quotes.length === 0 && canQuote && <Button variant="primary" onClick={() => void openQuote()}>Registrar cotización</Button>}
+                  {detail.quotes.length > 0 && !hasCompleteQuote && canQuote && <Button variant="primary" onClick={() => void openQuote()}>Registrar otra cotización</Button>}
+                  {canSelectSupplier && <Button variant="primary" onClick={openRecommendation}>{canApprove ? "Aprobar compra y crear orden" : "Elegir proveedor"}</Button>}
+                  {canAdjustNeed && <Button variant="secondary" onClick={openQuantityEditor}>Ajustar cantidad</Button>}
+                  {canAdjustDestination && <Button variant="secondary" onClick={openDestinationEditor}>Cambiar destino</Button>}
+                  {detail.quotes.length > 0 && canQuote && <Button variant="secondary" onClick={() => void openQuote()}>Agregar cotización</Button>}
+                </div>
+              </section>
+            )}<PurchasingDocumentTabs key={detail.id} defaultValue={detail.quotes.length ? "quotes" : "need"} sections={[{ id: "need", label: `Partidas (${detail.lines.length})`, content: <><section className="procurement-detail__need">
               <header>
                 <div>
                   <span className="eyebrow">Necesidad de compra</span>
@@ -772,27 +775,7 @@ export function ProcurementView({
                   ))}
                 </tbody>
               </table>
-            </section>
-
-            {detail.status === "quoting" && (
-              <section className="procurement-next-action" aria-labelledby="procurement-next-action-title">
-                <div>
-                  <span className="eyebrow">Siguiente paso</span>
-                  <h3 id="procurement-next-action-title">{detail.quotes.length === 0 ? "Registra la propuesta del proveedor" : hasCompleteQuote ? "Elige cómo atender la necesidad" : "Completa una propuesta que cubra la necesidad"}</h3>
-                  <p>{detail.quotes.length === 0 ? "Captura proveedor, precio y fecha estimada. Después podrás crear la orden de compra." : hasCompleteQuote ? "La cotización más conveniente se propone automáticamente; puedes cambiarla antes de confirmar." : "La disponibilidad actual no cubre todas las partidas. Registra otra cotización o actualiza la existente."}</p>
-                </div>
-                <div>
-                  {detail.quotes.length === 0 && canQuote && <Button variant="primary" onClick={() => void openQuote()}>Registrar cotización</Button>}
-                  {detail.quotes.length > 0 && !hasCompleteQuote && canQuote && <Button variant="primary" onClick={() => void openQuote()}>Registrar otra cotización</Button>}
-                  {canSelectSupplier && <Button variant="primary" onClick={openRecommendation}>{canApprove ? "Aprobar compra y crear orden" : "Elegir proveedor"}</Button>}
-                  {canAdjustNeed && <Button variant="secondary" onClick={openQuantityEditor}>Ajustar cantidad</Button>}
-                  {canAdjustDestination && <Button variant="secondary" onClick={openDestinationEditor}>Cambiar destino</Button>}
-                  {detail.quotes.length > 0 && canQuote && <Button variant="secondary" onClick={() => void openQuote()}>Agregar cotización</Button>}
-                </div>
-              </section>
-            )}
-
-            {detail.quotes.length > 0 && <section className="procurement-comparison">
+            </section></> },...(detail.quotes.length ? [{ id: "quotes", label: `Cotizaciones (${detail.quotes.length})`, content: <>{detail.quotes.length > 0 && <section className="procurement-comparison">
               <header className="procurement-section-header">
                 <div>
                   <span className="eyebrow">Cotizaciones recibidas</span>
@@ -907,9 +890,7 @@ export function ProcurementView({
                     );
                   })}
                 </div>
-            </section>}
-
-            {detail.award && (
+            </section>}</> }] : []),...(detail.award ? [{ id: "award", label: "Selección y órdenes", content: <>{detail.award && (
               <section className="procurement-award">
                 <header className="procurement-section-header">
                   <div>
@@ -943,9 +924,7 @@ export function ProcurementView({
                   </footer>
                 )}
               </section>
-            )}
-
-            <div className="purchase-order-actions">
+            )}</> }] : [])]} /><div className="purchase-order-actions">
               {canApprove && detail.status === "recommended" && (
                 <Button
                   variant="primary"
@@ -957,9 +936,7 @@ export function ProcurementView({
                   Aprobar compra y crear orden
                 </Button>
               )}
-            </div>
-
-            {decision && (
+            </div>{decision && (
               <Modal
                 open={Boolean(decision)}
                 onOpenChange={(isOpen) => !isOpen && !saving && setDecision(null)}
@@ -1011,8 +988,7 @@ export function ProcurementView({
                   </div>
                 )}
               </Modal>
-            )}
-          </div>
+            )}</div>
         )}
       </Drawer>
 
@@ -1288,7 +1264,7 @@ export function ProcurementView({
                   {!manualProductSearching && !manualProductError && products.map((product, index) => {
                     const sku = product.internal_sku ?? product.alpha_sku ?? product.barcode ?? "Sin código";
                     return (
-                      <button
+                      <Button variant="ghost"
                         type="button"
                         id={`procurement-manual-product-option-${index}`}
                         role="option"
@@ -1300,7 +1276,7 @@ export function ProcurementView({
                       >
                         <strong>{product.name}</strong>
                         <small>{sku} · {product.unit ?? "Sin unidad"}</small>
-                      </button>
+                      </Button>
                     );
                   })}
                 </div>

@@ -24,7 +24,7 @@ test("una sucursal seleccionada muestra su existencia y movimientos sin expansi�
   assert.match(ui, /const directLocationView = selectedLocation !== "all" \|\| accessibleLocations\.length === 1/);
   assert.match(ui, /directLocationView \? "Existencia" : "Existencia total"/);
   assert.match(ui, /directLocationView \? "Movimiento reciente" : "Sucursales"/);
-  assert.match(ui, /directLocation \? <Button variant="secondary" size="sm" aria-label=\{`Ver movimientos de/);
+  assert.match(ui, /directLocation \? <(?:Inventory)?Button variant="secondary" size="sm" aria-label=\{`Ver movimientos de/);
   assert.match(ui, /!directLocation && expanded/);
 });
 
@@ -36,7 +36,7 @@ test("la referencia histórica permanece bajo demanda por sucursal", () => {
 test("el historial queda dentro de existencias y consulta el ledger por producto y ubicación", () => {
   assert.match(ui, /Ver movimientos/);
   assert.match(ui, /list_inventory_location_movements/);
-  assert.match(ui, /<Drawer open=\{Boolean\(movementRow\)\}/);
+  assert.match(ui, /<(?:Inventory)?Drawer open=\{Boolean\(movementRow\)\}/);
   assert.match(movementMigration, /has_company_permission\(p_company_id, 'view_inventory'\)/);
   assert.match(movementMigration, /public\.can_access_location\(location_data\.id\)/);
   assert.match(movementMigration, /ledger\.location_id = p_location_id/);

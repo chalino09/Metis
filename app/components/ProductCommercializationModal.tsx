@@ -1,8 +1,10 @@
 "use client";
+import { LoadingPlaceholder } from "./reui/loading-placeholder";
+import { Button, Modal } from "./reui/inventory-controls";
 
 import { Store } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Modal, useToast } from "@/app/components/ui/primitives";
+import { Badge, useToast } from "@/app/components/ui/primitives";
 import { productReadinessSummary } from "@/app/lib/product-readiness";
 import { productVocabulary, type ProductExperience } from "@/app/lib/product-experience";
 import { getSupabaseClient } from "@/app/lib/supabase";
@@ -127,7 +129,7 @@ export function ProductCommercializationModal({
         <Button variant="primary" loading={saving} disabled={loading || !context || !reason.trim()} onClick={() => void save()}>Guardar disponibilidad</Button>
       </>}
     >
-      {loading && <p className="product-commercialization__state">Cargando sucursales…</p>}
+      {loading && <LoadingPlaceholder kind="detail" label="Cargando sucursales…" />}
       {error && <div className="product-commercialization__error"><p>{error}</p><Button size="sm" onClick={() => void load()}>Reintentar</Button></div>}
       {!loading && context && <>
         <div className="product-commercialization__summary">

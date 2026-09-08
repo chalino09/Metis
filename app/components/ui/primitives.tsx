@@ -186,10 +186,23 @@ const DateInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElem
       window.dispatchEvent(new CustomEvent("satrapy-date-picker-open", { detail: pickerId }));
       const rect = pickerRef.current?.getBoundingClientRect();
       if (rect) {
-        const calendarHeight = 286;
+        const calendarHeight = 320;
         const gap = 7;
-        const spaceBelow = window.innerHeight - rect.bottom;
-        const spaceAbove = rect.top;
+        // A dialog's scroll viewport can clip the calendar before the window edge.
+        let visibleTop = 0;
+        let visibleBottom = window.innerHeight;
+        let ancestor = pickerRef.current?.parentElement;
+        while (ancestor) {
+          const overflow = window.getComputedStyle(ancestor).overflowY;
+          if (/auto|scroll|hidden|clip/.test(overflow)) {
+            const bounds = ancestor.getBoundingClientRect();
+            visibleTop = Math.max(visibleTop, bounds.top);
+            visibleBottom = Math.min(visibleBottom, bounds.bottom);
+          }
+          ancestor = ancestor.parentElement;
+        }
+        const spaceBelow = visibleBottom - rect.bottom;
+        const spaceAbove = rect.top - visibleTop;
         setCalendarPlacement(spaceBelow >= calendarHeight + gap ? "below" : spaceAbove >= calendarHeight + gap ? "above" : "fixed");
       }
       const base = isoValue ? parseIsoDate(isoValue) : new Date();

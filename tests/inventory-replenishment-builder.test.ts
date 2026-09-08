@@ -12,7 +12,7 @@ test("reabastecimiento reutiliza el constructor visual con selección múltiple"
   assert.match(ui, /search_inventory_replenishment_products/);
   assert.match(ui, /selectedProductIds/);
   assert.match(ui, /Agregar seleccionados/);
-  assert.match(ui, />Cerrar<\/Button>/);
+  assert.match(ui, />Cerrar<\/(?:Inventory)?Button>/);
   assert.match(ui, /useDismissiblePopover\(productPickerRef, productPickerOpen/);
   assert.match(ui, /Aplicar a todas/);
   assert.match(ui, /Importar políticas/);
@@ -21,7 +21,7 @@ test("reabastecimiento reutiliza el constructor visual con selección múltiple"
 
 test("la solicitud de compra solo se muestra a quien puede crearla", () => {
   assert.match(ui, /const canPrepareRequisition = permissions\.includes\("create_procurement_requisitions"\)/);
-  assert.match(ui, /\{canPrepareRequisition && <Button variant="secondary"[\s\S]*>Crear solicitud<\/Button>/);
+  assert.match(ui, /\{canPrepareRequisition && <(?:Inventory)?Button variant="secondary"[\s\S]*>Crear solicitud<\/(?:Inventory)?Button>/);
 });
 
 test("la solicitud explica su alcance antes de crearla", () => {
@@ -29,7 +29,7 @@ test("la solicitud explica su alcance antes de crearla", () => {
   assert.match(ui, /onClick=\{\(\) => setRequisitionConfirmationOpen\(true\)\}>Crear solicitud/);
   assert.match(ui, /title="Crear solicitud de compra"/);
   assert.match(ui, /La búsqueda y los filtros de productos no limitan esta solicitud\./);
-  assert.match(ui, />Crear solicitud<\/Button>/);
+  assert.match(ui, />Crear solicitud<\/(?:Inventory)?Button>/);
   assert.match(ui, /Podrás abrir la solicitud en Compras para cotizar y decidir la compra después/);
 });
 
@@ -59,8 +59,8 @@ test("la creación bloquea duplicados de solicitudes en borrador desde el servid
 
 test("la configuración queda como acción secundaria y no desplaza las sugerencias", () => {
   assert.match(ui, /const \[policyEditorOpen, setPolicyEditorOpen\] = useState\(false\)/);
-  assert.match(ui, /\{canManage && <Button variant="secondary" onClick=\{\(\) => setPolicyEditorOpen\(true\)\}>Configurar mínimos y máximos/);
-  assert.match(ui, /<Drawer\s+open=\{policyEditorOpen\}[\s\S]*title="Configurar mínimos y máximos"/);
+  assert.match(ui, /\{canManage && <(?:Inventory)?Button variant="secondary" onClick=\{\(\) => setPolicyEditorOpen\(true\)\}>Configurar mínimos y máximos/);
+  assert.match(ui, /<(?:Inventory)?Drawer\s+open=\{policyEditorOpen\}[\s\S]*title="Configurar mínimos y máximos"/);
   assert.match(ui, /Define mínimos y máximos por ubicación\. Esta configuración no mueve inventario ni crea órdenes de compra\./);
   assert.ok(ui.lastIndexOf("DataToolbar search={search}") > ui.indexOf('className="inventory-replenishment-drawer"'));
 });

@@ -3,6 +3,7 @@
 import { AlertCircle, Inbox, LoaderCircle, Search, X } from "lucide-react";
 import { useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { isKeyboardActivationKey } from "@/app/lib/keyboard-activation";
+import { LoadingPlaceholder } from "../reui/loading-placeholder";
 import { Button, Input } from "./primitives";
 
 export function PageHeading({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: ReactNode }) {
@@ -50,6 +51,7 @@ export function DataState({
   hasData,
   empty,
   loadingLabel = "Cargando información…",
+  preserveData = false,
   errorTitle = "No pudimos cargar esta información.",
   emptyTitle = "No hay información para mostrar.",
   emptyAction,
@@ -61,13 +63,15 @@ export function DataState({
   hasData: number;
   empty: string;
   loadingLabel?: string;
+  preserveData?: boolean;
   errorTitle?: string;
   emptyTitle?: string;
   emptyAction?: ReactNode;
   errorAction?: ReactNode;
   children: ReactNode;
 }) {
-  if (loading) return <div className="data-state data-state--loading" role="status" aria-live="polite"><LoaderCircle className="spin" size={20} aria-hidden="true" /> <span>{loadingLabel}</span><div className="data-state__skeleton" aria-hidden="true" /></div>;
+  if (preserveData && hasData > 0 && !error) return <div className="data-refresh-region" aria-busy={loading || undefined}>{loading && <div className="data-refresh-region__notice" role="status">Actualizando resultados…</div>}<div inert={loading || undefined} className={loading ? "data-refresh-region__previous" : undefined}>{children}</div></div>;
+  if (loading) return <LoadingPlaceholder label={loadingLabel} />;
   if (error) return <div className="data-state data-state--error" role="alert"><AlertCircle size={20} aria-hidden="true" /><div><strong>{errorTitle}</strong><span>{error}</span>{errorAction}</div></div>;
   if (!hasData) return <div className="data-state data-state--empty" role="status"><Inbox size={21} aria-hidden="true" /><div><strong>{emptyTitle}</strong><span>{empty}</span>{emptyAction}</div></div>;
   return <>{children}</>;

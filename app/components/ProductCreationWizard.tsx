@@ -1,9 +1,11 @@
 "use client";
+import { LoadingPlaceholder } from "./reui/loading-placeholder";
+import { Button, Drawer, Input, Select } from "./reui/inventory-controls";
 
 import { Package, Store, Wrench } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Drawer, Field, Input, Select, useToast } from "@/app/components/ui/primitives";
+import { Field, useToast } from "@/app/components/ui/primitives";
 import { OperationIdempotencyKeys } from "@/app/lib/operation-idempotency";
 import { getSupabaseClient } from "@/app/lib/supabase";
 
@@ -86,7 +88,7 @@ export function ProductCreationWizard({companyId,open,taxCategories,onOpenChange
   function close(){onOpenChange(false);}
   function createPurchaseRequest(){if(!created)return;close();router.push(`/satrapy/compras/abastecimiento?producto_nuevo=${created.product_id}`);}
   return <Drawer open={open} onOpenChange={next=>{if(!saving)onOpenChange(next);}} eyebrow="Alta individual" title={created?"Producto configurado":"Nuevo producto"} description={created?"La configuración comercial quedó guardada.":"Captura los datos comerciales en un solo formulario."} className="product-creation-wizard__drawer">
-    {created?<section className="product-creation-wizard__success" aria-labelledby="created-product-title"><div><span className="eyebrow">Configurado</span><h3 id="created-product-title">{created.product_name}</h3><p>{created.product_code} · {created.final_price.toLocaleString("es-MX",{minimumFractionDigits:2,maximumFractionDigits:2})} {created.currency_code}</p></div>{form.inventoryPolicy==="tracked"?<div className="product-creation-wizard__stock-state"><strong>Sin existencia</strong><span>El producto ya tiene precio y sucursales, pero necesita una recepción antes de venderse.</span></div>:<div className="product-creation-wizard__stock-state is-ready"><strong>Listo para vender</strong><span>El servicio no requiere inventario.</span></div>}<div className="product-creation-wizard__success-actions"><Button type="button" variant="secondary" onClick={close}>Cerrar</Button>{form.inventoryPolicy==="tracked"&&<Button type="button" variant="primary" onClick={createPurchaseRequest}>Crear solicitud de compra</Button>}</div></section>:loading?<div className="product-creation-wizard__loading" role="status">Preparando opciones…</div>:<form className="product-creation-wizard" onSubmit={submit} noValidate>
+    {created?<section className="product-creation-wizard__success" aria-labelledby="created-product-title"><div><span className="eyebrow">Configurado</span><h3 id="created-product-title">{created.product_name}</h3><p>{created.product_code} · {created.final_price.toLocaleString("es-MX",{minimumFractionDigits:2,maximumFractionDigits:2})} {created.currency_code}</p></div>{form.inventoryPolicy==="tracked"?<div className="product-creation-wizard__stock-state"><strong>Sin existencia</strong><span>El producto ya tiene precio y sucursales, pero necesita una recepción antes de venderse.</span></div>:<div className="product-creation-wizard__stock-state is-ready"><strong>Listo para vender</strong><span>El servicio no requiere inventario.</span></div>}<div className="product-creation-wizard__success-actions"><Button type="button" variant="secondary" onClick={close}>Cerrar</Button>{form.inventoryPolicy==="tracked"&&<Button type="button" variant="primary" onClick={createPurchaseRequest}>Crear solicitud de compra</Button>}</div></section>:loading?<LoadingPlaceholder kind="detail" label="Cargando configuración del producto…" />:<form className="product-creation-wizard" onSubmit={submit} noValidate>
       <div className="product-creation-wizard__layout">
         <section className="product-creation-wizard__section" aria-labelledby="product-details-title"><header><h3 id="product-details-title">Datos del producto</h3><p>Identifica el artículo y define cómo se opera.</p></header>
         <div className="product-creation-wizard__type-grid">
