@@ -14,7 +14,7 @@ test("restaurant purchase confirmation is transactional, bounded and idempotent"
   assert.match(migration,/confirm_purchase_receipt\(p_company_id,v_receipt_id,gen_random_uuid\(\)\)/);
   assert.match(migration,/restaurant\.purchase_received/);
   assert.match(receipts,/confirm_restaurant_purchase_receipt/);
-  assert.match(receipts,/inventario y costo actualizados/);
+  assert.match(receipts,/inventario y costo de reposición actualizados/);
 });
 
 test("restaurant weekly analysis includes cost changes and projected and realized margin",()=>{

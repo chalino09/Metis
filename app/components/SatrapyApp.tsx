@@ -100,6 +100,7 @@ const CompanyUsersView = dynamic(() => import("@/app/components/CompanyUsersView
 const ConfigurationHome = dynamic(() => import("@/app/components/ConfigurationHome").then((module) => module.ConfigurationHome), { loading: RouteModuleLoading });
 const InitialMigrationView = dynamic(() => import("@/app/components/InitialMigrationView").then((module) => module.InitialMigrationView), { loading: RouteModuleLoading });
 const ProductCatalogView = dynamic(() => import("@/app/components/ProductCatalogView").then((module) => module.ProductCatalogView), { loading: RouteModuleLoading });
+const RestaurantWorkspace = dynamic(() => import("@/app/components/restaurant/RestaurantWorkspace").then((module) => module.RestaurantWorkspace), { loading: RouteModuleLoading });
 const EcommerceModule = dynamic(() => import("@/app/components/EcommerceModule").then((module) => module.EcommerceModule), { loading: RouteModuleLoading });
 const IntegrationCenter = dynamic(() => import("@/app/components/IntegrationCenter").then((module) => module.IntegrationCenter), { loading: RouteModuleLoading });
 const CollaboratorsDirectoryView = dynamic(() => import("@/app/components/CollaboratorsModule").then((module) => module.CollaboratorsDirectoryView), { loading: RouteModuleLoading });
@@ -674,7 +675,7 @@ export function SatrapyRouteContent() {
   if (activeView === "purchase_receipts") return experience === "restaurant" ? <RestaurantPurchaseReceiptsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} /> : <PurchaseReceiptsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "supplier_invoices") return <SupplierInvoicesView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "supplier_paying_accounts") return <SupplierPayingAccountsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
-  if (activeView === "products") return <ProductCatalogView key={appState.membership.companyId} companyId={appState.membership.companyId} permissions={appState.membership.permissions} experience={experience} />;
+  if (activeView === "products") return experience === "restaurant" ? <RestaurantWorkspace key={appState.membership.companyId} companyId={appState.membership.companyId} permissions={appState.membership.permissions} /> : <ProductCatalogView key={appState.membership.companyId} companyId={appState.membership.companyId} permissions={appState.membership.permissions} experience={experience} />;
   if (activeView === "ecommerce_readiness") return <EcommerceModule companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "inventory") return <InventoryView key={appState.membership.companyId} companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "inventory_counts") return <InventoryCountsView key={appState.membership.companyId} companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;

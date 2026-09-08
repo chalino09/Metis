@@ -1,8 +1,9 @@
 "use client";
+import { Button, Modal } from "./reui/inventory-controls";
 
 import { Download, FileSpreadsheet, UploadCloud } from "lucide-react";
 import { useRef, useState, type ChangeEvent } from "react";
-import { Badge, Button, Modal, useToast } from "@/app/components/ui/primitives";
+import { Badge, useToast } from "@/app/components/ui/primitives";
 import { OperationIdempotencyKeys } from "@/app/lib/operation-idempotency";
 import { downloadRestaurantCatalogTemplate, parseRestaurantCatalogFile, type RestaurantCatalogImportPreview, type RestaurantImportRole } from "@/app/lib/restaurant-catalog-import";
 import { getSupabaseClient } from "@/app/lib/supabase";

@@ -22,6 +22,9 @@ import {
   UserPlus,
   X,
 } from "lucide-react";
+import { RestaurantMealDrawer } from "@/app/components/restaurant/RestaurantMealDrawer";
+import { restaurantCartRows, type MealPicker, type MealInstance, type MealSelection } from "@/app/lib/restaurant/pos";
+import restaurantPosStyles from "@/app/components/restaurant/restaurant-pos.module.css";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -98,11 +101,6 @@ type ReceivableCustomerContext = { customer: { id: string; code: string; display
 type CustomerMaster = { id: string; code: string; display_name: string; tax_id: string | null; customer_type: "persona_fisica" | "persona_moral" | null; notes: string | null; is_active: boolean; is_imported: boolean; source_reference: string | null; migration_status: string; addresses: CustomerAddress[]; contacts: CustomerContact[]; commercial: { price_list_id: string | null; price_list_name: string | null; payment_manager: string | null; sales_agent: string | null; credit_enabled: boolean | null; credit_limit: number | null; credit_term_days: number | null; outstanding_amount: number | null; available_credit: number | null }; receivables_summary: ReceivablesSummary | null; open_receivables: CustomerReceivable[] };
 type PriceTier = { id: string; name: string; min_quantity: number; max_quantity: number | null; amount: number; price_list_id: string };
 type CartItem = { cart_item_id: string; product_id: string; code: string | null; name: string; unit: string | null; quantity: number; quantity_on_hand: number; inventory_tracked: boolean; unit_price_amount: number; price_tier_id?: string | null; price_tier_name?: string | null; price_tier_min_quantity?: number | null; price_tier_max_quantity?: number | null; price_tier_mode?: "automatic" | "manual"; available_price_tiers?: PriceTier[]; discount_percent: number; gross_amount: number; discount_amount: number; tax_amount: number; total_amount: number };
-type RestaurantBundleOption = { id: string; product_id: string; name: string; available: boolean };
-type RestaurantBundleGroup = { id: string; name: string; minimum: number; maximum: number; options: RestaurantBundleOption[] };
-type RestaurantBundleExtra = RestaurantBundleOption & { price: { amount?: number; currency_code?: string } | null };
-type RestaurantBundlePicker = { configured: boolean; bundle_id?: string; product_id?: string; solo_price?: number; combo_price?: number; groups: RestaurantBundleGroup[]; extras: RestaurantBundleExtra[] };
-type RestaurantBundleInstance = { id: string; cart_item_id: string; selections: Array<{ group: string; product_id: string; name: string; quantity: number }> };
 type VolumeDiscountTier = { tier_number: number; min_quantity: number; max_quantity: number | null; discount_percent: number; is_active: boolean };
 type CartQuote = { cart_id: string; revision: number; customer_id: string | null; currency_code: string | null; price_list_id: string | null; price_list_name: string | null; price_list_override_id: string | null; price_list_overridden: boolean; items: CartItem[]; subtotal_amount: number; discount_amount: number; tax_amount: number; total_amount: number; can_checkout: boolean; pending_discount_approval: boolean };
 type HeldSaleCart = { cart_id: string; revision: number; customer_id: string | null; customer_name: string | null; held_at: string; item_count: number; unit_count: number; preview_items: string[]; pending_discount_approval: boolean };
@@ -315,12 +313,14 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
   const [blockedOpen, setBlockedOpen] = useState(false);
   const [blockedLoading, setBlockedLoading] = useState(false);
   const [bundleProduct, setBundleProduct] = useState<ProductSearchItem | null>(null);
-  const [bundlePicker, setBundlePicker] = useState<RestaurantBundlePicker | null>(null);
-  const [bundleMode, setBundleMode] = useState<"solo" | "complete">("solo");
-  const [bundleSelections, setBundleSelections] = useState<Record<string, string[]>>({});
-  const [bundleExtras, setBundleExtras] = useState<string[]>([]);
+  const [bundlePicker, setBundlePicker] = useState<MealPicker | null>(null);
+  const [editingMeal, setEditingMeal] = useState<MealInstance | undefined>();
+  const [mealInitialMode, setMealInitialMode] = useState<"solo" | "complete" | undefined>();
+  const restaurantMutation = useRef(false);
   const [bundleLoading, setBundleLoading] = useState(false);
-  const [bundleInstances, setBundleInstances] = useState<RestaurantBundleInstance[]>([]);
+  const [restaurantRefreshing, setRestaurantRefreshing] = useState(false);
+  const [bundleReadError, setBundleReadError] = useState<string | null>(null);
+  const [bundleInstances, setBundleInstances] = useState<MealInstance[]>([]);
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerResults, setCustomerResults] = useState<Customer[]>([]);
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
@@ -394,7 +394,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
     return a.location_name.localeCompare(b.location_name, "es-MX");
   }), [locationStock]);
   const connectionDegraded = !online || contextStale;
-  const checkoutReady = online && !contextStale && pendingChanges === 0 && !syncing && !syncConflict;
+  const checkoutReady = !(experience === "restaurant" && (bundleReadError||restaurantRefreshing)) && online && !contextStale && pendingChanges === 0 && !syncing && !syncConflict;
 
   // The POS is a fixed workstation at desktop size. Native autoFocus can scroll
   // the document before that layout settles, leaving the page chrome clipped.
@@ -455,7 +455,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
       const cached = await readPosCachedValue<CartQuote>(storageScope, `cart:${id}`);
       if (cached) { setQuote(cached); quoteRef.current = cached; authoritativeQuoteRef.current = cached; return; }
     }
-    const { data, error } = await getSupabaseClient().rpc("quote_sale_cart", { p_cart_id: id });
+    const { data, error } = await getSupabaseClient().rpc(experience === "restaurant" ? "quote_restaurant_pos_cart" : "quote_sale_cart", { p_cart_id: id });
     if (error) {
       const cached = storageScope ? await readPosCachedValue<CartQuote>(storageScope, `cart:${id}`) : null;
       if (cached) { setQuote(cached); quoteRef.current = cached; authoritativeQuoteRef.current = cached; return; }
@@ -466,7 +466,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
     quoteRef.current = data as CartQuote;
     authoritativeQuoteRef.current = data as CartQuote;
     if (storageScope) await writePosCache(storageScope, `cart:${id}`, data as CartQuote);
-  }, [online, storageScope, toast]);
+  }, [online, storageScope, toast, experience]);
 
   const loadHeldSales = useCallback(async (page = 1) => {
     if (!ownSession || !online) {
@@ -499,14 +499,14 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
     let active = true;
     void Promise.resolve().then(async () => {
       setHeldPreviewLoading(true);
-      const { data, error } = await getSupabaseClient().rpc("quote_sale_cart", { p_cart_id: selectedHeldId });
+      const { data, error } = await getSupabaseClient().rpc(experience === "restaurant" ? "quote_restaurant_pos_cart" : "quote_sale_cart", { p_cart_id: selectedHeldId });
       if (!active) return;
       setHeldPreview(error ? null : data as CartQuote);
       if (error) setHeldError(rpcError(error, "La venta necesita revisión antes de retomarla."));
       setHeldPreviewLoading(false);
     });
     return () => { active = false; };
-  }, [online, selectedHeldId]);
+  }, [online, selectedHeldId, experience]);
 
   const ensureCart = useCallback(async () => {
     if (cartRecoveryInFlight.current) return;
@@ -706,7 +706,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
         // change is queued. Refresh once and replay the user's delta against
         // the authoritative cart instead of forcing them to discard it.
         if (error && isPosCartRevisionConflict(initialMessage)) {
-          const { data: refreshedData, error: refreshError } = await getSupabaseClient().rpc("quote_sale_cart", { p_cart_id: group.cartId });
+          const { data: refreshedData, error: refreshError } = await getSupabaseClient().rpc(experience === "restaurant" ? "quote_restaurant_pos_cart" : "quote_sale_cart", { p_cart_id: group.cartId });
           if (!refreshError && refreshedData) {
             authoritative = refreshedData as CartQuote;
             authoritativeQuoteRef.current = authoritative;
@@ -755,7 +755,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
       syncInFlightRef.current = false;
       setSyncing(false);
     }
-  }, [online, storageScope]);
+  }, [online, storageScope, experience]);
 
   async function resolveSyncConflict() {
     if (syncConflict?.discardIds?.length && storageScope) {
@@ -837,91 +837,95 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
 
   const loadBundleInstances = useCallback(async (activeCartId: string) => {
     if (experience !== "restaurant") return;
-    const { data } = await getSupabaseClient().rpc("list_sale_cart_bundle_instances", { p_cart_id: activeCartId });
-    setBundleInstances((data as RestaurantBundleInstance[] | null) ?? []);
+    setRestaurantRefreshing(true);
+    try {
+      const client=getSupabaseClient();
+      const refreshed=await client.rpc("quote_restaurant_pos_cart",{p_cart_id:activeCartId});
+      if(refreshed.error)throw refreshed.error;
+      const {data,error}=await client.rpc("list_sale_cart_bundle_instances",{p_cart_id:activeCartId});
+      if(error)throw error;
+      if(quoteRef.current?.cart_id!==activeCartId)return;
+      const next=refreshed.data as CartQuote;
+      setQuote(next);quoteRef.current=next;authoritativeQuoteRef.current=next;
+      setBundleReadError(null);setBundleInstances((data as MealInstance[] | null)??[]);
+    } catch(error) {
+      setBundleReadError("No se pudieron cargar las selecciones. Actualiza la venta antes de cobrar.");
+      throw new Error(typeof error==="object"&&error!==null&&"message" in error&&typeof error.message==="string"?error.message:"No se pudieron cargar las comidas.");
+    } finally {setRestaurantRefreshing(false);}
   }, [experience]);
 
   useEffect(() => {
-    if (cartId) void Promise.resolve().then(() => loadBundleInstances(cartId));
-    else void Promise.resolve().then(() => setBundleInstances([]));
-  }, [cartId, loadBundleInstances]);
+    if (cartId) void Promise.resolve().then(()=>loadBundleInstances(cartId)).catch(() => {});
+    else void Promise.resolve().then(()=>{setBundleInstances([]);setBundleReadError(null);});
+  }, [cartId, quote?.revision, loadBundleInstances]);
 
   async function choosePosProduct(product: ProductSearchItem) {
-    if (experience !== "restaurant" || !cartId || !online) {
-      await changeItem(product.product_id, 1, true);
-      return;
-    }
+    if (experience !== "restaurant") { await changeItem(product.product_id, 1, true); return; }
+    if (!cartId || !checkoutReady || busy || restaurantMutation.current) return;
+    restaurantMutation.current = true; setBundleLoading(true); setBusy(true);
+    try {
+      const { data, error } = await getSupabaseClient().rpc("get_pos_restaurant_bundle_choice", { p_cart_id: cartId, p_product_id: product.product_id });
+      if (error) throw new Error(rpcError(error, "No se pudieron consultar las opciones."));
+      if (!(data as MealPicker)?.configured) { await changeItem(product.product_id, 1, true); return; }
+      await saveMealSelection(product.product_id, {mode:"solo",selections:{},extras:[],quantity:1});
+      setSearch(""); searchRef.current?.focus();
+    } catch (error) { toast({title:"No se agregó el platillo",description:error instanceof Error?error.message:"Intenta nuevamente.",tone:"error"}); }
+    finally { restaurantMutation.current=false;setBundleLoading(false);setBusy(false); }
+  }
+
+  async function editRestaurantMeal(instance: MealInstance, mode?: "solo" | "complete") {
+    if (!cartId || !quote || !checkoutReady || busy || restaurantMutation.current) return;
+    const item=quote.items.find(item=>item.cart_item_id===instance.cart_item_id);if(!item)return;
     setBundleLoading(true);
-    const { data, error } = await getSupabaseClient().rpc("get_pos_restaurant_bundle_choice", { p_cart_id: cartId, p_product_id: product.product_id });
-    setBundleLoading(false);
-    if (error) {
-      toast({ title: "No se pudo revisar el paquete", description: rpcError(error, "Intenta nuevamente."), tone: "error" });
-      return;
-    }
-    const picker = data as RestaurantBundlePicker;
-    if (!picker?.configured) {
-      await changeItem(product.product_id, 1, true);
-      return;
-    }
-    setBundleProduct(product);
-    setBundlePicker(picker);
-    setBundleMode("solo");
-    setBundleSelections(Object.fromEntries((picker.groups ?? []).map((group) => [group.id, []])));
-    setBundleExtras([]);
+    try {
+      const {data,error}=await getSupabaseClient().rpc("get_pos_restaurant_bundle_choice",{p_cart_id:cartId,p_product_id:item.product_id});
+      if(error)throw new Error(rpcError(error,"No se pudieron cargar las opciones."));
+      if(!(data as MealPicker)?.configured)throw new Error("Este platillo ya no tiene opciones activas.");
+      setBundlePicker(data as MealPicker);setEditingMeal(instance);setMealInitialMode(mode);
+      setBundleProduct({product_id:item.product_id,name:item.name,code:item.code,unit:item.unit,inventory_tracked:item.inventory_tracked,quantity_on_hand:item.quantity_on_hand,price_amount:item.total_amount/item.quantity,currency_code:quote.currency_code??"MXN"});
+    }catch(error){toast({title:"No se abrió la comida",description:error instanceof Error?error.message:"Intenta nuevamente.",tone:"error"});}
+    finally{setBundleLoading(false);}
   }
 
-  function toggleBundleOption(group: RestaurantBundleGroup, optionId: string) {
-    setBundleSelections((current) => {
-      const selected = current[group.id] ?? [];
-      if (selected.includes(optionId)) return { ...current, [group.id]: selected.filter((id) => id !== optionId) };
-      if (group.maximum === 1) return { ...current, [group.id]: [optionId] };
-      if (selected.length >= group.maximum) return current;
-      return { ...current, [group.id]: [...selected, optionId] };
-    });
-  }
-
-  async function addRestaurantBundle() {
-    if (!cartId || !quote || !bundleProduct || !bundlePicker) return;
-    const incomplete = bundleMode === "complete" && bundlePicker.groups.find((group) => {
-      const count = bundleSelections[group.id]?.length ?? 0;
-      return count < group.minimum || count > group.maximum;
-    });
-    if (incomplete) {
-      toast({ title: `Completa ${incomplete.name}`, description: incomplete.maximum === 1 ? "Elige una opción para continuar." : `Elige entre ${incomplete.minimum} y ${incomplete.maximum} opciones.`, tone: "error" });
-      return;
-    }
-    setBusy(true);
-    const { data, error } = await getSupabaseClient().rpc("add_restaurant_bundle_choice", {
-      p_cart_id: cartId,
-      p_product_id: bundleProduct.product_id,
-      p_mode: bundleMode,
-      p_selections: bundleSelections,
-      p_extra_product_ids: bundleExtras,
-      p_expected_revision: quote.revision,
-      p_client_request_id: crypto.randomUUID(),
-    });
-    setBusy(false);
-    if (error) {
-      toast({ title: "No se agregó la comida", description: rpcError(error, "Revisa las opciones e intenta nuevamente."), tone: "error" });
-      return;
-    }
-    const next = data as CartQuote;
-    setQuote(next); quoteRef.current = next;
+  async function saveMealSelection(productId: string, value: MealSelection, instanceId?: string) {
+    if(!cartId||!quoteRef.current)throw new Error("Actualiza la venta antes de continuar.");
+    const payload={p_cart_id:cartId,p_product_id:productId,p_mode:value.mode,p_selections:value.mode==="complete"?value.selections:{},p_extra_product_ids:value.extras,p_quantity:value.quantity,p_instance_id:instanceId??null};
+    const scope=`restaurant-meal:${cartId}:${instanceId??productId}`;
+    const {data,error}=await getSupabaseClient().rpc("save_restaurant_pos_selection",{...payload,p_expected_revision:quoteRef.current.revision,p_client_request_id:idempotency.get(scope,JSON.stringify(payload))});
+    if(error){await loadQuote(cartId);throw new Error(rpcError(error,"Revisa las opciones e intenta nuevamente."));}
+    const next=data as CartQuote;setQuote(next);quoteRef.current=next;
     await loadBundleInstances(cartId);
-    setBundleProduct(null); setBundlePicker(null); setSearch(""); searchRef.current?.focus();
+    idempotency.clear(scope);
   }
 
-  async function removeRestaurantBundle(instanceId: string) {
-    if (!cartId || !quote) return;
-    setBusy(true);
-    const { data, error } = await getSupabaseClient().rpc("remove_restaurant_bundle_from_cart", { p_cart_id: cartId, p_instance_id: instanceId, p_expected_revision: quote.revision });
-    setBusy(false);
-    if (error) {
-      toast({ title: "No se quitó la comida", description: rpcError(error, "Actualiza la venta e intenta nuevamente."), tone: "error" });
-      return;
-    }
-    const next=data as CartQuote;setQuote(next);quoteRef.current=next;await loadBundleInstances(cartId);
+  const previewRestaurantMeal = useCallback(async (value: MealSelection) => {
+    if(!cartId||!bundleProduct||!quoteRef.current)throw new Error("Actualiza la venta antes de continuar.");
+    const {data,error}=await getSupabaseClient().rpc("preview_restaurant_pos_selection",{p_cart_id:cartId,p_product_id:bundleProduct.product_id,p_mode:value.mode,p_selections:value.mode==="complete"?value.selections:{},p_extra_product_ids:value.extras,p_quantity:value.quantity,p_instance_id:editingMeal?.id??null,p_expected_revision:quoteRef.current.revision});
+    if(error)throw new Error(rpcError(error,"No se pudo calcular la selección."));
+    const preview=data as {quote:CartQuote;instances:MealInstance[];instance_id:string};
+    const row=restaurantCartRows(preview.quote.items,preview.instances).meals.find(row=>row.instance.id===preview.instance_id);
+    if(!row)throw new Error("No se pudo calcular la comida.");
+    return {total:row.total,cartTotal:preview.quote.total_amount};
+  },[cartId,bundleProduct,editingMeal]);
+
+  async function updateRestaurantMeal(value: MealSelection) {
+    if(!bundleProduct||restaurantMutation.current)return;
+    restaurantMutation.current=true;setBusy(true);
+    try{await saveMealSelection(bundleProduct.product_id,value,editingMeal?.id);setBundleProduct(null);setBundlePicker(null);}
+    finally{restaurantMutation.current=false;setBusy(false);}
   }
+
+  async function removeRestaurantBundle(instance: MealInstance) {
+    if(!checkoutReady||restaurantMutation.current)return;
+    restaurantMutation.current=true;setBusy(true);
+    try{await saveMealSelection(instance.product_id,{mode:instance.mode,selections:{},extras:[],quantity:0},instance.id);}
+    catch(error){toast({title:"No se quitó la comida",description:error instanceof Error?error.message:"Intenta nuevamente.",tone:"error"});}
+    finally{restaurantMutation.current=false;setBusy(false);}
+  }
+
+  const restaurantRows=restaurantCartRows(quote?.items??[],experience==="restaurant"?bundleInstances:[]);
+  const hasPersonalizedMeals=experience==="restaurant"&&bundleInstances.some(instance=>instance.mode==="complete"||instance.extras.length>0);
+  const cartLineCount=experience==="restaurant"?restaurantRows.meals.length+restaurantRows.plainItems.length:(quote?.items.length??0);
 
   function setItemQuantity(productId: string, currentQuantity: number, nextQuantity: number | null) {
     if (nextQuantity === null) {
@@ -1022,6 +1026,10 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
       return;
     }
     if (saleType === "deferred") {
+      if (hasPersonalizedMeals) {
+        toast({title:"Conserva las opciones de la comida",description:"Cobra esta venta como contado o crédito. Puedes ponerla en espera para retomarla después.",tone:"info"});
+        return;
+      }
       if (!customer) {
         toast({ title: "Selecciona un cliente", description: "La orden necesita un cliente para conservar pagos, saldo y entrega.", tone: "error" });
         customerRef.current?.focus();
@@ -1078,7 +1086,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
     setBusy(true);
     const checkoutStartedAt = performance.now();
     const operationFingerprint = JSON.stringify({ cartId, revision: quote.revision, saleType, paymentMethodId: saleType === "cash" ? paymentMethodId : null, received: saleType === "cash" ? received : null, paymentReference: paymentReference.trim() || null, total: quote.total_amount });
-    const { data, error } = await getSupabaseClient().rpc("complete_pos_sale", {
+    const { data, error } = await getSupabaseClient().rpc(experience === "restaurant" ? "complete_restaurant_pos_sale" : "complete_pos_sale", {
       p_cart_id: cartId,
       p_expected_revision: quote.revision,
       p_sale_type: saleType,
@@ -1300,6 +1308,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
   if (!context.registers.length) return <div className="content-frame"><PosEmpty title="No hay cajas configuradas" description="Crea una caja activa y asígnala a una ubicación antes de vender." /></div>;
 
   return <div className="content-frame pos-page">
+    {experience==="restaurant"&&bundleReadError&&<div role="alert" className={restaurantPosStyles.error}>{bundleReadError}<Button variant="ghost" disabled={bundleLoading} onClick={()=>{if(cartId)void loadBundleInstances(cartId).catch(()=>{});}}>Reintentar</Button></div>}
     <header className="pos-page__heading pos-reui-heading"><div><span className="eyebrow">Estación de venta</span><h1>Punto de venta</h1><p>{ownSession && selectedRegister ? `${selectedLocation?.name ?? selectedRegister.code} · ${selectedRegister.name} · ${cashierName}` : companyName}</p></div><Link className="pos-exit-link" href="/satrapy/ventas/historial">Historial de ventas</Link></header>
     {(connectionDegraded || showSlowSyncStatus) && <ReuiAlert variant="warning" className="pos-connection-status" role="status" aria-live="polite"><CloudOff size={18} aria-hidden="true" /><ReuiAlertTitle>{connectionDegraded ? "Sin conexión: venta pendiente de sincronizar" : syncing ? "Sincronizando cambios pendientes" : "Venta pendiente de sincronizar"}</ReuiAlertTitle><ReuiAlertDescription>{connectionDegraded ? "Puedes buscar en caché y preparar el carrito. El cobro, inventario y ticket se habilitan al recuperar la conexión." : `${pendingChanges} cambio${pendingChanges === 1 ? "" : "s"} en cola; el cobro se habilitará al terminar.`}</ReuiAlertDescription>{connectionDegraded && <ReuiAlertAction><Button size="sm" variant="secondary" onClick={() => { setOnline(navigator.onLine); void reloadContext(); setQueueVersion((current) => current + 1); }}>Reintentar</Button></ReuiAlertAction>}</ReuiAlert>}
     {syncConflict && <ReuiAlert variant="destructive" className="pos-sync-conflict"><AlertCircle size={18} aria-hidden="true" /><ReuiAlertTitle>Revisa el carrito</ReuiAlertTitle><ReuiAlertDescription>{syncConflict.message}</ReuiAlertDescription><ReuiAlertAction><Button size="sm" variant="secondary" onClick={() => void resolveSyncConflict()}>{syncConflict.discardIds?.length ? "Usar versión del servidor" : "Confirmar revisión"}</Button></ReuiAlertAction></ReuiAlert>}
@@ -1310,7 +1319,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
             <ReuiTabsTrigger value="current"><ShoppingCart size={16} aria-hidden="true" /> Venta actual</ReuiTabsTrigger>
             <ReuiTabsTrigger value="held"><Clock3 size={16} aria-hidden="true" /> En espera <span>{heldSales.total}</span></ReuiTabsTrigger>
           </ReuiTabsList>
-          {posTab === "current" && <div className="pos-cart__top" aria-label="Estado y acciones de la venta actual"><div className="pos-cart__heading"><span className="eyebrow">Venta actual</span><div className="pos-cart__title-row"><h2>{quote?.items.length ?? 0} {(quote?.items.length ?? 0) === 1 ? "partida" : "partidas"}</h2>{discountLabel && <span className="pos-cart-discount">{discountLabel}</span>}</div></div><Badge className="pos-cart__session-status" tone={pendingChanges ? "warning" : "success"}>{pendingChanges ? `${pendingChanges} pendiente${pendingChanges === 1 ? "" : "s"}` : "Caja abierta"}</Badge><div className="pos-cart__actions">{permissions.includes("apply_discount") && (quote?.pending_discount_approval || Number(quote?.discount_amount ?? 0) > 0) ? <Button variant="ghost" size="sm" loading={busy} disabled={!checkoutReady} onClick={() => void cancelDiscount()}>Quitar descuento</Button> : permissions.includes("apply_discount") ? <Button variant="ghost" size="sm" disabled={!checkoutReady || !quote?.items.length} onClick={() => setDiscountOpen(true)}>Aplicar descuento</Button> : null}{Boolean(quote?.items.length) && <Button variant="ghost" size="sm" disabled={!checkoutReady || busy} onClick={() => void holdCurrentSale()}><Clock3 size={14} aria-hidden="true" /> Poner en espera</Button>}{Boolean(quote?.items.length) && <Button variant="ghost" size="sm" disabled={!checkoutReady || busy} onClick={() => setDiscardCartOpen(true)}><Trash2 size={14} aria-hidden="true" /> Vaciar venta</Button>}</div></div>}
+          {posTab === "current" && <div className="pos-cart__top" aria-label="Estado y acciones de la venta actual"><div className="pos-cart__heading"><span className="eyebrow">Venta actual</span><div className="pos-cart__title-row"><h2>{cartLineCount} {cartLineCount === 1 ? "partida" : "partidas"}</h2>{discountLabel && <span className="pos-cart-discount">{discountLabel}</span>}</div></div><Badge className="pos-cart__session-status" tone={pendingChanges ? "warning" : "success"}>{pendingChanges ? `${pendingChanges} pendiente${pendingChanges === 1 ? "" : "s"}` : "Caja abierta"}</Badge><div className="pos-cart__actions">{permissions.includes("apply_discount") && (quote?.pending_discount_approval || Number(quote?.discount_amount ?? 0) > 0) ? <Button variant="ghost" size="sm" loading={busy} disabled={!checkoutReady} onClick={() => void cancelDiscount()}>Quitar descuento</Button> : permissions.includes("apply_discount") ? <Button variant="ghost" size="sm" disabled={!checkoutReady || !quote?.items.length} onClick={() => setDiscountOpen(true)}>Aplicar descuento</Button> : null}{Boolean(quote?.items.length) && <Button variant="ghost" size="sm" disabled={!checkoutReady || busy} onClick={() => void holdCurrentSale()}><Clock3 size={14} aria-hidden="true" /> Poner en espera</Button>}{Boolean(quote?.items.length) && <Button variant="ghost" size="sm" disabled={!checkoutReady || busy} onClick={() => setDiscardCartOpen(true)}><Trash2 size={14} aria-hidden="true" /> Vaciar venta</Button>}</div></div>}
         </div>
       <ReuiTabsContent value="current" className="pos-shell" id="pos-panel-current">
         <section className="pos-catalog">
@@ -1318,7 +1327,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
           <div className="pos-search-meta" role="status" aria-live="polite"><span>{productLoading ? "Buscando…" : `${products.length} de ${productTotal} resultados${!online ? " en caché" : ""}`}</span><span>Enter agrega la coincidencia única · p95 búsqueda {metricP95.search === null ? "—" : `${Math.round(metricP95.search)} ms`} · agregar {metricP95.add_item === null ? "—" : `${Math.round(metricP95.add_item)} ms`}</span></div>
           <div className="pos-shortcuts" aria-label="Atajos de teclado disponibles"><span><kbd>F2</kbd> Cliente</span>{permissions.includes("apply_discount") && quote?.items.length ? <span><kbd>F4</kbd> Descuento</span> : null}{quote?.items.length ? <><span><kbd>F8</kbd> Cobrar</span><span><kbd>Esc</kbd> Cerrar</span><span><kbd>+</kbd><kbd>−</kbd> Partida enfocada</span></> : null}</div>
           <ReuiScrollArea className="pos-product-list">
-            {products.map((product) => <div className="pos-product-row" key={product.product_id}><button className="pos-product" disabled={busy||bundleLoading} onClick={() => void choosePosProduct(product)}><span><strong>{highlightSearchMatch(product.name, search)}</strong><small>{highlightSearchMatch(product.code ?? "Sin código", search)} · {product.unit ?? "Unidad"}</small></span><span className="pos-product__right"><b>{money(product.price_amount, product.currency_code)}</b><small>Precio total</small>{product.inventory_tracked && <em className={product.quantity_on_hand <= 3 ? "is-low" : ""}>{product.quantity_on_hand} disp.</em>}</span></button>{product.inventory_tracked && permissions.includes("view_inventory") && <Button className="pos-product-stock" size="sm" variant="ghost" disabled={busy} onClick={() => openLocationStock(product)}><ClipboardList size={14} /> Otras sucursales</Button>}</div>)}
+            {products.map((product) => <div className="pos-product-row" key={product.product_id}><button className="pos-product" disabled={busy||bundleLoading||(experience==="restaurant"&&!checkoutReady)} onClick={() => void choosePosProduct(product)}><span><strong>{highlightSearchMatch(product.name, search)}</strong><small>{highlightSearchMatch(product.code ?? "Sin código", search)} · {product.unit ?? "Unidad"}</small></span><span className="pos-product__right"><b>{money(product.price_amount, product.currency_code)}</b><small>Precio total</small>{product.inventory_tracked && <em className={product.quantity_on_hand <= 3 ? "is-low" : ""}>{product.quantity_on_hand} disp.</em>}</span></button>{product.inventory_tracked && permissions.includes("view_inventory") && <Button className="pos-product-stock" size="sm" variant="ghost" disabled={busy} onClick={() => openLocationStock(product)}><ClipboardList size={14} /> Otras sucursales</Button>}</div>)}
             {!productLoading && !products.length && <ReuiEmpty className="pos-list-empty"><ReuiEmptyHeader><ReuiEmptyMedia variant="icon"><Search size={18} aria-hidden="true" /></ReuiEmptyMedia><ReuiEmptyTitle>{search ? `Sin resultados para “${search}”` : `Sin ${productWords.plural} disponibles`}</ReuiEmptyTitle><ReuiEmptyDescription>{search ? "Prueba con otro nombre, SKU o código." : `Los ${productWords.plural} listos para vender aparecerán aquí.`}</ReuiEmptyDescription></ReuiEmptyHeader>{search && <Button variant="secondary" size="sm" onClick={() => { setSearch(""); searchRef.current?.focus(); }}>Limpiar búsqueda</Button>}</ReuiEmpty>}
             {!productLoading && products.length < productTotal && <Button className="pos-load-more" variant="secondary" loading={productLoadingMore} disabled={busy} onClick={() => void loadMoreProducts()}>Cargar más {productWords.plural}</Button>}
             {blockedLoading && <p className="pos-blocked-loading">Consultando existencias en otras sucursales…</p>}
@@ -1328,20 +1337,19 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
         <aside className="pos-cart" id="pos-checkout">
           <div className="pos-cart__customer"><div className="pos-customer-picker"><div className="pos-customer-picker__heading"><span>Cliente</span>{permissions.includes("manage_customers") && <button type="button" onClick={() => setQuickCustomerOpen(true)}><UserPlus size={13} aria-hidden="true" /> Crear cliente</button>}</div><Autocomplete items={customerResults} value={customerQuery} open={customerPickerOpen && customerResults.length > 0} onValueChange={setCustomerQuery} onOpenChange={setCustomerPickerOpen} openOnInputClick autoHighlight itemToStringValue={(item) => item.display_name}><AutocompleteInput ref={customerRef} showClear={Boolean(customerQuery)} placeholder={customer ? customer.display_name : "Buscar cliente (F2)"} aria-label="Buscar cliente" />{customerResults.length > 0 && <AutocompleteContent className="pos-customer-results"><AutocompleteList>{customerResults.map((item) => <AutocompleteItem value={item} key={item.id} disabled={saleType === "credit" && (!item.credit_enabled || Boolean(item.alpha_external_code && item.migration_status !== "promoted"))} onClick={() => void selectCustomer(item)}><span><strong>{item.display_name}</strong><small>{item.code}{saleType === "credit" && item.available_credit !== undefined ? ` · crédito disponible ${money(item.available_credit)}` : ""}{item.alpha_external_code && item.migration_status !== "promoted" ? " · migración pendiente" : ""}</small></span></AutocompleteItem>)}</AutocompleteList></AutocompleteContent>}</Autocomplete><span className="sr-only" role="status" aria-live="polite">{customerQuery && customerResults.length ? `${customerResults.length} clientes disponibles.` : ""}</span>{customer && <button className="pos-customer-chip" aria-label={`Quitar cliente ${customer.display_name}`} onClick={() => void selectCustomer(null)}><span>{customer.display_name}</span><X size={14} aria-hidden="true" /></button>}</div>
           {customer && saleType === "credit" && customer.available_credit !== undefined && <div className="pos-credit-alert"><CircleDollarSign size={18} /><div><strong>Crédito disponible</strong><span>{money(customer.available_credit)} · plazo {customer.credit_term_days} días</span></div></div>}</div>
-          <ReuiScrollArea className="pos-cart-scroll" type="always" onWheel={scrollCartWithPointer} viewportProps={{ tabIndex: 0, "aria-label": `${productWords.pluralTitle} en la venta. Desplázate para revisar todas las partidas.` }}><div className="pos-cart-lines">{quote?.items.length ? quote.items.map((item) => {
+          <ReuiScrollArea className="pos-cart-scroll" type="always" onWheel={scrollCartWithPointer} viewportProps={{ tabIndex: 0, "aria-label": `${productWords.pluralTitle} en la venta. Desplázate para revisar todas las partidas.` }}><div className="pos-cart-lines">{experience==="restaurant"&&restaurantRows.meals.map(({instance,item,total})=><article className={restaurantPosStyles.meal} key={instance.id} aria-label={`${item.name}, ${instance.mode==="complete"?"comida completa":"platillo solo"}, cantidad ${instance.quantity}`}><div><strong>{item.name}</strong><span className={restaurantPosStyles.mode}>{instance.quantity} × {instance.mode==="complete"?"Comida completa":"Platillo solo"}</span>{instance.selections.length>0&&<small>{instance.selections.map(s=>s.name).join(" · ")}</small>}{instance.extras.length>0&&<small>Extras: {instance.extras.map(e=>e.name).join(" · ")}</small>}<div className={restaurantPosStyles.actions}>{instance.mode==="solo"&&instance.has_complete&&<Button size="sm" variant="ghost" disabled={busy||bundleLoading||!checkoutReady} onClick={()=>void editRestaurantMeal(instance,"complete")}>Hacer comida completa</Button>}{instance.has_extras&&instance.extras.length===0&&<Button size="sm" variant="ghost" disabled={busy||bundleLoading||!checkoutReady} onClick={()=>void editRestaurantMeal(instance)}>Agregar extras</Button>}<Button size="sm" variant="ghost" disabled={busy||bundleLoading||!checkoutReady} onClick={()=>void editRestaurantMeal(instance)}>Editar selección</Button></div></div><div className={restaurantPosStyles.amount}><strong>{money(total,quote?.currency_code??"MXN")}</strong><Button size="icon" variant="ghost" aria-label={`Quitar ${item.name} de la venta`} disabled={busy||bundleLoading||!checkoutReady} onClick={()=>void removeRestaurantBundle(instance)}><Trash2 size={15}/></Button></div></article>)}{quote?.items.length ? (experience==="restaurant"?restaurantRows.plainItems:quote.items).map((item) => {
             const automaticTier = automaticPriceTier(item);
             const tiers = item.available_price_tiers ?? [];
             const tierValue = item.price_tier_mode === "manual" && item.price_tier_id ? item.price_tier_id : "automatic";
             const priceTierLabel = item.price_tier_name ? `${item.price_tier_mode === "manual" ? "Manual" : "Automático"}: ${item.price_tier_name}` : null;
-            const instances=bundleInstances.filter((instance)=>instance.cart_item_id===item.cart_item_id);
-            return <article key={item.cart_item_id} tabIndex={0} aria-label={`${item.name}, cantidad ${item.quantity}. Usa más o menos para ajustar la partida.`} onKeyDown={(event) => { if (busy || event.target !== event.currentTarget || instances.length > 0) return; if (event.key === "+") { event.preventDefault(); void changeItem(item.product_id, 1); } if (event.key === "-") { event.preventDefault(); void changeItem(item.product_id, -1); } }}><div><strong title={item.name}>{item.name}</strong><small>{item.code ?? ""}{priceTierLabel ? <> · <span className={item.price_tier_mode === "manual" ? "pos-price-tier-note is-manual" : "pos-price-tier-note"}>{priceTierLabel}</span></> : null}{priceTierLabel ? " · " : " · "}{money(item.total_amount / item.quantity, quote.currency_code ?? "MXN")} por unidad{item.discount_percent > 0 ? ` · −${item.discount_percent}%` : ""}</small>{instances.length>0&&<div className="pos-bundle-line-details">{instances.map((instance,index)=><p key={instance.id}><b>Comida {index+1}</b><span>{instance.selections.map((selection)=>selection.name).join(" · ")}</span><button type="button" disabled={busy} aria-label={`Quitar comida ${index+1} de ${item.name}`} onClick={()=>void removeRestaurantBundle(instance.id)}>Quitar</button></p>)}</div>}{tiers.length > 0 && <div className="pos-price-tier-control">{permissions.includes("apply_discount") ? <Select className="pos-price-tier-select" ariaLabel={`Nivel de precio de ${item.name}`} value={tierValue} onValueChange={(value) => void selectItemPriceTier(item, value)} disabled={busy || !online} options={[{ value: "automatic", label: automaticTier ? `Automático · ${automaticTier.name}` : "Automático" }, ...tiers.map((tier) => ({ value: tier.id, label: `${tier.name} · ${priceTierRange(tier)} · ${money(tier.amount, quote.currency_code ?? "MXN")}` }))]} /> : <span className="pos-price-tier-readonly">{priceTierLabel ?? "Precio automático"}</span>}</div>}</div><div className="pos-line-controls pos-reui-line-controls"><NumberField value={item.quantity} min={0} max={item.inventory_tracked ? item.quantity_on_hand : undefined} step="any" disabled={busy || instances.length > 0} onValueCommitted={(value) => setItemQuantity(item.product_id, item.quantity, value)}><NumberFieldGroup><NumberFieldDecrement aria-label={`Restar ${item.name}`} title={instances.length > 0 ? "Quita una comida desde su detalle." : undefined} /><NumberFieldInput aria-label={`Cantidad de ${item.name}`} /><NumberFieldIncrement aria-label={`Sumar ${item.name}`} title={instances.length > 0 ? "Agrega otra comida desde el catálogo para elegir sus componentes." : undefined} /></NumberFieldGroup></NumberField><strong>{money(item.total_amount, quote.currency_code ?? "MXN")}</strong></div></article>;
+            return <article key={item.cart_item_id} tabIndex={0} aria-label={`${item.name}, cantidad ${item.quantity}. Usa más o menos para ajustar la partida.`} onKeyDown={(event) => { if (busy || event.target !== event.currentTarget) return; if (event.key === "+") { event.preventDefault(); void changeItem(item.product_id, 1); } if (event.key === "-") { event.preventDefault(); void changeItem(item.product_id, -1); } }}><div><strong title={item.name}>{item.name}</strong><small>{item.code ?? ""}{priceTierLabel ? <> · <span className={item.price_tier_mode === "manual" ? "pos-price-tier-note is-manual" : "pos-price-tier-note"}>{priceTierLabel}</span></> : null}{priceTierLabel ? " · " : " · "}{money(item.total_amount / item.quantity, quote.currency_code ?? "MXN")} por unidad{item.discount_percent > 0 ? ` · −${item.discount_percent}%` : ""}</small>{tiers.length > 0 && <div className="pos-price-tier-control">{permissions.includes("apply_discount") ? <Select className="pos-price-tier-select" ariaLabel={`Nivel de precio de ${item.name}`} value={tierValue} onValueChange={(value) => void selectItemPriceTier(item, value)} disabled={busy || !online} options={[{ value: "automatic", label: automaticTier ? `Automático · ${automaticTier.name}` : "Automático" }, ...tiers.map((tier) => ({ value: tier.id, label: `${tier.name} · ${priceTierRange(tier)} · ${money(tier.amount, quote.currency_code ?? "MXN")}` }))]} /> : <span className="pos-price-tier-readonly">{priceTierLabel ?? "Precio automático"}</span>}</div>}</div><div className="pos-line-controls pos-reui-line-controls"><NumberField value={item.quantity} min={0} max={item.inventory_tracked ? item.quantity_on_hand : undefined} step="any" disabled={busy} onValueCommitted={(value) => setItemQuantity(item.product_id, item.quantity, value)}><NumberFieldGroup><NumberFieldDecrement aria-label={`Restar ${item.name}`} /><NumberFieldInput aria-label={`Cantidad de ${item.name}`} /><NumberFieldIncrement aria-label={`Sumar ${item.name}`} /></NumberFieldGroup></NumberField><strong>{money(item.total_amount, quote.currency_code ?? "MXN")}</strong></div></article>;
           }) : <ReuiEmpty className="pos-cart-empty"><ReuiEmptyHeader><ReuiEmptyMedia variant="icon"><ShoppingCart size={18} aria-hidden="true" /></ReuiEmptyMedia><ReuiEmptyTitle>Carrito vacío</ReuiEmptyTitle><ReuiEmptyDescription>Busca o escanea un {productWords.singular} para comenzar.</ReuiEmptyDescription></ReuiEmptyHeader></ReuiEmpty>}</div></ReuiScrollArea>
           <div className="pos-settlement">
             <div className="pos-settlement__overview"><div className="pos-cart-summary"><dl><div><dt>Subtotal</dt><dd>{money(quote?.subtotal_amount, quote?.currency_code ?? "MXN")}</dd></div><div><dt>Descuentos</dt><dd>−{money(quote?.discount_amount, quote?.currency_code ?? "MXN")}</dd></div><div><dt>Impuestos</dt><dd>{money(quote?.tax_amount, quote?.currency_code ?? "MXN")}</dd></div><div className="pos-cart-summary__total"><dt>Total</dt><dd>{money(quote?.total_amount, quote?.currency_code ?? "MXN")}</dd></div></dl></div>
             <div className="pos-sale-type" role="group" aria-label="Tipo de venta">
               <button aria-pressed={saleType === "cash"} className={saleType === "cash" ? "is-active" : ""} onClick={() => setSaleType("cash")}>Contado</button>
               {permissions.includes("sell_credit") && <button aria-pressed={saleType === "credit"} className={saleType === "credit" ? "is-active" : ""} onClick={() => setSaleType("credit")}>Crédito</button>}
-              {permissions.includes("manage_sales_orders") && <button aria-pressed={saleType === "deferred"} className={saleType === "deferred" ? "is-active" : ""} disabled={Boolean(quote?.price_list_overridden)} title={quote?.price_list_overridden ? "Restaura la lista automática para crear una orden." : undefined} onClick={() => { setSaleType("deferred"); setReceived(""); setPaymentReference(""); }}>Entrega posterior</button>}
+              {permissions.includes("manage_sales_orders") && <button aria-pressed={saleType === "deferred"} className={saleType === "deferred" ? "is-active" : ""} disabled={Boolean(quote?.price_list_overridden)||hasPersonalizedMeals} title={hasPersonalizedMeals ? "Las comidas con acompañamientos o extras se cobran como contado o crédito. Puedes poner la venta en espera." : quote?.price_list_overridden ? "Restaura la lista automática para crear una orden." : undefined} onClick={() => { setSaleType("deferred"); setReceived(""); setPaymentReference(""); }}>Entrega posterior</button>}
             </div></div>
             {quote?.pending_discount_approval && <div className="pos-credit-alert is-blocked"><AlertCircle size={18} /><div><strong>Descuento pendiente</strong><span>Otro usuario autorizado debe aprobarlo antes de cobrar.</span></div></div>}
             <div className="pos-checkout">
@@ -1365,7 +1373,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
               {Number(received || 0) > 0 && <><Select ariaLabel="Forma del pago inicial" value={paymentMethodId} onValueChange={(value) => { setPaymentMethodId(value); setPaymentReference(""); }} options={paymentMethods.map((method) => ({ value: method.id, label: method.name }))} />{selectedPayment?.settlement_kind === "external" && <label>Referencia<Input required value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} placeholder="Transferencia, depósito o terminal" /></label>}</>}
               <div className="pos-deferred-balance"><span>Saldo después del pago</span><strong>{money(Math.max(0, saleTotal - Number(received || 0)), quote?.currency_code ?? "MXN")}</strong></div>
             </section>}
-            <Button variant="primary" size="lg" loading={busy} disabled={!checkoutReady || !quote?.can_checkout || (saleType === "cash" && (!paymentMethodId || (isCashPayment && !validReceivedAmount) || (selectedPayment?.settlement_kind === "external" && !paymentReference.trim()))) || (saleType === "credit" && (!customer?.credit_enabled || Boolean(customer.alpha_external_code && customer.migration_status !== "promoted"))) || (saleType === "deferred" && (!customer || !validOrderPayment))} onClick={() => void complete()}>{saleType === "cash" ? "Cobrar" : saleType === "credit" ? "Confirmar crédito" : "Crear orden"} <kbd>F8</kbd></Button>
+            <Button variant="primary" size="lg" loading={busy} disabled={bundleLoading || !checkoutReady || !quote?.can_checkout || (saleType === "cash" && (!paymentMethodId || (isCashPayment && !validReceivedAmount) || (selectedPayment?.settlement_kind === "external" && !paymentReference.trim()))) || (saleType === "credit" && (!customer?.credit_enabled || Boolean(customer.alpha_external_code && customer.migration_status !== "promoted"))) || (saleType === "deferred" && (!customer || !validOrderPayment))} onClick={() => void complete()}>{saleType === "cash" ? "Cobrar" : saleType === "credit" ? "Confirmar crédito" : "Crear orden"} <kbd>F8</kbd></Button>
           </div>
           </div>
         </aside>
@@ -1384,13 +1392,7 @@ export function PosSalesView({ companyId, companyName, cashierName, permissions,
         </DataState>
       </ReuiTabsContent></ReuiTabs>
     </>}
-    <Modal className="pos-bundle-picker" open={Boolean(bundleProduct&&bundlePicker)} onOpenChange={(open)=>{if(!open&&!busy){setBundleProduct(null);setBundlePicker(null);}}} eyebrow="Personaliza el platillo" title={bundleProduct?.name??"Guisado"} description="Elige si lo vendes solo o como comida completa. Los extras se cobran aparte." footer={<><Button variant="secondary" disabled={busy} onClick={()=>{setBundleProduct(null);setBundlePicker(null);}}>Cancelar</Button><Button variant="primary" loading={busy} onClick={()=>void addRestaurantBundle()}>Agregar a la venta</Button></>}>
-      {bundlePicker&&<form className="pos-bundle-picker__form" onSubmit={(event)=>{event.preventDefault();void addRestaurantBundle();}}>
-        <fieldset className="pos-bundle-picker__mode"><legend><span>¿Cómo lo quieres?</span><small>Elige una opción</small></legend><div className="pos-bundle-picker__options"><label className={bundleMode==="solo"?"is-selected":undefined}><input type="radio" name="bundle-mode" checked={bundleMode==="solo"} onChange={()=>setBundleMode("solo")}/><span><strong>Solo guisado</strong><small>{money(bundlePicker.solo_price??bundleProduct?.price_amount,bundleProduct?.currency_code)}</small></span><CheckCircle2 size={18} aria-hidden="true"/></label><label className={bundleMode==="complete"?"is-selected":undefined}><input type="radio" name="bundle-mode" checked={bundleMode==="complete"} onChange={()=>setBundleMode("complete")}/><span><strong>Comida completa</strong><small>{money(bundlePicker.combo_price??80,bundleProduct?.currency_code)} · guisado + sopa + agua</small></span><CheckCircle2 size={18} aria-hidden="true"/></label></div></fieldset>
-        {bundleMode === "complete" && bundlePicker.groups.map((group)=><fieldset key={group.id}><legend><span>{group.name}</span><small>{group.maximum===1?"Elige 1":`Elige de ${group.minimum} a ${group.maximum}`}</small></legend><div className="pos-bundle-picker__options">{group.options.map((option)=>{const checked=(bundleSelections[group.id]??[]).includes(option.id);return <label className={checked?"is-selected":undefined} key={option.id}><input type={group.maximum===1?"radio":"checkbox"} name={`bundle-${group.id}`} checked={checked} disabled={!option.available||busy} onChange={()=>toggleBundleOption(group,option.id)}/><span><strong>{option.name}</strong><small>{option.available?"Incluido":"No disponible"}</small></span><CheckCircle2 size={18} aria-hidden="true"/></label>;})}</div></fieldset>)}
-        {bundlePicker.extras.length>0&&<fieldset className="pos-bundle-picker__extras"><legend><span>¿Agregar algo extra?</span><small>Opcional · se suma al precio de la comida</small></legend><div className="pos-bundle-picker__options">{bundlePicker.extras.map((extra)=>{const checked=bundleExtras.includes(extra.product_id);return <label className={checked?"is-selected":undefined} key={extra.id}><input type="checkbox" checked={checked} disabled={!extra.available||!extra.price||busy} onChange={()=>setBundleExtras((current)=>current.includes(extra.product_id)?current.filter((id)=>id!==extra.product_id):[...current,extra.product_id])}/><span><strong>{extra.name}</strong><small>{extra.price?`+ ${money(extra.price.amount,extra.price.currency_code)} antes de IVA`:"Sin precio vigente"}</small></span><Plus size={18} aria-hidden="true"/></label>;})}</div></fieldset>}
-      </form>}
-    </Modal>
+    {experience === "restaurant" && bundleProduct && bundlePicker && <RestaurantMealDrawer key={`${editingMeal?.id ?? bundleProduct.product_id}:${mealInitialMode??"edit"}`} name={bundleProduct.name} picker={bundlePicker} instance={editingMeal} initialMode={mealInitialMode} busy={busy} onClose={()=>{setBundleProduct(null);setBundlePicker(null);}} onSave={updateRestaurantMeal} onPreview={previewRestaurantMeal} />}
     <Modal open={Boolean(ticket)} onOpenChange={(open) => { if (!open) finishTicket(); }} eyebrow="Venta confirmada" title={`Ticket ${ticket?.folio ?? ""}`} description="El cliente ve precios totales; el desglose fiscal permanece disponible internamente." footer={<><Button variant="secondary" loading={ticketDownloading} onClick={() => void printCompletedTicket()}><Printer size={15} /> Imprimir ticket</Button><Button variant="primary" onClick={finishTicket}>Nueva venta</Button></>}><TicketPreview ticket={ticket?.ticket} /></Modal>
     <Modal className="pos-location-stock-dialog" open={Boolean(stockProduct)} onOpenChange={(open) => { if (!open) { setStockProduct(null); setLocationStock(null); } }} eyebrow="Inventario por sucursal" title={stockProduct?.name ?? "Otras sucursales"} description={`${productWords.singularTitle} ${stockProduct?.code ?? "sin código"} · Sucursal activa: ${selectedLocation?.name ?? selectedRegister?.name ?? "sin seleccionar"}. Solo lectura. La venta sigue usando la existencia de la sucursal activa.`} footer={<Button onClick={() => { setStockProduct(null); setLocationStock(null); }}>Cerrar <kbd>Esc</kbd></Button>}>{locationStockLoading ? <DataState loading error={null} hasData={0} empty="">{null}</DataState> : locationStock ? <section className="pos-location-stock"><header><span>Disponibilidad en otras sucursales</span><strong>{locationStock.total} {locationStock.total === 1 ? "sucursal" : "sucursales"}</strong></header>{otherLocationStockItems.length ? <div className="pos-location-stock__rows">{otherLocationStockItems.map((item) => { const quantity = Number(item.quantity_on_hand); const status = otherLocationStockStatus(quantity); return <article className={`is-${status.tone}`} key={item.location_id}><span className="pos-location-stock__location"><strong>{item.location_name}</strong><small>{item.location_code}</small></span><span className="pos-location-stock__quantity"><small>{status.label}</small><b>{quantity.toLocaleString("es-MX", { maximumFractionDigits: 3 })} <em>{locationStock.unit ?? stockProduct?.unit ?? ""}</em></b></span></article>; })}</div> : <p>No hay otras sucursales autorizadas para consultar.</p>}{locationStock.total > locationStock.page_size && <DataPagination page={locationStock.page} total={locationStock.total} pageSize={locationStock.page_size} label="sucursales" onChange={(page) => { if (stockProduct) void loadLocationStock(stockProduct, page); }} />}</section> : null}</Modal>
     <Drawer open={quickCustomerOpen} onOpenChange={setQuickCustomerOpen} title="Alta rápida de cliente"><form className="sales-form" onSubmit={createQuickCustomer}><p className="settings-note">Solo lo necesario para continuar la venta. Se crea de contado y hereda la lista de precios de esta ubicación.</p><label>Nombre<Input required autoFocus value={quickCustomerName} onChange={(event) => setQuickCustomerName(event.target.value)} /></label><label>Teléfono opcional<Input inputMode="tel" value={quickCustomerPhone} onChange={(event) => setQuickCustomerPhone(event.target.value)} /></label><label>RFC opcional<Input value={quickCustomerTaxId} onChange={(event) => setQuickCustomerTaxId(event.target.value.toUpperCase())} /></label><Button type="submit" variant="primary" loading={busy}>Crear y seleccionar</Button></form></Drawer>
