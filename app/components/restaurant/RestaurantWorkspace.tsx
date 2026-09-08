@@ -50,7 +50,7 @@ const sections = [
   {
     role: "preparation",
     href: "/satrapy/inventario/productos?seccion=preparaciones",
-    title: "Bases y preparaciones",
+    title: "Preparaciones",
     icon: CookingPot,
   },
 ] as const;
@@ -111,10 +111,10 @@ function RestaurantSection({
         permissions.includes("view_recipes")));
   const title =
     role === "dish"
-      ? "Un menú hecho en tu cocina"
+      ? "Menú"
       : role === "ingredient"
-        ? "Todo empieza con buenos ingredientes"
-        : "Prepara una vez. Cocina mejor.";
+        ? "Insumos"
+        : "Preparaciones";
   const singular =
     role === "dish" ? "platillo" : role === "ingredient" ? "insumo" : "base";
   useEffect(() => {
@@ -182,10 +182,10 @@ function RestaurantSection({
           <h1>{title}</h1>
           <p>
             {role === "dish"
-              ? "Tus recetas, sus costos y lo que ofreces. Todo en el mismo lugar."
+              ? "Platillos, recetas y precios de venta."
               : role === "ingredient"
-                ? "Lo que compras y utilizas en tus recetas, con sus medidas y presentaciones."
-                : "Salsas, caldos y mezclas que puedes reutilizar en todos tus platillos."}
+                ? "Ingredientes, unidades y costos."
+                : "Salsas, caldos y mezclas para tus recetas."}
           </p>
         </div>
         <div className={styles.headerActions}>
@@ -254,17 +254,17 @@ function RestaurantSection({
         <div>
           <h2>
             {role === "dish"
-              ? "De una buena receta a tu próximo platillo"
+              ? "Crear platillo"
               : role === "ingredient"
-                ? "¿Ya tienes una lista de insumos?"
-                : "El sabor de la casa, listo para reutilizar"}
+                ? "Importar insumos"
+                : "Crear preparación"}
           </h2>
           <p>
             {role === "dish"
-              ? "Agrega ingredientes, define las porciones y ponle precio. Nosotros hacemos las cuentas."
+              ? "Agrega ingredientes, porciones y precio."
               : role === "ingredient"
-                ? "Importa tu catálogo de una vez. Crea a mano sólo los ingredientes nuevos que vayas necesitando."
-                : "Define los ingredientes y cuánto produce una tanda. Después búscala por nombre dentro de cualquier receta."}
+                ? "Carga varios insumos desde un archivo."
+                : "Agrega ingredientes e indica cuánto rinde."}
           </p>
         </div>
         {role === "dish" ? (
