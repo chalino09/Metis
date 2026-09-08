@@ -19,9 +19,10 @@
   align-items: center;
   gap: 7px;
   color: #2563eb;
-  font-size: 12px;
-  font-weight: 650;
-  letter-spacing: 0.12em;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.45;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 .eyebrow > span {
@@ -31,16 +32,17 @@
   background: #2563eb;
 }
 .workspaceHeader h1 {
-  font-size: clamp(25px, 2.4vw, 36px);
-  font-weight: 550;
+  font-size: 28px;
+  font-weight: 700;
   line-height: 1.2;
-  letter-spacing: -0.045em;
-  margin: 12px 0 10px;
+  letter-spacing: -0.05em;
+  margin: 8px 0;
 }
 .workspaceHeader p {
   margin: 0;
   color: #64748b;
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1.6;
 }
 .headerActions {
   display: flex;
@@ -171,7 +173,8 @@
   font-size: 12px;
   color: #64748b;
 }
-.workspaceHeader h1, .guide h2 { color: #15243b; }
+.workspaceHeader h1 { color: #111827; }
+.guide h2 { color: #15243b; }
 .headerActions :global(.ui-button--primary):hover { background: #1d4ed8 !important; border-color: #1d4ed8 !important; }
 .navigation { border-bottom-color: #dfe7f2; }
 .catalogSearch input:focus-visible, .toolbar > :global(.ui-select):focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
