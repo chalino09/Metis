@@ -1,6 +1,7 @@
 "use client";
 import { Plus, Trash2, Soup, GlassWater } from "lucide-react";
-import { Button, Field, Input } from "@/app/components/ui/primitives";
+import { Field } from "@/app/components/ui/primitives";
+import { OperationalButton as Button, OperationalInput as Input } from "@/app/components/reui/operational-controls";
 import { ComponentPicker } from "./ComponentPicker";
 import type { BundleDraft } from "@/app/lib/restaurant/studio";
 import styles from "./restaurant.module.css";

@@ -2,12 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Package, ArrowRight, Check, AlertCircle } from "lucide-react";
-import {
-  Button,
-  Field,
-  Input,
-  Modal,
-} from "@/app/components/ui/primitives";
+import { Field, Modal } from "@/app/components/ui/primitives";
+import { OperationalButton as Button, OperationalInput as Input } from "@/app/components/reui/operational-controls";
 import { getSupabaseClient } from "@/app/lib/supabase";
 import { OperationIdempotencyKeys } from "@/app/lib/operation-idempotency";
 import {

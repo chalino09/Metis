@@ -2,7 +2,8 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { CookingPot, Leaf, Plus, Search } from "lucide-react";
-import { Input, Button } from "@/app/components/ui/primitives";
+
+import { OperationalButton as Button, OperationalInput as Input } from "@/app/components/reui/operational-controls";
 import { getSupabaseClient } from "@/app/lib/supabase";
 import {
   restaurantError,
