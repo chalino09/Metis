@@ -5829,3 +5829,30 @@ body:has(.purchasing-panel) [data-slot="autocomplete-positioner"] { z-index:90; 
 .inventory-surface .inventory-transfer-product-results > button { height:auto; min-height:48px; white-space:normal; width:100%; }
 .inventory-surface .inventory-transfer-product-results > button > .ui-button__content { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; }
 .inventory-surface .inventory-transfer-product-results .ui-button__content > span { display:grid; gap:3px; min-width:0; text-align:start; }
+
+/* Purchase receipt controls share a top edge; helper text stays below its field. */
+.purchasing-surface .restaurant-receipt-line { align-items: start; }
+.purchasing-surface .restaurant-receipt-line > div:first-child { min-height: 40px; align-content: center; }
+.purchasing-surface .restaurant-receipt-line .ui-field { gap: 6px; }
+.purchasing-surface .restaurant-receipt-line .ui-field > span:has(> .sr-only) { display: none; }
+.purchasing-surface .restaurant-receipt-field { min-width: 0; }
+.purchasing-surface .restaurant-number-unit { border-color: #cbd5e1; border-radius: 8px; }
+.purchasing-surface .restaurant-number-unit > .operational-reui-input {
+  border: 0; border-radius: 0; box-shadow: none;
+}
+.purchasing-surface .restaurant-number-unit > .operational-reui-input:focus-visible {
+  outline: none; box-shadow: none;
+}
+.purchasing-surface .restaurant-number-unit:has(input:focus-visible) {
+  outline: 2px solid #475569; outline-offset: 2px;
+}
+.purchasing-surface .restaurant-number-unit:has(input[aria-invalid="true"]) { border-color: var(--danger); }
+.purchasing-surface .restaurant-receipt-error { margin: 0; color: var(--danger); font-size: 12px; line-height: 1.5; }
+.purchasing-surface .restaurant-receipt-actions__error { margin-right: auto; max-width: 50%; }
+@media (forced-colors: active) {
+  .purchasing-surface .restaurant-number-unit:has(input:focus-visible) { outline-color: Highlight; }
+}
+
+.purchasing-surface .restaurant-receipt-actions .ui-button__content { color: inherit; font-size: inherit; }
+
+.purchasing-surface .restaurant-receipt-field .ui-field__error { color: var(--danger); font-size: 12px; line-height: 1.5; }

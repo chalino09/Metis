@@ -1,94 +1,1014 @@
 "use client";
 
 import { Plus, Search, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { DataPagination, DataState, InteractiveTableRow, Table } from "@/app/components/ui/data";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  DataPagination,
+  DataState,
+  InteractiveTableRow,
+  Table,
+} from "@/app/components/ui/data";
 import { Badge, Field, useToast } from "@/app/components/ui/primitives";
 import { OperationIdempotencyKeys } from "@/app/lib/operation-idempotency";
-import { OperationalButton as Button, OperationalInput as Input, OperationalSelect as Select, OperationalDataToolbar as DataToolbar } from "@/app/components/reui/operational-controls";
-import { PurchasingDrawer as Drawer, PurchasingModal as Modal } from "@/app/components/reui/purchasing-panels";
+import {
+  OperationalButton as Button,
+  OperationalInput as Input,
+  OperationalSelect as Select,
+  OperationalDataToolbar as DataToolbar,
+} from "@/app/components/reui/operational-controls";
+import {
+  PurchasingDrawer as Drawer,
+  PurchasingModal as Modal,
+} from "@/app/components/reui/purchasing-panels";
+import {
+  receiptToday,
+  validatePurchaseReceipt,
+} from "@/app/lib/restaurant/purchase-receipt-validation";
 import { getSupabaseClient } from "@/app/lib/supabase";
 
-type Receipt = { id:string;folio:string;status:"draft"|"confirmed"|"reversed";receipt_date:string;document_reference:string|null;supplier_name:string;location_name:string;updated_at:string };
-type Supplier = { id:string;code:string;display_name:string };
-type Location = { id:string;name:string;external_code:string };
-type Ingredient = { id:string;internal_sku:string;name:string;purchase_unit:string;base_unit:string;base_units_per_purchase_unit:number;lot_controlled:boolean;current_cost:number|null;current_purchase_unit_cost?:number|null;currency_code:string|null;last_purchase_date?:string|null;last_purchase_folio?:string|null;last_purchase_unit_cost?:number|null };
-type Lot = { lot_code:string;expiration_date:string;quantity:string };
-type Line = Ingredient & { quantity:string;unit_cost:string;lots:Lot[] };
-type Draft = { supplierId:string;supplierLabel:string;locationId:string;receiptDate:string;reference:string;notes:string;lines:Line[] };
+type Receipt = {
+  id: string;
+  folio: string;
+  status: "draft" | "confirmed" | "reversed";
+  receipt_date: string;
+  document_reference: string | null;
+  supplier_name: string;
+  location_name: string;
+  updated_at: string;
+};
+type Supplier = { id: string; code: string; display_name: string };
+type Location = { id: string; name: string; external_code: string };
+type Ingredient = {
+  id: string;
+  internal_sku: string;
+  name: string;
+  purchase_unit: string;
+  base_unit: string;
+  base_units_per_purchase_unit: number;
+  lot_controlled: boolean;
+  current_cost: number | null;
+  current_purchase_unit_cost?: number | null;
+  currency_code: string | null;
+  last_purchase_date?: string | null;
+  last_purchase_folio?: string | null;
+  last_purchase_unit_cost?: number | null;
+};
+type Lot = { lot_code: string; expiration_date: string; quantity: string };
+type Line = Ingredient & { quantity: string; unit_cost: string; lots: Lot[] };
+type Draft = {
+  supplierId: string;
+  supplierLabel: string;
+  locationId: string;
+  receiptDate: string;
+  reference: string;
+  notes: string;
+  lines: Line[];
+};
 
-const PAGE_SIZE=25;
-const today=()=>new Date().toISOString().slice(0,10);
-const money=(value:number,currency="MXN")=>new Intl.NumberFormat("es-MX",{style:"currency",currency}).format(value);
-const unitMoney=(value:number,currency="MXN")=>new Intl.NumberFormat("es-MX",{style:"currency",currency,maximumFractionDigits:6}).format(value);
-const date=(value:string)=>new Intl.DateTimeFormat("es-MX",{dateStyle:"medium"}).format(new Date(`${value}T12:00:00`));
-const emptyReceiptDraft=():Draft=>({supplierId:"",supplierLabel:"",locationId:"",receiptDate:today(),reference:"",notes:"",lines:[]});
-const purchasePrice=(item:Ingredient)=>item.last_purchase_unit_cost??null;
-const receiptLine=(item:Ingredient):Line=>({...item,quantity:"1",unit_cost:purchasePrice(item)==null?"":String(purchasePrice(item)),lots:item.lot_controlled?[{lot_code:"",expiration_date:"",quantity:"1"}]:[]});
+const PAGE_SIZE = 25;
+const today = receiptToday;
+const money = (value: number, currency = "MXN") =>
+  new Intl.NumberFormat("es-MX", { style: "currency", currency }).format(value);
+const date = (value: string) =>
+  new Intl.DateTimeFormat("es-MX", { dateStyle: "medium" }).format(
+    new Date(`${value}T12:00:00`),
+  );
+const emptyReceiptDraft = (): Draft => ({
+  supplierId: "",
+  supplierLabel: "",
+  locationId: "",
+  receiptDate: today(),
+  reference: "",
+  notes: "",
+  lines: [],
+});
+const purchasePrice = (item: Ingredient) =>
+  item.last_purchase_unit_cost ?? null;
+const receiptLine = (item: Ingredient): Line => ({
+  ...item,
+  quantity: "1",
+  unit_cost: purchasePrice(item) == null ? "" : String(purchasePrice(item)),
+  lots: item.lot_controlled
+    ? [{ lot_code: "", expiration_date: "", quantity: "1" }]
+    : [],
+});
 
-export function RestaurantPurchaseReceiptsView({companyId,permissions}:{companyId:string;permissions:string[]}){
-  const {toast}=useToast();const keys=useRef(new OperationIdempotencyKeys());
-  const handledDeepLink=useRef(false);
-  const [rows,setRows]=useState<Receipt[]>([]);const [total,setTotal]=useState(0);const [page,setPage]=useState(1);const [query,setQuery]=useState("");const [loading,setLoading]=useState(true);const [error,setError]=useState<string|null>(null);
-  const [draft,setDraft]=useState<Draft|null>(null);const [locations,setLocations]=useState<Location[]>([]);const [supplierQuery,setSupplierQuery]=useState("");const [suppliers,setSuppliers]=useState<Supplier[]>([]);const [supplierOpen,setSupplierOpen]=useState(false);
-  const [ingredientQuery,setIngredientQuery]=useState("");const [ingredients,setIngredients]=useState<Ingredient[]>([]);const [ingredientOpen,setIngredientOpen]=useState(false);const [reviewing,setReviewing]=useState(false);const [busy,setBusy]=useState(false);
-  const canCreate=permissions.includes("manage_purchase_receipt_drafts")&&permissions.includes("confirm_purchase_receipts");
-  const load=useCallback(async()=>{setLoading(true);setError(null);const {data,error:rpcError}=await getSupabaseClient().rpc("search_purchase_receipts",{p_company_id:companyId,p_query:query||null,p_status:null,p_location_id:null,p_supplier_id:null,p_date_from:null,p_date_to:null,p_page:page,p_page_size:PAGE_SIZE});const result=data as {items?:Receipt[];pagination?:{total:number}}|null;if(!rpcError){setRows(result?.items??[]);setTotal(result?.pagination?.total??0);}setError(rpcError?.message??null);setLoading(false);},[companyId,page,query]);
-  useEffect(()=>{const timer=setTimeout(()=>void load(),180);return()=>clearTimeout(timer);},[load]);
-  useEffect(()=>{if(!draft)return;void getSupabaseClient().from("locations").select("id,name,external_code").eq("company_id",companyId).eq("is_active",true).order("name").then(({data})=>setLocations((data??[])as Location[]));},[companyId,draft]);
-  useEffect(()=>{if(!draft)return;const timer=setTimeout(async()=>{const {data}=await getSupabaseClient().rpc("search_supplier_options",{p_company_id:companyId,p_query:supplierQuery.trim()||null,p_limit:30});setSuppliers(((data as {items?:Supplier[]}|null)?.items??[]));},180);return()=>clearTimeout(timer);},[companyId,draft,supplierQuery]);
-  useEffect(()=>{if(!draft)return;const timer=setTimeout(async()=>{const {data}=await getSupabaseClient().rpc("search_restaurant_purchase_ingredients",{p_company_id:companyId,p_query:ingredientQuery.trim()||null,p_limit:30});setIngredients(((data as {items?:Ingredient[]}|null)?.items??[]).filter(item=>!draft.lines.some(line=>line.id===item.id)));},180);return()=>clearTimeout(timer);},[companyId,draft,ingredientQuery]);
-  useEffect(()=>{
-    if(handledDeepLink.current||!canCreate)return;
-    const params=new URLSearchParams(window.location.search);
-    if(params.get("action")!=="nueva")return;
-    handledDeepLink.current=true;
-    const sku=params.get("insumo")?.trim()??"";
-    void (async()=>{
+function ReceiptField({
+  field,
+  label,
+  hint,
+  error,
+  children,
+}: {
+  field: string;
+  label: ReactNode;
+  hint?: string;
+  error?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className="restaurant-receipt-field"
+      data-receipt-field={field}
+      role="group"
+      aria-label={typeof label === "string" ? label : undefined}
+      aria-describedby={error ? `receipt-error-${field}` : undefined}
+    >
+      <Field label={label} hint={error ? undefined : hint}>
+        {children}
+        {error && (
+          <small id={`receipt-error-${field}`} className="ui-field__error">
+            {error}
+          </small>
+        )}
+      </Field>
+    </div>
+  );
+}
+
+export function RestaurantPurchaseReceiptsView({
+  companyId,
+  permissions,
+}: {
+  companyId: string;
+  permissions: string[];
+}) {
+  const { toast } = useToast();
+  const keys = useRef(new OperationIdempotencyKeys());
+  const handledDeepLink = useRef(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const [attempted, setAttempted] = useState(false);
+  const [rows, setRows] = useState<Receipt[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [supplierQuery, setSupplierQuery] = useState("");
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [supplierOpen, setSupplierOpen] = useState(false);
+  const [ingredientQuery, setIngredientQuery] = useState("");
+  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [ingredientOpen, setIngredientOpen] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const canCreate =
+    permissions.includes("manage_purchase_receipt_drafts") &&
+    permissions.includes("confirm_purchase_receipts");
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const { data, error: rpcError } = await getSupabaseClient().rpc(
+      "search_purchase_receipts",
+      {
+        p_company_id: companyId,
+        p_query: query || null,
+        p_status: null,
+        p_location_id: null,
+        p_supplier_id: null,
+        p_date_from: null,
+        p_date_to: null,
+        p_page: page,
+        p_page_size: PAGE_SIZE,
+      },
+    );
+    const result = data as {
+      items?: Receipt[];
+      pagination?: { total: number };
+    } | null;
+    if (!rpcError) {
+      setRows(result?.items ?? []);
+      setTotal(result?.pagination?.total ?? 0);
+    }
+    setError(rpcError?.message ?? null);
+    setLoading(false);
+  }, [companyId, page, query]);
+  useEffect(() => {
+    const timer = setTimeout(() => void load(), 180);
+    return () => clearTimeout(timer);
+  }, [load]);
+  useEffect(() => {
+    if (!draft) return;
+    void getSupabaseClient()
+      .from("locations")
+      .select("id,name,external_code")
+      .eq("company_id", companyId)
+      .eq("is_active", true)
+      .order("name")
+      .then(({ data }) => setLocations((data ?? []) as Location[]));
+  }, [companyId, draft]);
+  useEffect(() => {
+    if (!draft) return;
+    const timer = setTimeout(async () => {
+      const { data } = await getSupabaseClient().rpc(
+        "search_supplier_options",
+        {
+          p_company_id: companyId,
+          p_query: supplierQuery.trim() || null,
+          p_limit: 30,
+        },
+      );
+      setSuppliers((data as { items?: Supplier[] } | null)?.items ?? []);
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [companyId, draft, supplierQuery]);
+  useEffect(() => {
+    if (!draft) return;
+    const timer = setTimeout(async () => {
+      const { data } = await getSupabaseClient().rpc(
+        "search_restaurant_purchase_ingredients",
+        {
+          p_company_id: companyId,
+          p_query: ingredientQuery.trim() || null,
+          p_limit: 30,
+        },
+      );
+      setIngredients(
+        ((data as { items?: Ingredient[] } | null)?.items ?? []).filter(
+          (item) => !draft.lines.some((line) => line.id === item.id),
+        ),
+      );
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [companyId, draft, ingredientQuery]);
+  useEffect(() => {
+    if (handledDeepLink.current || !canCreate) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("action") !== "nueva") return;
+    handledDeepLink.current = true;
+    const sku = params.get("insumo")?.trim() ?? "";
+    void (async () => {
       await Promise.resolve();
-      setSupplierQuery("");setIngredientQuery("");
-      let next=emptyReceiptDraft();
-      if(sku){
-        const {data,error:ingredientError}=await getSupabaseClient().rpc("search_restaurant_purchase_ingredients",{p_company_id:companyId,p_query:sku,p_limit:30});
-        const item=((data as {items?:Ingredient[]}|null)?.items??[]).find(candidate=>candidate.internal_sku.toLowerCase()===sku.toLowerCase());
-        if(item)next={...next,lines:[receiptLine(item)]};
-        else toast({title:"No se agregó el insumo",description:ingredientError?.message??"Busca el insumo dentro de la entrada.",tone:"info"});
+      setSupplierQuery("");
+      setIngredientQuery("");
+      let next = emptyReceiptDraft();
+      if (sku) {
+        const { data, error: ingredientError } = await getSupabaseClient().rpc(
+          "search_restaurant_purchase_ingredients",
+          { p_company_id: companyId, p_query: sku, p_limit: 30 },
+        );
+        const item = (
+          (data as { items?: Ingredient[] } | null)?.items ?? []
+        ).find(
+          (candidate) =>
+            candidate.internal_sku.toLowerCase() === sku.toLowerCase(),
+        );
+        if (item) next = { ...next, lines: [receiptLine(item)] };
+        else
+          toast({
+            title: "No se agregó el insumo",
+            description:
+              ingredientError?.message ??
+              "Busca el insumo dentro de la entrada.",
+            tone: "info",
+          });
       }
       setDraft(next);
-      window.history.replaceState({},"",window.location.pathname);
+      window.history.replaceState({}, "", window.location.pathname);
     })();
-  },[canCreate,companyId,toast]);
-  function openNew(){setSupplierQuery("");setIngredientQuery("");setDraft(emptyReceiptDraft());}
-  function addIngredient(item:Ingredient){if(!draft)return;setDraft({...draft,lines:[...draft.lines,receiptLine(item)]});setIngredientQuery("");setIngredientOpen(false);}
-  function patchLine(index:number,patch:Partial<Line>){if(!draft)return;setDraft({...draft,lines:draft.lines.map((line,lineIndex)=>lineIndex===index?{...line,...patch}:line)});}
-  const invalid=!draft||!draft.supplierId||!draft.locationId||!draft.receiptDate||!draft.lines.length||draft.lines.some(line=>Number(line.quantity)<=0||Number(line.unit_cost)<0||line.unit_cost===""||(line.lot_controlled&&(line.lots.length===0||line.lots.some(lot=>!lot.lot_code.trim()||!lot.expiration_date||Number(lot.quantity)<=0)||Math.abs(line.lots.reduce((sum,lot)=>sum+Number(lot.quantity||0),0)-Number(line.quantity))>.000001)));
-  const totalCost=draft?.lines.reduce((sum,line)=>sum+Number(line.quantity||0)*Number(line.unit_cost||0),0)??0;
-  async function confirm(){if(!draft||invalid)return;setBusy(true);const payload=draft.lines.map(line=>({product_id:line.id,quantity:Number(line.quantity),unit_cost:Number(line.unit_cost),...(line.lot_controlled?{lots:line.lots.map(lot=>({...lot,quantity:Number(lot.quantity)}))}:{})}));const fingerprint=JSON.stringify({supplier:draft.supplierId,location:draft.locationId,date:draft.receiptDate,reference:draft.reference,lines:payload});const {data,error:rpcError}=await getSupabaseClient().rpc("confirm_restaurant_purchase_receipt",{p_company_id:companyId,p_supplier_id:draft.supplierId,p_location_id:draft.locationId,p_receipt_date:draft.receiptDate,p_document_reference:draft.reference||null,p_notes:draft.notes||null,p_lines:payload,p_client_request_id:keys.current.get("restaurant-receipt",fingerprint)});setBusy(false);if(rpcError){toast({title:"No se registró la entrada",description:rpcError.message,tone:"error"});return;}keys.current.clear("restaurant-receipt");setReviewing(false);setDraft(null);toast({title:"Entrada confirmada",description:`${(data as {folio:string}).folio}: inventario y costo de reposición actualizados.`,tone:"success"});await load();}
-  return <div className="content-frame restaurant-receipts">
-    <div className="page-heading"><div><span className="eyebrow">Compras del restaurante</span><h1>Entradas de insumos</h1><p>Registra lo recibido del proveedor. Al confirmar se actualizan existencias y costo de reposición. El costo para recetas sigue el método configurado.</p></div>{canCreate&&<Button variant="primary" onClick={openNew}><Plus size={16}/> Nueva entrada</Button>}</div>
-    <DataToolbar search={query} onSearchChange={value=>{setQuery(value);setPage(1);}} placeholder="Folio, proveedor o documento" results={total}/>
-    <DataState loading={loading} error={error} hasData={rows.length} empty="Registra la primera compra cuando llegue mercancía." emptyTitle="Aún no hay entradas de insumos." errorAction={<Button size="sm" onClick={()=>void load()}>Reintentar</Button>}>
-      <Table ariaLabel="Entradas de insumos"><thead><tr><th>Entrada</th><th>Proveedor</th><th>Destino</th><th>Fecha</th><th>Estado</th></tr></thead><tbody>{rows.map(row=><InteractiveTableRow key={row.id} label={`Entrada ${row.folio}`} onActivate={()=>{}} disabled><td><strong className="mono">{row.folio}</strong><small>{row.document_reference??"Sin referencia"}</small></td><td>{row.supplier_name}</td><td>{row.location_name}</td><td>{date(row.receipt_date)}</td><td><Badge tone={row.status==="confirmed"?"success":row.status==="reversed"?"danger":"neutral"}>{row.status==="confirmed"?"Confirmada":row.status==="reversed"?"Anulada":"Borrador"}</Badge></td></InteractiveTableRow>)}</tbody></Table>
-      <DataPagination page={page} total={total} pageSize={PAGE_SIZE} onChange={setPage}/>
-    </DataState>
-    <Drawer open={Boolean(draft)} onOpenChange={open=>{if(!open&&!busy)setDraft(null);}} eyebrow="Entrada de compra" title="Registrar insumos recibidos" description="Flujo operativo para 5–100 partidas. Usa el Centro de Migración para cargas mayores." className="restaurant-receipt-drawer">
-      {draft&&<form className="restaurant-receipt-form" onSubmit={event=>{event.preventDefault();if(!invalid)setReviewing(true);}}>
-        <section className="restaurant-receipt-header-grid">
-          <Field label="Proveedor"><div className="restaurant-combobox"><Input role="combobox" aria-expanded={supplierOpen} aria-controls="restaurant-supplier-options" value={supplierQuery} placeholder="Buscar proveedor" autoComplete="off" onFocus={()=>setSupplierOpen(true)} onChange={event=>{setSupplierQuery(event.target.value);setSupplierOpen(true);setDraft({...draft,supplierId:"",supplierLabel:""});}}/>{supplierOpen&&<div id="restaurant-supplier-options" className="restaurant-combobox__options" role="listbox">{suppliers.map(item=><Button variant="ghost" type="button" role="option" aria-selected={draft.supplierId===item.id} key={item.id} onMouseDown={event=>event.preventDefault()} onClick={()=>{setDraft({...draft,supplierId:item.id,supplierLabel:item.display_name});setSupplierQuery(`${item.display_name} · ${item.code}`);setSupplierOpen(false);}}><strong>{item.display_name}</strong><small>{item.code}</small></Button>)}{!suppliers.length&&<p>No se encontraron proveedores activos.</p>}</div>}</div></Field>
-          <Field label="Sucursal o almacén"><Select ariaLabel="Sucursal o almacén" value={draft.locationId} onValueChange={locationId=>setDraft({...draft,locationId})} options={[{value:"",label:"Selecciona el destino"},...locations.map(item=>({value:item.id,label:`${item.name} · ${item.external_code}`}))]}/></Field>
-          <Field label="Fecha de recepción"><Input type="date" max={today()} value={draft.receiptDate} onChange={event=>setDraft({...draft,receiptDate:event.target.value})}/></Field>
-          <Field label="Folio de factura o nota" hint="Opcional"><Input maxLength={160} value={draft.reference} onChange={event=>setDraft({...draft,reference:event.target.value})}/></Field>
-        </section>
-        <section className="restaurant-receipt-lines" aria-labelledby="restaurant-receipt-lines-title"><header><div><h3 id="restaurant-receipt-lines-title">Insumos recibidos</h3><p>La cantidad usa la unidad de compra; el sistema la convierte a la unidad de inventario.</p></div><Badge tone="info">{draft.lines.length} partida{draft.lines.length===1?"":"s"}</Badge></header>
-          <div className="restaurant-combobox restaurant-ingredient-search"><Search size={17} aria-hidden="true"/><Input role="combobox" aria-expanded={ingredientOpen} aria-controls="restaurant-ingredient-options" value={ingredientQuery} placeholder="Agregar insumo por nombre o código" autoComplete="off" onFocus={()=>setIngredientOpen(true)} onChange={event=>{setIngredientQuery(event.target.value);setIngredientOpen(true);}}/>{ingredientOpen&&<div id="restaurant-ingredient-options" className="restaurant-combobox__options" role="listbox">{ingredients.map(item=><Button variant="ghost" type="button" role="option" aria-selected="false" key={item.id} onMouseDown={event=>event.preventDefault()} onClick={()=>addIngredient(item)}><strong>{item.name}</strong><small>{item.internal_sku} · compra en {item.purchase_unit} · inventario en {item.base_unit}</small></Button>)}{!ingredients.length&&<p>No hay más insumos activos para agregar.</p>}</div>}</div>
-          {draft.lines.length?<div className="restaurant-receipt-line-list"><div className="restaurant-receipt-line-head"><span>Insumo</span><span>Cantidad recibida</span><span>Precio de compra por presentación</span><span aria-hidden="true"/></div>{draft.lines.map((line,index)=>{const quantity=Number(line.quantity||0);const unitCost=Number(line.unit_cost||0);const inventoryQuantity=quantity*line.base_units_per_purchase_unit;const baseCost=line.base_units_per_purchase_unit>0?unitCost/line.base_units_per_purchase_unit:0;return <article key={line.id} className="restaurant-receipt-line"><div><strong>{line.name}</strong><small>{line.internal_sku} · 1 {line.purchase_unit} = {line.base_units_per_purchase_unit.toLocaleString("es-MX")} {line.base_unit}</small></div><Field label={<span className="sr-only">Cantidad de {line.name}</span>}><div className="restaurant-number-unit"><Input aria-label={`Cantidad recibida de ${line.name} en ${line.purchase_unit}`} inputMode="decimal" type="number" min="0.000001" step="0.000001" value={line.quantity} onChange={event=>{const nextQuantity=event.target.value;patchLine(index,{quantity:nextQuantity,lots:line.lot_controlled&&line.lots.length===1?[{...line.lots[0],quantity:nextQuantity}]:line.lots});}}/><span>{line.purchase_unit}</span></div></Field><Field label={<span className="sr-only">Precio de {line.name}</span>} hint={line.last_purchase_unit_cost!=null&&line.last_purchase_date?`Última compra confirmada: ${money(line.last_purchase_unit_cost,line.currency_code??"MXN")} por ${line.purchase_unit} · ${date(line.last_purchase_date)} · ${line.last_purchase_folio}. Referencia ajustada a esta presentación.`:"Sin precio de compra de referencia. Captura el importe de esta compra."}><div className="restaurant-number-unit"><Input aria-label={`Precio por ${line.purchase_unit} de ${line.name} en MXN`} inputMode="decimal" type="number" min="0" step="0.01" value={line.unit_cost} onChange={event=>patchLine(index,{unit_cost:event.target.value})}/><span>MXN / {line.purchase_unit}</span></div></Field><Button type="button" variant="ghost" size="icon" aria-label={`Quitar ${line.name}`} onClick={()=>setDraft({...draft,lines:draft.lines.filter((_,lineIndex)=>lineIndex!==index)})}><Trash2 size={17} aria-hidden="true"/></Button>{line.unit_cost!==""&&quantity>0&&unitCost>=0&&<p className="restaurant-receipt-conversion" role="status">Al confirmar: <strong>{inventoryQuantity.toLocaleString("es-MX",{maximumFractionDigits:6})} {line.base_unit}</strong> al inventario · costo de esta compra <strong>{unitMoney(baseCost,line.currency_code??"MXN")} por {line.base_unit}</strong></p>}{line.lot_controlled&&<div className="restaurant-receipt-lots"><strong>Lotes y caducidad</strong>{line.lots.map((lot,lotIndex)=><div key={lotIndex}><Input aria-label={`Lote ${lotIndex+1} de ${line.name}`} placeholder="Lote" value={lot.lot_code} onChange={event=>patchLine(index,{lots:line.lots.map((item,i)=>i===lotIndex?{...item,lot_code:event.target.value}:item)})}/><Input aria-label={`Caducidad del lote ${lotIndex+1} de ${line.name}`} type="date" value={lot.expiration_date} onChange={event=>patchLine(index,{lots:line.lots.map((item,i)=>i===lotIndex?{...item,expiration_date:event.target.value}:item)})}/><Input aria-label={`Cantidad del lote ${lotIndex+1} de ${line.name}`} type="number" min="0.000001" step="0.000001" value={lot.quantity} onChange={event=>patchLine(index,{lots:line.lots.map((item,i)=>i===lotIndex?{...item,quantity:event.target.value}:item)})}/></div>)}</div>}</article>;})}</div>:<div className="restaurant-receipt-empty"><strong>Agrega los insumos de esta entrega</strong><span>Busca cada insumo una vez y captura cantidad y precio recibidos.</span></div>}
-        </section>
-        <Field label="Notas" hint="Opcional"><textarea rows={3} maxLength={1000} value={draft.notes} onChange={event=>setDraft({...draft,notes:event.target.value})}/></Field>
-        <footer className="restaurant-receipt-actions"><div><span>Total de la entrada</span><strong>{money(totalCost)}</strong></div><Button variant="primary" type="submit" disabled={invalid}>Revisar y confirmar</Button></footer>
-      </form>}
-    </Drawer>
-    <Modal open={reviewing} onOpenChange={open=>!busy&&setReviewing(open)} eyebrow="Confirmación final" title="¿Confirmar esta entrada?" description="Esta acción agregará existencias al destino y actualizará el costo de reposición de cada insumo. El costo para recetas sigue el método configurado." closeDisabled={busy} footer={<><Button disabled={busy} onClick={()=>setReviewing(false)}>Regresar</Button><Button variant="primary" loading={busy} onClick={()=>void confirm()}>Confirmar entrada</Button></>}>
-      {draft&&<dl className="restaurant-receipt-review"><div><dt>Proveedor</dt><dd>{draft.supplierLabel}</dd></div><div><dt>Partidas</dt><dd>{draft.lines.length}</dd></div><div><dt>Total</dt><dd>{money(totalCost)}</dd></div><div><dt>Destino</dt><dd>{locations.find(item=>item.id===draft.locationId)?.name}</dd></div></dl>}
-    </Modal>
-  </div>;
+  }, [canCreate, companyId, toast]);
+  function openNew() {
+    setAttempted(false);
+    setSupplierOpen(false);
+    setIngredientOpen(false);
+    setSupplierQuery("");
+    setIngredientQuery("");
+    setDraft(emptyReceiptDraft());
+  }
+  function addIngredient(item: Ingredient) {
+    if (!draft) return;
+    setDraft({ ...draft, lines: [...draft.lines, receiptLine(item)] });
+    setIngredientQuery("");
+    setIngredientOpen(false);
+  }
+  function patchLine(index: number, patch: Partial<Line>) {
+    if (!draft) return;
+    setDraft({
+      ...draft,
+      lines: draft.lines.map((line, lineIndex) =>
+        lineIndex === index ? { ...line, ...patch } : line,
+      ),
+    });
+  }
+  const issues = draft ? validatePurchaseReceipt(draft) : [];
+  const visibleIssues = attempted ? issues : [];
+  const errorFor = (field: string) =>
+    visibleIssues.find((issue) => issue.field === field)?.message;
+  const inputValidation = (field: string) => ({
+    "aria-invalid": errorFor(field) ? true : undefined,
+    "aria-describedby": errorFor(field) ? `receipt-error-${field}` : undefined,
+  });
+  function focusField(field: string) {
+    requestAnimationFrame(() => {
+      const container = formRef.current?.querySelector<HTMLElement>(
+        `[data-receipt-field="${field}"]`,
+      );
+      const control = container?.matches("input,textarea,button")
+        ? container
+        : container?.querySelector<HTMLElement>(
+            'input:not([type="hidden"]),textarea,button',
+          );
+      (control ?? container)?.scrollIntoView({ block: "center" });
+      (control ?? container)?.focus({ preventScroll: true });
+    });
+  }
+  function review() {
+    setAttempted(true);
+    if (issues.length) {
+      focusField(issues[0].field);
+      return;
+    }
+    setSupplierOpen(false);
+    setIngredientOpen(false);
+    setReviewing(true);
+  }
+  const totalCost =
+    draft?.lines.reduce(
+      (sum, line) =>
+        sum + Number(line.quantity || 0) * Number(line.unit_cost || 0),
+      0,
+    ) ?? 0;
+  async function confirm() {
+    if (!draft || busy) return;
+    if (issues.length) {
+      setReviewing(false);
+      setAttempted(true);
+      focusField(issues[0].field);
+      return;
+    }
+    setBusy(true);
+    try {
+      const payload = draft.lines.map((line) => ({
+        product_id: line.id,
+        quantity: Number(line.quantity),
+        unit_cost: Number(line.unit_cost),
+        ...(line.lot_controlled
+          ? {
+              lots: line.lots.map((lot) => ({
+                ...lot,
+                quantity: Number(lot.quantity),
+              })),
+            }
+          : {}),
+      }));
+      const fingerprint = JSON.stringify({
+        supplier: draft.supplierId,
+        location: draft.locationId,
+        date: draft.receiptDate,
+        reference: draft.reference,
+        notes: draft.notes,
+        lines: payload,
+      });
+      const { data, error: rpcError } = await getSupabaseClient().rpc(
+        "confirm_restaurant_purchase_receipt",
+        {
+          p_company_id: companyId,
+          p_supplier_id: draft.supplierId,
+          p_location_id: draft.locationId,
+          p_receipt_date: draft.receiptDate,
+          p_document_reference: draft.reference || null,
+          p_notes: draft.notes || null,
+          p_lines: payload,
+          p_client_request_id: keys.current.get(
+            "restaurant-receipt",
+            fingerprint,
+          ),
+        },
+      );
+      if (rpcError) {
+        toast({
+          title: "No se registró la entrada",
+          description: rpcError.message,
+          tone: "error",
+        });
+        return;
+      }
+      keys.current.clear("restaurant-receipt");
+      setReviewing(false);
+      setDraft(null);
+      toast({
+        title: "Entrada confirmada",
+        description: `${(data as { folio: string }).folio}: inventario y costo de reposición actualizados.`,
+        tone: "success",
+      });
+      await load().catch(() => {
+        setError("La entrada se confirmó, pero no se pudo actualizar la lista. Vuelve a cargarla.");
+        setLoading(false);
+      });
+    } catch {
+      toast({
+        title: "No se pudo comprobar la entrada",
+        description:
+          "Reintenta la confirmación. Conservamos los datos y la misma referencia para evitar duplicados.",
+        tone: "error",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="content-frame restaurant-receipts">
+      <div className="page-heading">
+        <div>
+          <span className="eyebrow">Compras del restaurante</span>
+          <h1>Entradas de insumos</h1>
+          <p>
+            Registra lo recibido del proveedor. Al confirmar se actualizan
+            existencias y costo de reposición. El costo para recetas sigue el
+            método configurado.
+          </p>
+        </div>
+        {canCreate && (
+          <Button variant="primary" onClick={openNew}>
+            <Plus size={16} /> Nueva entrada
+          </Button>
+        )}
+      </div>
+      <DataToolbar
+        search={query}
+        onSearchChange={(value) => {
+          setQuery(value);
+          setPage(1);
+        }}
+        placeholder="Folio, proveedor o documento"
+        results={total}
+      />
+      <DataState
+        loading={loading}
+        error={error}
+        hasData={rows.length}
+        empty="Registra la primera compra cuando llegue mercancía."
+        emptyTitle="Aún no hay entradas de insumos."
+        errorAction={
+          <Button size="sm" onClick={() => void load()}>
+            Reintentar
+          </Button>
+        }
+      >
+        <Table ariaLabel="Entradas de insumos">
+          <thead>
+            <tr>
+              <th>Entrada</th>
+              <th>Proveedor</th>
+              <th>Destino</th>
+              <th>Fecha</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <InteractiveTableRow
+                key={row.id}
+                label={`Entrada ${row.folio}`}
+                onActivate={() => {}}
+                disabled
+              >
+                <td>
+                  <strong className="mono">{row.folio}</strong>
+                  <small>{row.document_reference ?? "Sin referencia"}</small>
+                </td>
+                <td>{row.supplier_name}</td>
+                <td>{row.location_name}</td>
+                <td>{date(row.receipt_date)}</td>
+                <td>
+                  <Badge
+                    tone={
+                      row.status === "confirmed"
+                        ? "success"
+                        : row.status === "reversed"
+                          ? "danger"
+                          : "neutral"
+                    }
+                  >
+                    {row.status === "confirmed"
+                      ? "Confirmada"
+                      : row.status === "reversed"
+                        ? "Anulada"
+                        : "Borrador"}
+                  </Badge>
+                </td>
+              </InteractiveTableRow>
+            ))}
+          </tbody>
+        </Table>
+        <DataPagination
+          page={page}
+          total={total}
+          pageSize={PAGE_SIZE}
+          onChange={setPage}
+        />
+      </DataState>
+      <Drawer
+        open={Boolean(draft)}
+        onOpenChange={(open) => {
+          if (!open && !busy) setDraft(null);
+        }}
+        eyebrow="Entrada de compra"
+        title="Registrar insumos recibidos"
+        description="Flujo operativo para 5–100 partidas. Usa el Centro de Migración para cargas mayores."
+        className="restaurant-receipt-drawer"
+      >
+        {draft && (
+          <form
+            ref={formRef}
+            noValidate
+            className="restaurant-receipt-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              review();
+            }}
+          >
+            <section className="restaurant-receipt-header-grid">
+              <ReceiptField
+                field="supplierId"
+                label="Proveedor"
+                error={errorFor("supplierId")}
+              >
+                <div className="restaurant-combobox">
+                  <Input
+                    {...inputValidation("supplierId")}
+                    role="combobox"
+                    aria-expanded={supplierOpen}
+                    aria-controls="restaurant-supplier-options"
+                    value={supplierQuery}
+                    placeholder="Buscar proveedor"
+                    autoComplete="off"
+                    onFocus={() => setSupplierOpen(true)}
+                    onChange={(event) => {
+                      setSupplierQuery(event.target.value);
+                      setSupplierOpen(true);
+                      setDraft({ ...draft, supplierId: "", supplierLabel: "" });
+                    }}
+                  />
+                  {supplierOpen && (
+                    <div
+                      id="restaurant-supplier-options"
+                      className="restaurant-combobox__options"
+                      role="listbox"
+                    >
+                      {suppliers.map((item) => (
+                        <Button
+                          variant="ghost"
+                          type="button"
+                          role="option"
+                          aria-selected={draft.supplierId === item.id}
+                          key={item.id}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            setDraft({
+                              ...draft,
+                              supplierId: item.id,
+                              supplierLabel: item.display_name,
+                            });
+                            setSupplierQuery(
+                              `${item.display_name} · ${item.code}`,
+                            );
+                            setSupplierOpen(false);
+                          }}
+                        >
+                          <strong>{item.display_name}</strong>
+                          <small>{item.code}</small>
+                        </Button>
+                      ))}
+                      {!suppliers.length && (
+                        <p>No se encontraron proveedores activos.</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </ReceiptField>
+              <ReceiptField
+                field="locationId"
+                label="Sucursal o almacén"
+                error={errorFor("locationId")}
+              >
+                <Select
+                  ariaLabel="Sucursal o almacén"
+                  value={draft.locationId}
+                  onValueChange={(locationId) =>
+                    setDraft({ ...draft, locationId })
+                  }
+                  options={[
+                    { value: "", label: "Selecciona el destino" },
+                    ...locations.map((item) => ({
+                      value: item.id,
+                      label: `${item.name} · ${item.external_code}`,
+                    })),
+                  ]}
+                />
+              </ReceiptField>
+              <ReceiptField
+                field="receiptDate"
+                label="Fecha de recepción"
+                error={errorFor("receiptDate")}
+              >
+                <Input
+                  {...inputValidation("receiptDate")}
+                  type="date"
+                  max={today()}
+                  value={draft.receiptDate}
+                  onChange={(event) =>
+                    setDraft({ ...draft, receiptDate: event.target.value })
+                  }
+                />
+              </ReceiptField>
+              <Field label="Folio de factura o nota" hint="Opcional">
+                <Input
+                  maxLength={160}
+                  value={draft.reference}
+                  onChange={(event) =>
+                    setDraft({ ...draft, reference: event.target.value })
+                  }
+                />
+              </Field>
+            </section>
+            <section
+              className="restaurant-receipt-lines"
+              aria-labelledby="restaurant-receipt-lines-title"
+            >
+              <header>
+                <div>
+                  <h3 id="restaurant-receipt-lines-title">Insumos recibidos</h3>
+                  <p>
+                    La cantidad usa la unidad de compra; el sistema la convierte
+                    a la unidad de inventario.
+                  </p>
+                </div>
+                <Badge tone="info">
+                  {draft.lines.length} partida
+                  {draft.lines.length === 1 ? "" : "s"}
+                </Badge>
+              </header>
+              <div
+                data-receipt-field="lines"
+                className="restaurant-combobox restaurant-ingredient-search"
+              >
+                <Search size={17} aria-hidden="true" />
+                <Input
+                  {...inputValidation("lines")}
+                  role="combobox"
+                  aria-expanded={ingredientOpen}
+                  aria-controls="restaurant-ingredient-options"
+                  value={ingredientQuery}
+                  placeholder="Agregar insumo por nombre o código"
+                  autoComplete="off"
+                  onFocus={() => setIngredientOpen(true)}
+                  onChange={(event) => {
+                    setIngredientQuery(event.target.value);
+                    setIngredientOpen(true);
+                  }}
+                />
+                {ingredientOpen && (
+                  <div
+                    id="restaurant-ingredient-options"
+                    className="restaurant-combobox__options"
+                    role="listbox"
+                  >
+                    {ingredients.map((item) => (
+                      <Button
+                        variant="ghost"
+                        type="button"
+                        role="option"
+                        aria-selected="false"
+                        key={item.id}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => addIngredient(item)}
+                      >
+                        <strong>{item.name}</strong>
+                        <small>
+                          {item.internal_sku} · compra en {item.purchase_unit} ·
+                          inventario en {item.base_unit}
+                        </small>
+                      </Button>
+                    ))}
+                    {!ingredients.length && (
+                      <p>No hay más insumos activos para agregar.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+              {errorFor("lines") && (
+                <p
+                  id="receipt-error-lines"
+                  className="restaurant-receipt-error"
+                >
+                  {errorFor("lines")}
+                </p>
+              )}
+              {draft.lines.length ? (
+                <div className="restaurant-receipt-line-list">
+                  <div className="restaurant-receipt-line-head">
+                    <span>Insumo</span>
+                    <span>Cantidad recibida</span>
+                    <span>Precio de compra por presentación</span>
+                    <span aria-hidden="true" />
+                  </div>
+                  {draft.lines.map((line, index) => {
+                    return (
+                      <article
+                        key={line.id}
+                        className="restaurant-receipt-line"
+                      >
+                        <div>
+                          <strong>{line.name}</strong>
+                          <small>
+                            {line.internal_sku} · 1 {line.purchase_unit} ={" "}
+                            {line.base_units_per_purchase_unit.toLocaleString(
+                              "es-MX",
+                            )}{" "}
+                            {line.base_unit}
+                          </small>
+                        </div>
+                        <ReceiptField
+                          field={`quantity-${index}`}
+                          error={errorFor(`quantity-${index}`)}
+                          label={
+                            <span className="sr-only">
+                              Cantidad de {line.name}
+                            </span>
+                          }
+                        >
+                          <div className="restaurant-number-unit">
+                            <Input
+                              {...inputValidation(`quantity-${index}`)}
+                              aria-label={`Cantidad recibida de ${line.name} en ${line.purchase_unit}`}
+                              inputMode="decimal"
+                              type="number"
+                              min="0.000001"
+                              step="0.000001"
+                              value={line.quantity}
+                              onChange={(event) => {
+                                const nextQuantity = event.target.value;
+                                patchLine(index, {
+                                  quantity: nextQuantity,
+                                  lots:
+                                    line.lot_controlled &&
+                                    line.lots.length === 1
+                                      ? [
+                                          {
+                                            ...line.lots[0],
+                                            quantity: nextQuantity,
+                                          },
+                                        ]
+                                      : line.lots,
+                                });
+                              }}
+                            />
+                            <span>{line.purchase_unit}</span>
+                          </div>
+                        </ReceiptField>
+                        <ReceiptField
+                          field={`price-${index}`}
+                          error={errorFor(`price-${index}`)}
+                          label={
+                            <span className="sr-only">
+                              Precio de {line.name}
+                            </span>
+                          }
+                          hint={
+                            line.last_purchase_unit_cost != null &&
+                            line.last_purchase_date
+                              ? `Última compra confirmada: ${money(line.last_purchase_unit_cost, line.currency_code ?? "MXN")} por ${line.purchase_unit} · ${date(line.last_purchase_date)} · ${line.last_purchase_folio}. Referencia ajustada a esta presentación.`
+                              : line.unit_cost.trim()
+                                ? "Sin compras previas como referencia."
+                                : "Sin precio de compra de referencia. Captura el importe de esta compra."
+                          }
+                        >
+                          <div className="restaurant-number-unit">
+                            <Input
+                              {...inputValidation(`price-${index}`)}
+                              aria-label={`Precio por ${line.purchase_unit} de ${line.name} en MXN`}
+                              inputMode="decimal"
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={line.unit_cost}
+                              onChange={(event) =>
+                                patchLine(index, {
+                                  unit_cost: event.target.value,
+                                })
+                              }
+                            />
+                            <span>MXN / {line.purchase_unit}</span>
+                          </div>
+                        </ReceiptField>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Quitar ${line.name}`}
+                          onClick={() =>
+                            setDraft({
+                              ...draft,
+                              lines: draft.lines.filter(
+                                (_, lineIndex) => lineIndex !== index,
+                              ),
+                            })
+                          }
+                        >
+                          <Trash2 size={17} aria-hidden="true" />
+                        </Button>
+                        {line.lot_controlled && (
+                          <div
+                            className="restaurant-receipt-lots"
+                            data-receipt-field={`lots-${index}`}
+                            tabIndex={-1}
+                          >
+                            <strong>Lotes y caducidad</strong>
+                            {line.lots.map((lot, lotIndex) => (
+                              <div key={lotIndex}>
+                                <Input
+                                  data-receipt-field={`lot-code-${index}-${lotIndex}`}
+                                  {...inputValidation(
+                                    `lot-code-${index}-${lotIndex}`,
+                                  )}
+                                  aria-label={`Lote ${lotIndex + 1} de ${line.name}`}
+                                  placeholder="Lote"
+                                  value={lot.lot_code}
+                                  onChange={(event) =>
+                                    patchLine(index, {
+                                      lots: line.lots.map((item, i) =>
+                                        i === lotIndex
+                                          ? {
+                                              ...item,
+                                              lot_code: event.target.value,
+                                            }
+                                          : item,
+                                      ),
+                                    })
+                                  }
+                                />
+                                <Input
+                                  data-receipt-field={`lot-date-${index}-${lotIndex}`}
+                                  {...inputValidation(
+                                    `lot-date-${index}-${lotIndex}`,
+                                  )}
+                                  aria-label={`Caducidad del lote ${lotIndex + 1} de ${line.name}`}
+                                  type="date"
+                                  value={lot.expiration_date}
+                                  onChange={(event) =>
+                                    patchLine(index, {
+                                      lots: line.lots.map((item, i) =>
+                                        i === lotIndex
+                                          ? {
+                                              ...item,
+                                              expiration_date:
+                                                event.target.value,
+                                            }
+                                          : item,
+                                      ),
+                                    })
+                                  }
+                                />
+                                <Input
+                                  data-receipt-field={`lot-quantity-${index}-${lotIndex}`}
+                                  {...inputValidation(
+                                    `lot-quantity-${index}-${lotIndex}`,
+                                  )}
+                                  aria-label={`Cantidad del lote ${lotIndex + 1} de ${line.name}`}
+                                  type="number"
+                                  min="0.000001"
+                                  step="0.000001"
+                                  value={lot.quantity}
+                                  onChange={(event) =>
+                                    patchLine(index, {
+                                      lots: line.lots.map((item, i) =>
+                                        i === lotIndex
+                                          ? {
+                                              ...item,
+                                              quantity: event.target.value,
+                                            }
+                                          : item,
+                                      ),
+                                    })
+                                  }
+                                />
+                              </div>
+                            ))}
+                            {visibleIssues
+                              .filter(
+                                (issue) =>
+                                  issue.field === `lots-${index}` ||
+                                  line.lots.some((_, lotIndex) =>
+                                    [
+                                      "lot-code",
+                                      "lot-date",
+                                      "lot-quantity",
+                                    ].some(
+                                      (prefix) =>
+                                        issue.field ===
+                                        `${prefix}-${index}-${lotIndex}`,
+                                    ),
+                                  ),
+                              )
+                              .map((issue) => (
+                                <p
+                                  key={issue.field}
+                                  id={`receipt-error-${issue.field}`}
+                                  className="restaurant-receipt-error"
+                                >
+                                  {issue.message}
+                                </p>
+                              ))}
+                          </div>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="restaurant-receipt-empty">
+                  <strong>Agrega los insumos de esta entrega</strong>
+                  <span>
+                    Busca cada insumo una vez y captura cantidad y precio
+                    recibidos.
+                  </span>
+                </div>
+              )}
+            </section>
+            <Field label="Notas" hint="Opcional">
+              <textarea
+                rows={3}
+                maxLength={1000}
+                value={draft.notes}
+                onChange={(event) =>
+                  setDraft({ ...draft, notes: event.target.value })
+                }
+              />
+            </Field>
+            <footer className="restaurant-receipt-actions">
+              {visibleIssues.length > 0 && (
+                <p
+                  className="restaurant-receipt-error restaurant-receipt-actions__error"
+                  role="alert"
+                >
+                  {visibleIssues[0].message}
+                </p>
+              )}
+              <div>
+                <span>Total de la entrada</span>
+                <strong>{money(totalCost)}</strong>
+              </div>
+              <Button variant="primary" type="submit" disabled={busy}>
+                Revisar y confirmar
+              </Button>
+            </footer>
+          </form>
+        )}
+      </Drawer>
+      <Modal
+        open={reviewing}
+        onOpenChange={(open) => !busy && setReviewing(open)}
+        eyebrow="Confirmación final"
+        title="¿Confirmar esta entrada?"
+        description="Esta acción agregará existencias al destino y actualizará el costo de reposición de cada insumo. El costo para recetas sigue el método configurado."
+        closeDisabled={busy}
+        footer={
+          <>
+            <Button disabled={busy} onClick={() => setReviewing(false)}>
+              Regresar
+            </Button>
+            <Button
+              variant="primary"
+              loading={busy}
+              onClick={() => void confirm()}
+            >
+              Confirmar entrada
+            </Button>
+          </>
+        }
+      >
+        {draft && (
+          <dl className="restaurant-receipt-review">
+            <div>
+              <dt>Proveedor</dt>
+              <dd>{draft.supplierLabel}</dd>
+            </div>
+            <div>
+              <dt>Partidas</dt>
+              <dd>{draft.lines.length}</dd>
+            </div>
+            <div>
+              <dt>Total</dt>
+              <dd>{money(totalCost)}</dd>
+            </div>
+            <div>
+              <dt>Destino</dt>
+              <dd>
+                {locations.find((item) => item.id === draft.locationId)?.name}
+              </dd>
+            </div>
+          </dl>
+        )}
+      </Modal>
+    </div>
+  );
 }
