@@ -4,7 +4,8 @@ import {AlertTriangle,ArrowUpRight,Layers3,LoaderCircle,PackageSearch,Plus,Save,
 import {useCallback,useEffect,useMemo,useRef,useState} from "react";
 import {useRouter,useSearchParams} from "next/navigation";
 import {DataPagination,PageHeading} from "@/app/components/ui/data";
-import {Badge,Button,Input,Select} from "@/app/components/ui/primitives";
+import { Badge, Button, Input } from "@/app/components/ui/primitives";
+import { OperationalSelect as Select } from "@/app/components/reui/operational-controls";
 import {getSupabaseClient} from "@/app/lib/supabase";
 import {useSatrapy} from "@/app/components/SatrapyProvider";
 
@@ -106,8 +107,8 @@ export function BiDependencyNetwork({companyId}:{companyId:string}){
 
     <section className={`bi-network__filterbar bi-executive-filterbar${dirty?" has-pending":""}`} aria-label="Filtros de dependencia por proveedor">
       <div className="bi-executive-filterbar__primary">
-        <label><span>Periodo</span><Select ariaLabel="Periodo de dependencia" value={periodPreset} onValueChange={changePeriod} options={PERIOD_OPTIONS}/></label>
-        <label><span>Ubicación</span><Select ariaLabel="Ubicación de dependencia" value={filters.locationId||"all"} onValueChange={value=>setFilters(current=>({...current,locationId:value==="all"?"":value}))}
+        <label><span>Periodo</span><Select showAllOnOpen ariaLabel="Periodo de dependencia" value={periodPreset} onValueChange={changePeriod} options={PERIOD_OPTIONS}/></label>
+        <label><span>Ubicación</span><Select showAllOnOpen ariaLabel="Ubicación de dependencia" value={filters.locationId||"all"} onValueChange={value=>setFilters(current=>({...current,locationId:value==="all"?"":value}))}
           options={[{value:"all",label:"Todas las ubicaciones"},...accessibleLocations.map(location=>({value:location.id,label:location.name}))]}/></label>
         <Button className="bi-executive-filterbar__more" variant="secondary" size="sm" aria-expanded={advancedFiltersOpen} aria-controls="bi-supplier-advanced-filters" onClick={()=>setAdvancedFiltersOpen(current=>!current)}><Plus size={14}/>Más filtros{advancedFilterCount?` · ${advancedFilterCount}`:""}</Button>
         <div className="bi-executive-filterbar__actions">
@@ -122,7 +123,7 @@ export function BiDependencyNetwork({companyId}:{companyId:string}){
       {advancedFiltersOpen&&<div id="bi-supplier-advanced-filters" className="bi-executive-filterbar__advanced bi-network__advanced">
         <header><div><strong>Alcance del análisis</strong><span>Acota proveedores, productos y categorías canónicas antes de comparar dependencia.</span></div><button type="button" aria-label="Cerrar filtros" onClick={()=>setAdvancedFiltersOpen(false)}><X size={15}/></button></header>
         <div className="bi-network__filter-groups bi-supplier-overview__filter-groups"><section><header><strong>Dependencia comprobada</strong><span>El resumen agrupa toda la evidencia del servidor, no una subred visible.</span></header><div>
-          <label><span>Concentración</span><Select ariaLabel="Nivel de concentración" value={filters.concentration||"all"} onValueChange={value=>setFilters(current=>({...current,concentration:value==="all"?"":value}))}
+          <label><span>Concentración</span><Select showAllOnOpen ariaLabel="Nivel de concentración" value={filters.concentration||"all"} onValueChange={value=>setFilters(current=>({...current,concentration:value==="all"?"":value}))}
             options={[{value:"all",label:"Todos los niveles"},...Object.entries(CONCENTRATION_LABELS).map(([value,label])=>({value,label}))]}/></label>
           <NodeFilter key={`supplier:${filters.supplierId}`} companyId={companyId} type="supplier" label="Proveedor" value={filters.supplierId} selectedLabel={nodeLabels.supplier} onChange={(supplierId,label="")=>{setFilters(current=>({...current,supplierId}));setNodeLabels(current=>({...current,supplier:label}));}}/>
           <NodeFilter key={`product:${filters.productId}`} companyId={companyId} type="product" label="Producto" value={filters.productId} selectedLabel={nodeLabels.product} onChange={(productId,label="")=>{setFilters(current=>({...current,productId}));setNodeLabels(current=>({...current,product:label}));}}/>

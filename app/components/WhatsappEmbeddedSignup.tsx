@@ -3,7 +3,8 @@
 import { CheckCircle2 } from "lucide-react";
 import Image from "next/image";
 import { useCallback,useEffect,useRef,useState } from "react";
-import { Button,Field,Modal,Select,useToast } from "@/app/components/ui/primitives";
+import { Button, Field, Modal, useToast } from "@/app/components/ui/primitives";
+import { OperationalSelect as Select } from "@/app/components/reui/operational-controls";
 import { parseEmbeddedSignupMessage,type EmbeddedSignupData } from "@/app/lib/meta-embedded-signup";
 import { getSupabaseClient } from "@/app/lib/supabase";
 import styles from "@/app/components/WhatsappEmbeddedSignup.module.css";
@@ -64,7 +65,7 @@ export function WhatsappEmbeddedSignup({companyId,locations,connections,onConnec
     <Modal open={open} onOpenChange={next=>!connecting&&setOpen(next)} eyebrow="WhatsApp Business" title="Conectar WhatsApp" description="Asigna el número a una sucursal y continúa en Meta." closeDisabled={connecting} footer={<><Button disabled={connecting} onClick={()=>setOpen(false)}>Cancelar</Button><Button variant="primary" loading={connecting} onClick={launch}>Continuar con Meta</Button></>}>
       <div className={styles.onboarding}>
         {connections.length?<section aria-labelledby="whatsapp-connected-title"><h3 id="whatsapp-connected-title">Números conectados</h3><div className={styles.numberList}>{connections.map(connection=>{const location=locations.find(item=>item.id===connection.configuration.location_id);return <article key={connection.id}><span><Image src="/brands/whatsapp.svg" width={19} height={19} alt=""/></span><div><strong>{connection.configuration.phone_number||connection.display_name}</strong><small>{location?.name??"Sucursal sin identificar"} · {connection.configuration.onboarding_mode==="coexistence"?"También en WhatsApp Business":"Sólo en Satrapy"}</small></div><CheckCircle2 size={18} aria-label="Conectado"/></article>})}</div></section>:null}
-        <section aria-labelledby="whatsapp-new-title"><h3 id="whatsapp-new-title">Agregar número</h3><div className="integration-form"><Field label="Sucursal"><Select ariaLabel="Sucursal que atenderá el número" value={selectedLocationId} onValueChange={value=>setSetup({locationId:value})} options={locations.map(location=>({value:location.id,label:location.name}))}/></Field></div><p className={styles.notice}>El número seguirá funcionando en WhatsApp Business y también se conectará con Satrapy.</p></section>
+        <section aria-labelledby="whatsapp-new-title"><h3 id="whatsapp-new-title">Agregar número</h3><div className="integration-form"><Field label="Sucursal"><Select showAllOnOpen ariaLabel="Sucursal que atenderá el número" value={selectedLocationId} onValueChange={value=>setSetup({locationId:value})} options={locations.map(location=>({value:location.id,label:location.name}))}/></Field></div><p className={styles.notice}>El número seguirá funcionando en WhatsApp Business y también se conectará con Satrapy.</p></section>
       </div>
     </Modal>
   </>;

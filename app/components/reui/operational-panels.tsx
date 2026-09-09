@@ -2,6 +2,7 @@
 
 import { useRef, useId, type ComponentProps, type ReactNode } from "react";
 import { Dialog } from "radix-ui";
+import { preventDialogDismissForOpenSelect } from "@/components/reui/compact-select";
 import { X, FileText } from "lucide-react";
 import { cn } from "@/app/lib/utils";
 import { Button } from "./button";
@@ -23,6 +24,7 @@ function OperationalPanel({ open, onOpenChange, title, eyebrow, description, chi
       <Dialog.Overlay className={cn("ui-dialog-overlay purchasing-overlay", !drawer && "purchasing-overlay--modal")} />
       <Dialog.Content className={cn("purchasing-surface purchasing-panel", drawer ? "purchasing-panel--drawer" : "purchasing-panel--modal", className)}
         aria-describedby={description ? descriptionId : undefined}
+        onEscapeKeyDown={preventDialogDismissForOpenSelect}
         onOpenAutoFocus={() => { previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; }}
         onCloseAutoFocus={event => {
           const target = returnFocusRef?.current ?? previousFocus.current;

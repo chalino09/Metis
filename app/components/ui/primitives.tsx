@@ -1,10 +1,10 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import * as RadixSelect from "@radix-ui/react-select";
+import { CompactSelect, preventDialogDismissForOpenSelect } from "@/components/reui/compact-select";
 import * as RadixTabs from "@radix-ui/react-tabs";
 import * as RadixToast from "@radix-ui/react-toast";
-import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, X } from "lucide-react";
 import {
   createContext,
   forwardRef,
@@ -314,27 +314,9 @@ export function Select({
   className?: string;
   style?: CSSProperties;
 }) {
-  const selected = options.find((option) => option.value === value);
-  return (
-    <RadixSelect.Root value={value} onValueChange={onValueChange} disabled={disabled}>
-      <RadixSelect.Trigger className={cx("ui-select", className)} style={style} aria-label={ariaLabel}>
-        <RadixSelect.Value placeholder={placeholder}>{selected?.value ? selected.label : undefined}</RadixSelect.Value>
-        <RadixSelect.Icon><ChevronDown size={15} /></RadixSelect.Icon>
-      </RadixSelect.Trigger>
-      <RadixSelect.Portal>
-        <RadixSelect.Content className="ui-select__content" position="popper" sideOffset={6}>
-          <RadixSelect.Viewport>
-            {options.map((option) => (
-              <RadixSelect.Item className="ui-select__item" value={option.value} disabled={option.disabled} key={option.value}>
-                <RadixSelect.ItemText>{option.label}</RadixSelect.ItemText>
-                <RadixSelect.ItemIndicator><Check size={14} /></RadixSelect.ItemIndicator>
-              </RadixSelect.Item>
-            ))}
-          </RadixSelect.Viewport>
-        </RadixSelect.Content>
-      </RadixSelect.Portal>
-    </RadixSelect.Root>
-  );
+  return <div className={cx("operational-reui-select", className)} style={style} data-placeholder={value ? undefined : "true"}>
+    <CompactSelect value={value} onValueChange={onValueChange} options={options.length ? options : [{value:"",label:placeholder,disabled:true}]} ariaLabel={ariaLabel} placeholder={placeholder} disabled={disabled} showAllOnOpen />
+  </div>;
 }
 
 export function Tabs({
@@ -378,7 +360,7 @@ export function Modal({ open, onOpenChange, eyebrow, title, description, childre
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="ui-dialog-overlay" />
-        <Dialog.Content className={cx("ui-dialog", className)} aria-describedby={description ? `${titleId}-description` : undefined}>
+        <Dialog.Content onEscapeKeyDown={preventDialogDismissForOpenSelect} className={cx("ui-dialog", className)} aria-describedby={description ? `${titleId}-description` : undefined}>
           <Dialog.Close asChild><button className="ui-dialog__close" aria-label="Cerrar" disabled={closeDisabled}><X size={17} aria-hidden="true" /></button></Dialog.Close>
           {eyebrow && <span className="eyebrow">{eyebrow}</span>}
           <Dialog.Title id={titleId}>{title}</Dialog.Title>
@@ -415,7 +397,7 @@ export function Drawer({
     <Dialog.Root open={open} onOpenChange={(nextOpen) => { onOpenChange(nextOpen); }}>
       <Dialog.Portal>
         <Dialog.Overlay className="ui-dialog-overlay" />
-        <Dialog.Content className={cx("ui-drawer", className)} onOpenAutoFocus={() => {
+        <Dialog.Content onEscapeKeyDown={preventDialogDismissForOpenSelect} className={cx("ui-drawer", className)} onOpenAutoFocus={() => {
           previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         }} onCloseAutoFocus={event => {
           const target = returnFocusRef?.current ?? previousFocusRef.current;

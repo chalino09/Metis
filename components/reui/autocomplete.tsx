@@ -193,12 +193,14 @@ export interface AutocompleteContentProps extends React.ComponentProps<
   side?: AutocompletePrimitive.Positioner.Props["side"]
   anchor?: AutocompletePrimitive.Positioner.Props["anchor"]
   showBackdrop?: boolean
+  portalContainer?: AutocompletePrimitive.Portal.Props["container"]
 }
 
 function AutocompleteContent({
   className,
   children,
   showBackdrop = false,
+  portalContainer,
   align = "start",
   sideOffset = 4,
   alignOffset = 0,
@@ -207,7 +209,7 @@ function AutocompleteContent({
   ...props
 }: AutocompleteContentProps) {
   return (
-    <AutocompletePortal>
+    <AutocompletePortal container={portalContainer}>
       {showBackdrop && <AutocompleteBackdrop />}
       <AutocompletePositioner
         align={align}

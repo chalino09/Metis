@@ -58,7 +58,7 @@ export function OperationalSelect({ value, onValueChange, options, placeholder =
   style?: CSSProperties;
   showAllOnOpen?: boolean;
 }) {
-  const normalizedOptions = options.length ? options : [{ value: "", label: placeholder }];
+  const normalizedOptions = options.length ? options : [{ value: "", label: placeholder, disabled: true }];
   return (
     <div className={cn("operational-reui-select", className)} style={style} data-placeholder={value ? undefined : "true"}>
       <CompactSelect
@@ -67,6 +67,7 @@ export function OperationalSelect({ value, onValueChange, options, placeholder =
         options={normalizedOptions}
         showAllOnOpen={showAllOnOpen}
         ariaLabel={ariaLabel}
+        placeholder={placeholder}
         disabled={disabled}
       />
     </div>

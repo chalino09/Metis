@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowDownLeft, ArrowUpRight, CheckCircle2, Landmark, RefreshCw, Unlink, UploadCloud } from "lucide-react";
-import { Badge, Button, Input, Select, useToast } from "@/app/components/ui/primitives";
+import { Badge, Button, Input, useToast } from "@/app/components/ui/primitives";
+import { OperationalSelect as Select } from "@/app/components/reui/operational-controls";
 import { DataState, PageHeading, Table } from "@/app/components/ui/data";
 import { getSupabaseClient } from "@/app/lib/supabase";
 
@@ -76,7 +77,7 @@ export function BankingModule({ companyId, permissions }: { companyId: string; p
     <PageHeading eyebrow="Tesorería" title="Bancos y conciliación" description="Explica estados completos y confirma coincidencias contra cobros bancarios y pagos registrados." action={<Button variant="secondary" loading={loading} onClick={() => void refresh()}><RefreshCw size={15} />Actualizar</Button>} />
     <DataState loading={loading} error={error} hasData={1} empty="" errorAction={<Button size="sm" onClick={() => void load()}>Reintentar</Button>}>
       <section className="banking-toolbar">
-        <div><span className="eyebrow">Cuenta financiera</span><Select ariaLabel="Cuenta financiera" value={accountId} onValueChange={(value) => { setAccountId(value); setPage(1); void load(value, 1); }} placeholder="Cuenta financiera" options={data.accounts.map((item) => ({ value: item.id, label: `${item.alias} · ${item.currency_code} · ${item.masked_ending}` }))} /></div>
+        <div><span className="eyebrow">Cuenta financiera</span><Select showAllOnOpen ariaLabel="Cuenta financiera" value={accountId} onValueChange={(value) => { setAccountId(value); setPage(1); void load(value, 1); }} placeholder="Cuenta financiera" options={data.accounts.map((item) => ({ value: item.id, label: `${item.alias} · ${item.currency_code} · ${item.masked_ending}` }))} /></div>
         {selectedAccount && <p><strong>{selectedAccount.institution_name}</strong><span>{selectedAccount.currency_code} · {selectedAccount.masked_ending}</span></p>}
         <Link className="ui-button ui-button--secondary ui-button--md" href="/satrapy/configuracion/importaciones"><UploadCloud size={15} />Cargar otro estado</Link>
       </section>
