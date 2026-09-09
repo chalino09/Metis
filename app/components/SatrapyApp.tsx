@@ -669,7 +669,7 @@ export function SatrapyRouteContent() {
   if (isForbidden) return <AccessDeniedScreen onGoHome={() => router.replace(VIEW_META[allowedViews[0]].href)} />;
   if (!requestedView) return <LoadingPlaceholder kind="page" label="Abriendo tu espacio de trabajo…" />;
   if (activeView === "migration") return <MigrationCenter companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
-  if (activeView === "suppliers") return <SuppliersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
+  if (activeView === "suppliers") return <SuppliersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} experience={experience} />;
   if (activeView === "procurement") return <ProcurementView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "purchase_orders") return <PurchaseOrdersView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "purchase_receipts") return experience === "restaurant" ? <RestaurantPurchaseReceiptsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} /> : <PurchaseReceiptsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
