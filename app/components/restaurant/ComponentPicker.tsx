@@ -20,6 +20,7 @@ export function ComponentPicker({
   dishes = false,
   label = "Buscar insumo o base",
   excludeId,
+  errorMessage,
 }: {
   companyId: string;
   selectedIds: string[];
@@ -28,6 +29,7 @@ export function ComponentPicker({
   dishes?: boolean;
   label?: string;
   excludeId?: string;
+  errorMessage?: string;
 }) {
   const id = useId();
   const [query, setQuery] = useState("");
@@ -119,6 +121,8 @@ export function ComponentPicker({
               : "Escribe arrachera, tortilla, salsa…"
           }
           autoComplete="off"
+          aria-invalid={Boolean(errorMessage) || undefined}
+          aria-describedby={errorMessage ? `${id}-error` : undefined}
           role="combobox"
           aria-autocomplete="list"
           aria-expanded={open}
@@ -158,6 +162,7 @@ export function ComponentPicker({
           }}
         />
       </div>
+      {errorMessage && <p id={`${id}-error`} className={styles.fieldError}>{errorMessage}</p>}
       {open && (
         <div className={styles.pickerPopover}>
           <div className={styles.pickerHeading}>

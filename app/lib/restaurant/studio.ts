@@ -136,6 +136,36 @@ export type BundleDraft = {
   extras: { id: string; name: string }[];
 };
 
+export type BundleIssue = { field: "price" | "groups" | "name" | "options"; groupIndex?: number; message: string };
+
+export function bundleIssues(bundle: BundleDraft | null): BundleIssue[] {
+  if (!bundle?.is_active) return [];
+  const issues: BundleIssue[] = [];
+  const price = numberValue(bundle.combo_price_amount);
+  if (!(price > 0 && price < 1000000000))
+    issues.push({ field: "price", message: "Escribe el precio de la comida completa, mayor que cero." });
+  if (!bundle.groups.length)
+    issues.push({ field: "groups", message: "Agrega al menos un grupo con las opciones incluidas en la comida completa." });
+  const names = new Set<string>();
+  bundle.groups.forEach((group, groupIndex) => {
+    const name = group.name.trim();
+    const key = name.toLocaleLowerCase("es-MX");
+    if (!name || names.has(key))
+      issues.push({ field: "name", groupIndex, message: !name ? "Escribe el nombre de este grupo." : `El nombre “${name}” ya está en uso. Escribe uno distinto.` });
+    names.add(key);
+    if (group.options.length < group.minimum_selections)
+      issues.push({ field: "options", groupIndex, message: `Selecciona ${group.minimum_selections === 1 ? "al menos un platillo" : `al menos ${group.minimum_selections} platillos`} para “${name || `Grupo ${groupIndex + 1}`}” en el buscador. Si no lo incluyes, quita este grupo.` });
+  });
+  return issues;
+}
+
+export function nextBundleGroupName(groups: BundleDraft["groups"]): string {
+  const names = new Set(groups.map(group => group.name.trim().toLocaleLowerCase("es-MX")));
+  let name = "Acompañamiento";
+  for (let suffix = 2; names.has(name.toLocaleLowerCase("es-MX")); suffix++) name = `Acompañamiento ${suffix}`;
+  return name;
+}
+
 export const categories: Record<CulinaryRole, string[]> = {
   dish: [
     "Desayunos",

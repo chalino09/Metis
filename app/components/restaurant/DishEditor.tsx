@@ -27,6 +27,7 @@ import { OperationalButton as Button, OperationalInput as Input } from "@/app/co
 import { getSupabaseClient } from "@/app/lib/supabase";
 import { OperationIdempotencyKeys } from "@/app/lib/operation-idempotency";
 import {
+  bundleIssues,
   categories,
   canonicalUnit,
   compatibleUnits,
@@ -335,12 +336,19 @@ export function DishEditor({
     else onClose();
   }
   function focusInvalid() {
-    requestAnimationFrame(() =>
-      bodyRef.current
-        ?.querySelector<HTMLElement>('[aria-invalid="true"], [role="alert"]')
-        ?.focus(),
-    );
+    requestAnimationFrame(() => {
+      const body = bodyRef.current;
+      body?.querySelectorAll<HTMLDetailsElement>("details").forEach(details => {
+        if (details.querySelector('[aria-invalid="true"]')) details.open = true;
+      });
+      const target = body?.querySelector<HTMLElement>('[aria-invalid="true"]') ?? body?.querySelector<HTMLElement>('[role="alert"]');
+      target?.focus({ preventScroll: true });
+      target?.scrollIntoView({ block: "center" });
+    });
   }
+  useEffect(() => {
+    if (error) focusInvalid();
+  }, [error]);
   function validate(target: number) {
     setShowErrors(true);
     setError("");
@@ -453,29 +461,16 @@ export function DishEditor({
         setError("Elige al menos una sucursal para ofrecer el platillo.");
         return;
       }
-      if (
-        canPrice &&
-        bundle?.is_active &&
-        (!(numberValue(bundle.combo_price_amount) > 0) ||
-          bundle.groups.length === 0 ||
-          new Set(
-            bundle.groups.map((group) =>
-              group.name.trim().toLocaleLowerCase("es-MX"),
-            ),
-          ).size !== bundle.groups.length ||
-          bundle.groups.some(
-            (group) =>
-              !group.name.trim() ||
-              group.options.length < group.minimum_selections,
-          ))
-      ) {
-        setStep(3);
-        setError(
-          "Completa el precio y las opciones de la comida completa. Usa un nombre distinto para cada grupo.",
-        );
-        return;
-      }
     }
+    // Both save actions send the bundle, so validate it before either RPC.
+    const issues = canPrice ? bundleIssues(bundle) : [];
+    if (issues.length) {
+      setStep(3);
+      setError(issues[0].message);
+      focusInvalid();
+      return;
+    }
+
     const payload = {
       id: isNew ? null : productId,
       kind,
@@ -581,54 +576,63 @@ export function DishEditor({
               <ArrowRight size={16} />
             </Button>
           ) : (
-            <div className={styles.editorFooter}>
-              <span>
-                {step === 1
-                  ? "Empieza con lo que sabes cocinar."
-                  : step === 2
-                    ? "Los costos se calculan automáticamente."
-                    : "Precio, receta y sucursales se guardan juntos."}
-              </span>
-              <div>
-                {step > 1 && (
-                  <Button disabled={busy} onClick={() => navigate(step - 1)}>
-                    <ArrowLeft size={16} />
-                    Volver
-                  </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  disabled={loading || busy || Boolean(loadError)}
-                  onClick={() => void save(false)}
-                >
-                  {isNew ? "Guardar borrador" : "Guardar sin activar receta"}
-                </Button>
-                {step < lastStep ? (
+            <div className={styles.editorFooterWrap}>
+              {error && (
+                <div className={styles.saveError}>
+                  <AlertCircle size={18} aria-hidden="true" />
+                  <span>Hay cambios sin guardar. Revisa el pendiente.</span>
+                  <Button size="sm" variant="ghost" onClick={focusInvalid}>Ver pendiente</Button>
+                </div>
+              )}
+              <div className={styles.editorFooter}>
+                <span>
+                  {step === 1
+                    ? "Empieza con lo que sabes cocinar."
+                    : step === 2
+                      ? "Los costos se calculan automáticamente."
+                      : "Precio, receta y sucursales se guardan juntos."}
+                </span>
+                <div>
+                  {step > 1 && (
+                    <Button disabled={busy} onClick={() => navigate(step - 1)}>
+                      <ArrowLeft size={16} />
+                      Volver
+                    </Button>
+                  )}
                   <Button
-                    variant="primary"
-                    disabled={loading || Boolean(loadError)}
-                    onClick={() => navigate(step + 1)}
+                    variant="ghost"
+                    disabled={loading || busy || Boolean(loadError)}
+                    onClick={() => void save(false)}
                   >
-                    Continuar
-                    <ArrowRight size={16} />
+                    {isNew ? "Guardar borrador" : "Guardar sin activar receta"}
                   </Button>
-                ) : (
-                  <Button
-                    variant="primary"
-                    loading={busy}
-                    disabled={loading || Boolean(loadError)}
-                    onClick={() => void save(true)}
-                  >
-                    <Check size={17} />
-                    {!form.active
-                      ? isDish ? "Guardar platillo inactivo" : "Guardar base inactiva"
-                      : isDish
-                      ? form.available
-                        ? "Guardar y ofrecer en POS"
-                        : "Guardar platillo"
-                      : "Guardar base y usar en recetas"}
-                  </Button>
-                )}
+                  {step < lastStep ? (
+                    <Button
+                      variant="primary"
+                      disabled={loading || Boolean(loadError)}
+                      onClick={() => navigate(step + 1)}
+                    >
+                      Continuar
+                      <ArrowRight size={16} />
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="primary"
+                      loading={busy}
+                      disabled={loading || Boolean(loadError)}
+                      onClick={() => void save(true)}
+                    >
+                      <Check size={17} />
+                      {!form.active
+                        ? isDish ? "Guardar platillo inactivo" : "Guardar base inactiva"
+                        : isDish
+                        ? form.available
+                          ? "Guardar y ofrecer en POS"
+                          : "Guardar platillo"
+                        : "Guardar base y usar en recetas"}
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
           )
@@ -636,44 +640,50 @@ export function DishEditor({
       >
         {saved ? (
           <div className={styles.success}>
-            <div className={styles.successIcon}>
-              <Check size={30} />
-            </div>
-            <h2>
-              {!saved.is_active
-                ? isDish ? "Platillo guardado como inactivo" : "Base guardada como inactiva"
-                : saved.recipe_active
-                ? saved.available
-                  ? savedLocations?.some((location) => !location.available)
-                    ? "Platillo guardado. Hay pendientes para vender."
-                    : "Tu platillo ya forma parte del menú"
-                  : isDish
-                    ? "Platillo guardado"
-                    : "La base está lista para tus recetas"
-                : "Borrador guardado"}
-            </h2>
-            <p>
-              {saved.available
-                ? "La receta está activa y la venta está habilitada en las sucursales elegidas. POS comprobará las existencias y el precio de cada sucursal antes de vender."
-                : saved.recipe_active
-                  ? "Puedes regresar a editarlo cuando lo necesites."
-                  : "Puedes retomar los ingredientes, el precio y la disponibilidad desde el menú."}
-            </p>
-            {saved.available && currentCost && !currentCost.allowed && (
-              <p className={styles.notice}>
-                Hay insumos sin costo vigente. El margen seguirá pendiente hasta
-                completar sus costos.
+            <header className={styles.successHeader}>
+              <div className={styles.successIcon}>
+                <Check size={30} />
+              </div>
+              <h2>
+                {!saved.is_active
+                  ? isDish ? "Platillo guardado como inactivo" : "Base guardada como inactiva"
+                  : saved.recipe_active
+                  ? saved.available
+                    ? savedLocations?.some((location) => !location.available)
+                      ? "Platillo guardado"
+                      : "Tu platillo ya forma parte del menú"
+                    : isDish
+                      ? "Platillo guardado"
+                      : "La base está lista para tus recetas"
+                  : "Borrador guardado"}
+              </h2>
+              <p>
+                {saved.available
+                  ? "Tu receta y los cambios de venta quedaron guardados. El platillo permanece en el menú; POS revisa las existencias y el precio antes de vender."
+                  : saved.recipe_active
+                    ? "Puedes regresar a editarlo cuando lo necesites."
+                    : "Puedes retomar los ingredientes, el precio y la disponibilidad desde el menú."}
               </p>
+            </header>
+            {saved.available && currentCost && !currentCost.allowed && (
+              <section className={styles.successNotice}>
+                <h3>Costo pendiente</h3>
+                <p>Hay insumos sin costo vigente. Completa sus costos para calcular el margen.</p>
+              </section>
             )}
             {saved.available && savedLocations && (
               <div
-                className={styles.operatingStatus}
+                className={styles.successLocations}
                 aria-label="Disponibilidad después de guardar"
               >
+                <h3>Disponibilidad por sucursal</h3>
                 {savedLocations.map((location) => (
-                  <div key={location.id}>
-                    <strong>{location.name}</strong>
-                    <span>{location.message}</span>
+                  <div key={location.id} data-available={location.available}>
+                    <div>
+                      <strong>{location.name}</strong>
+                      <span>{location.available ? "Disponible" : "Pendiente para vender"}</span>
+                    </div>
+                    <p>{location.message}</p>
                   </div>
                 ))}
               </div>
@@ -681,18 +691,18 @@ export function DishEditor({
             <div className={styles.successFacts}>
               <span>
                 <ChefHat size={18} />
-                {lines.length} ingredientes
+                {lines.length} {lines.length === 1 ? "ingrediente" : "ingredientes"}
               </span>
               <span>
                 <CookingPot size={18} />
                 {isDish
-                  ? `${form.portions} porciones por tanda`
+                  ? `${form.portions} ${portions === 1 ? "porción" : "porciones"} por tanda`
                   : `${form.yieldQuantity} ${unitLabel(form.yieldUnit)} por tanda`}
               </span>
               {saved.available && (
                 <span>
                   <Store size={18} />
-                  {places} sucursales elegidas
+                  {places} {places === 1 ? "sucursal elegida" : "sucursales elegidas"}
                 </span>
               )}
             </div>
@@ -1385,6 +1395,7 @@ export function DishEditor({
                         companyId={companyId}
                         productId={productId}
                         value={bundle}
+                        showErrors={showErrors}
                         onChange={(value) => {
                           setBundle(value);
                           setDirty(true);

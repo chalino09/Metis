@@ -47,7 +47,7 @@ export const OperationalInput = React.forwardRef<HTMLInputElement, InputHTMLAttr
 });
 
 /** ReUI autocomplete-backed select, preserving the Select props used by RPC forms. */
-export function OperationalSelect({ value, onValueChange, options, placeholder = "Seleccionar", ariaLabel, disabled = false, className, style }: {
+export function OperationalSelect({ value, onValueChange, options, placeholder = "Seleccionar", ariaLabel, disabled = false, className, style, showAllOnOpen }: {
   value: string;
   onValueChange: (value: string) => void;
   options: CompactSelectOption[];
@@ -56,6 +56,7 @@ export function OperationalSelect({ value, onValueChange, options, placeholder =
   disabled?: boolean;
   className?: string;
   style?: CSSProperties;
+  showAllOnOpen?: boolean;
 }) {
   const normalizedOptions = options.length ? options : [{ value: "", label: placeholder }];
   return (
@@ -64,6 +65,7 @@ export function OperationalSelect({ value, onValueChange, options, placeholder =
         value={value}
         onValueChange={onValueChange}
         options={normalizedOptions}
+        showAllOnOpen={showAllOnOpen}
         ariaLabel={ariaLabel}
         disabled={disabled}
       />

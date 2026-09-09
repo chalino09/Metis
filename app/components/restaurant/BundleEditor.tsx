@@ -3,7 +3,8 @@ import { Plus, Trash2, Soup, GlassWater } from "lucide-react";
 import { Field } from "@/app/components/ui/primitives";
 import { OperationalButton as Button, OperationalInput as Input } from "@/app/components/reui/operational-controls";
 import { ComponentPicker } from "./ComponentPicker";
-import type { BundleDraft } from "@/app/lib/restaurant/studio";
+import { useEffect, useId, useRef } from "react";
+import { bundleIssues, nextBundleGroupName, type BundleDraft } from "@/app/lib/restaurant/studio";
 import styles from "./restaurant.module.css";
 
 export function BundleEditor({
@@ -11,12 +12,22 @@ export function BundleEditor({
   productId,
   value,
   onChange,
+  showErrors = false,
 }: {
   companyId: string;
   productId?: string;
   value: BundleDraft | null;
   onChange: (value: BundleDraft) => void;
+  showErrors?: boolean;
 }) {
+  const id = useId();
+  const disclosureRef = useRef<HTMLDetailsElement>(null);
+  const issues = showErrors ? bundleIssues(value) : [];
+  const hasIssues = issues.length > 0;
+  useEffect(() => {
+    if (hasIssues && disclosureRef.current) disclosureRef.current.open = true;
+  }, [hasIssues]);
+  const priceError = issues.find(issue => issue.field === "price");
   const bundle = value ?? {
     is_active: false,
     combo_price_amount: "",
@@ -37,7 +48,7 @@ export function BundleEditor({
     extras: [],
   };
   return (
-    <details className={styles.disclosure}>
+    <details ref={disclosureRef} className={styles.disclosure} data-bundle-editor>
       <summary>
         Comida completa y extras <span>Opcional</span>
       </summary>
@@ -64,6 +75,8 @@ export function BundleEditor({
                 min="0.01"
                 step="0.01"
                 value={bundle.combo_price_amount ?? ""}
+                aria-invalid={Boolean(priceError) || undefined}
+                aria-describedby={priceError ? `${id}-price-error` : undefined}
                 onChange={(event) =>
                   onChange({
                     ...bundle,
@@ -72,8 +85,14 @@ export function BundleEditor({
                 }
                 placeholder="Ej. 180.00"
               />
+              {priceError && <small id={`${id}-price-error`} className={styles.fieldError}>{priceError.message}</small>}
             </Field>
-            {bundle.groups.map((group, index) => (
+            <p className={styles.hint}>En cada grupo, selecciona los platillos incluidos. Escribir el nombre del grupo no agrega una opción.</p>
+            {issues.some(issue => issue.field === "groups") && <p className={styles.fieldError}>{issues.find(issue => issue.field === "groups")!.message}</p>}
+            {bundle.groups.map((group, index) => {
+              const nameError = issues.find(issue => issue.field === "name" && issue.groupIndex === index);
+              const optionsError = issues.find(issue => issue.field === "options" && issue.groupIndex === index);
+              return (
               <section key={index} className={styles.bundleGroup}>
                 <header>
                   {index === 0 ? (
@@ -84,6 +103,8 @@ export function BundleEditor({
                   <Field label="Nombre del grupo">
                     <Input
                       value={group.name}
+                      aria-invalid={Boolean(nameError) || undefined}
+                      aria-describedby={nameError ? `${id}-${index}-name-error` : undefined}
                       onChange={(event) =>
                         onChange({
                           ...bundle,
@@ -95,6 +116,7 @@ export function BundleEditor({
                         })
                       }
                     />
+                    {nameError && <small id={`${id}-${index}-name-error`} className={styles.fieldError}>{nameError.message}</small>}
                   </Field>
                   <Button
                     size="icon"
@@ -143,6 +165,7 @@ export function BundleEditor({
                   dishes
                   excludeId={productId}
                   label={`Agregar opción de ${group.name.toLowerCase()}`}
+                  errorMessage={optionsError?.message}
                   selectedIds={group.options.map((item) => item.id)}
                   onSelect={(item) =>
                     onChange({
@@ -162,7 +185,7 @@ export function BundleEditor({
                   }
                 />
               </section>
-            ))}
+            );})}
             {bundle.groups.length < 10 && (
               <Button
                 variant="ghost"
@@ -172,7 +195,7 @@ export function BundleEditor({
                     groups: [
                       ...bundle.groups,
                       {
-                        name: "Acompañamiento",
+                        name: nextBundleGroupName(bundle.groups),
                         minimum_selections: 1,
                         maximum_selections: 1,
                         options: [],

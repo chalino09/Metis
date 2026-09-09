@@ -2,11 +2,44 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   compatibleUnits,
+  bundleIssues,
+  nextBundleGroupName,
+  type BundleDraft,
   purchaseFactor,
   netMargin,
   recipeComponents,
   type RecipeLine,
 } from "../app/lib/restaurant/studio.ts";
+
+test("comida completa identifica el grupo vacío sin culpar al precio ni a los extras", () => {
+  const bundle: BundleDraft = {
+    is_active: true, combo_price_amount: "120",
+    groups: [
+      { name: "Sopa", minimum_selections: 1, maximum_selections: 1, options: [{ id: "sopa", name: "Sopa" }] },
+      { name: "Agua", minimum_selections: 1, maximum_selections: 1, options: [] },
+    ],
+    extras: [{ id: "huevo", name: "Huevo extra" }],
+  };
+  const issues = bundleIssues(bundle);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].field, "options");
+  assert.equal(issues[0].groupIndex, 1);
+  assert.match(issues[0].message, /Agua/);
+  bundle.groups[1].options.push({ id: "agua", name: "Agua" });
+  assert.deepEqual(bundleIssues(bundle), []);
+  assert.equal(bundle.extras[0].id, "huevo");
+});
+
+test("precio y nombres repetidos tienen errores independientes; agregar grupos da nombres únicos", () => {
+  const group = { name: " Acompañamiento ", minimum_selections: 1, maximum_selections: 1, options: [{ id: "sopa", name: "Sopa" }] };
+  const bundle: BundleDraft = { is_active: true, combo_price_amount: "", groups: [group, { ...group, name: "acompañamiento" }], extras: [] };
+  assert.deepEqual(bundleIssues(bundle).map(issue => issue.field), ["price", "name"]);
+  assert.equal(nextBundleGroupName(bundle.groups), "Acompañamiento 2");
+  bundle.groups.push({ ...group, name: "Acompañamiento 2" });
+  assert.equal(nextBundleGroupName(bundle.groups), "Acompañamiento 3");
+  assert.deepEqual(bundleIssues({ ...bundle, is_active: false }), []);
+  assert.deepEqual(bundleIssues(null), []);
+});
 
 test("las compras estándar se convierten sin pedir factores técnicos", () => {
   assert.equal(purchaseFactor("KG", "g"), 1000);
