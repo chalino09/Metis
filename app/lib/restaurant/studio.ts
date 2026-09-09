@@ -126,7 +126,7 @@ export type StudioContext = {
 };
 export type BundleDraft = {
   is_active: boolean;
-  combo_price_amount: string;
+  combo_price_amount: string | null;
   groups: {
     name: string;
     minimum_selections: number;
@@ -141,7 +141,7 @@ export type BundleIssue = { field: "price" | "groups" | "name" | "options"; grou
 export function bundleIssues(bundle: BundleDraft | null): BundleIssue[] {
   if (!bundle?.is_active) return [];
   const issues: BundleIssue[] = [];
-  const price = numberValue(bundle.combo_price_amount);
+  const price = numberValue(bundle.combo_price_amount ?? "");
   if (!(price > 0 && price < 1000000000))
     issues.push({ field: "price", message: "Escribe el precio de la comida completa, mayor que cero." });
   if (!bundle.groups.length)

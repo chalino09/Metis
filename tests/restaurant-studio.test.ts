@@ -41,6 +41,18 @@ test("precio y nombres repetidos tienen errores independientes; agregar grupos d
   assert.deepEqual(bundleIssues(null), []);
 });
 
+test("una comida guardada con precio nulo pide completarlo sin romper el editor", () => {
+  const bundle: BundleDraft = {
+    is_active: true,
+    combo_price_amount: null,
+    groups: [{ name: "Sopa", minimum_selections: 1, maximum_selections: 1, options: [{ id: "sopa", name: "Sopa" }] }],
+    extras: [{ id: "huevo", name: "Huevo extra" }],
+  };
+  assert.deepEqual(bundleIssues(bundle).map(issue => issue.field), ["price"]);
+  assert.deepEqual(bundleIssues({ ...bundle, combo_price_amount: "120" }), []);
+  assert.deepEqual(bundleIssues({ ...bundle, is_active: false }), []);
+});
+
 test("las compras estándar se convierten sin pedir factores técnicos", () => {
   assert.equal(purchaseFactor("KG", "g"), 1000);
   assert.equal(purchaseFactor("L", "ml"), 1000);

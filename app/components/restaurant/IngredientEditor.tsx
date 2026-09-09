@@ -38,6 +38,8 @@ export function IngredientEditor({
 }: Props) {
   const [context, setContext] = useState<StudioContext | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [form, setForm] = useState({
@@ -56,18 +58,19 @@ export function IngredientEditor({
   const canCost = permissions.includes("import_costs");
   useEffect(() => {
     let active = true;
-    void getSupabaseClient()
-      .rpc("get_restaurant_studio_context", {
-        p_company_id: companyId,
-        p_product_id: productId ?? null,
-      })
-      .then(({ data, error: failure }) => {
+    void Promise.resolve().then(async () => {
+      if (!active) return;
+      setLoading(true);
+      setLoadError("");
+      setContext(null);
+      try {
+        const { data, error: failure } = await getSupabaseClient().rpc(
+          "get_restaurant_studio_context",
+          { p_company_id: companyId, p_product_id: productId ?? null },
+        );
         if (!active) return;
-        setLoading(false);
-        if (failure) {
-          setError(restaurantError(failure));
-          return;
-        }
+        if (failure) throw failure;
+        if (!data) throw new Error("No se recibieron los datos del insumo. Vuelve a intentar.");
         const next = data as StudioContext;
         setContext(next);
         if (next.product)
@@ -82,11 +85,17 @@ export function IngredientEditor({
             active: next.product.is_active,
             lots: next.product.lot_controlled,
           });
-      });
-    return () => {
-      active = false;
-    };
-  }, [companyId, productId]);
+      } catch (failure) {
+        if (active) {
+          setContext(null);
+          setLoadError(restaurantError(failure));
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    });
+    return () => { active = false; };
+  }, [companyId, productId, loadAttempt]);
   const automatic = purchaseFactor(form.purchase, form.unit);
   const factor = automatic ?? numberValue(form.factor);
   const cost = numberValue(form.cost);
@@ -127,9 +136,8 @@ export function IngredientEditor({
   if (!purchaseOptions.some((option) => option.value === form.purchase))
     purchaseOptions.push({ value: form.purchase, label: form.purchase });
   async function save() {
-    if (busy || loading) return;
+    if (busy || loading || !context || loadError) return;
     if (!formRef.current?.reportValidity()) return;
-    if (productId && !context) return;
     if (!form.name.trim() || !(factor > 0)) {
       setError("Escribe el nombre y el contenido de la presentación.");
       return;
@@ -194,7 +202,7 @@ export function IngredientEditor({
           <Button
             variant="primary"
             loading={busy}
-            disabled={loading || Boolean(productId && !context)}
+            disabled={loading || !context || Boolean(loadError)}
             onClick={() => void save()}
           >
             <Check size={16} />
@@ -205,6 +213,16 @@ export function IngredientEditor({
     >
       {loading ? (
         <p role="status">Cargando insumo…</p>
+      ) : loadError ? (
+        <div className={styles.loadError}>
+          <AlertCircle size={26} aria-hidden="true" />
+          <p role="alert">{loadError}</p>
+          <Button onClick={() => {
+            setLoading(true);
+            setLoadError("");
+            setLoadAttempt(attempt => attempt + 1);
+          }}>Reintentar carga</Button>
+        </div>
       ) : (
         <form
           ref={formRef}
