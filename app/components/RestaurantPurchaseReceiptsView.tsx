@@ -42,6 +42,26 @@ type Receipt = {
   location_name: string;
   updated_at: string;
 };
+type ReceiptDetailLine = {
+  id: string;
+  product_code: string;
+  product_name: string;
+  current_quantity: number;
+  unit_cost: number | null;
+  line_cost: number | null;
+  lots: Array<{
+    lot_code: string;
+    expiration_date: string;
+    quantity: number;
+  }>;
+};
+type ReceiptDetail = Receipt & {
+  notes: string | null;
+  confirmed_at: string | null;
+  supplier: { code: string; display_name: string };
+  location: { code: string; name: string };
+  lines: ReceiptDetailLine[];
+};
 type Supplier = { id: string; code: string; display_name: string };
 type Location = { id: string; name: string; external_code: string };
 type Ingredient = {
@@ -79,6 +99,8 @@ const date = (value: string) =>
   new Intl.DateTimeFormat("es-MX", { dateStyle: "medium" }).format(
     new Date(`${value}T12:00:00`),
   );
+const quantity = (value: number) =>
+  Number(value).toLocaleString("es-MX", { maximumFractionDigits: 6 });
 const emptyReceiptDraft = (): Draft => ({
   supplierId: "",
   supplierLabel: "",
@@ -150,6 +172,8 @@ export function RestaurantPurchaseReceiptsView({
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [detail, setDetail] = useState<ReceiptDetail | null>(null);
+  const [openingReceiptId, setOpeningReceiptId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [locations, setLocations] = useState<Location[]>([]);
   const [supplierQuery, setSupplierQuery] = useState("");
@@ -275,6 +299,23 @@ export function RestaurantPurchaseReceiptsView({
       window.history.replaceState({}, "", window.location.pathname);
     })();
   }, [canCreate, companyId, toast]);
+  async function openDetail(id: string) {
+    setOpeningReceiptId(id);
+    const { data, error: rpcError } = await getSupabaseClient().rpc(
+      "get_purchase_receipt_detail",
+      { p_company_id: companyId, p_receipt_id: id },
+    );
+    setOpeningReceiptId(null);
+    if (rpcError) {
+      toast({
+        title: "No se pudo abrir la entrada",
+        description: rpcError.message,
+        tone: "error",
+      });
+      return;
+    }
+    setDetail(data as ReceiptDetail);
+  }
   function openNew() {
     setAttempted(false);
     setSupplierOpen(false);
@@ -467,13 +508,17 @@ export function RestaurantPurchaseReceiptsView({
             {rows.map((row) => (
               <InteractiveTableRow
                 key={row.id}
-                label={`Entrada ${row.folio}`}
-                onActivate={() => {}}
-                disabled
+                className="purchase-order-row"
+                label={`Ver insumos de la entrada ${row.folio}`}
+                onActivate={() => void openDetail(row.id)}
               >
                 <td>
                   <strong className="mono">{row.folio}</strong>
-                  <small>{row.document_reference ?? "Sin referencia"}</small>
+                  <small>
+                    {openingReceiptId === row.id
+                      ? "Abriendo detalle…"
+                      : (row.document_reference ?? "Sin referencia")}
+                  </small>
                 </td>
                 <td>{row.supplier_name}</td>
                 <td>{row.location_name}</td>
@@ -506,6 +551,116 @@ export function RestaurantPurchaseReceiptsView({
           onChange={setPage}
         />
       </DataState>
+      <Drawer
+        open={Boolean(detail)}
+        onOpenChange={(open) => {
+          if (!open) setDetail(null);
+        }}
+        eyebrow="Entrada de insumos"
+        title={detail?.folio ?? "Detalle de entrada"}
+        description="Consulta los insumos y cantidades que ingresaron al inventario."
+        className="purchase-order-detail-drawer"
+      >
+        {detail && (
+          <div className="purchase-order-detail">
+            <header>
+              <div>
+                <Badge
+                  tone={
+                    detail.status === "confirmed"
+                      ? "success"
+                      : detail.status === "reversed"
+                        ? "danger"
+                        : "neutral"
+                  }
+                >
+                  {detail.status === "confirmed"
+                    ? "Confirmada"
+                    : detail.status === "reversed"
+                      ? "Anulada"
+                      : "Borrador"}
+                </Badge>
+              </div>
+              <strong>{date(detail.receipt_date)}</strong>
+            </header>
+            <dl>
+              <div>
+                <dt>Proveedor</dt>
+                <dd>{detail.supplier.display_name}</dd>
+              </div>
+              <div>
+                <dt>Destino</dt>
+                <dd>{detail.location.name}</dd>
+              </div>
+              <div>
+                <dt>Documento</dt>
+                <dd>{detail.document_reference ?? "Sin referencia"}</dd>
+              </div>
+              <div>
+                <dt>Partidas</dt>
+                <dd>{detail.lines.length}</dd>
+              </div>
+            </dl>
+            <section>
+              <h3>Insumos recibidos</h3>
+              {detail.lines.length > 0 ? (
+                <Table ariaLabel={`Insumos de la entrada ${detail.folio}`}>
+                  <thead>
+                    <tr>
+                      <th>Insumo</th>
+                      <th className="number-cell">Cantidad recibida</th>
+                      {permissions.includes("view_costs") && (
+                        <>
+                          <th className="number-cell">Costo unitario</th>
+                          <th className="number-cell">Importe</th>
+                        </>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detail.lines.map((line) => (
+                      <tr key={line.id}>
+                        <td>
+                          <strong>{line.product_name}</strong>
+                          <small>{line.product_code}</small>
+                          {line.lots.length > 0 && (
+                            <small>
+                              Lotes: {line.lots.map((lot) =>
+                                `${lot.lot_code} · ${date(lot.expiration_date)} · ${quantity(lot.quantity)}`,
+                              ).join(" | ")}
+                            </small>
+                          )}
+                        </td>
+                        <td className="number-cell">
+                          <strong>{quantity(line.current_quantity)}</strong>
+                        </td>
+                        {permissions.includes("view_costs") && (
+                          <>
+                            <td className="number-cell">
+                              {line.unit_cost == null ? "—" : money(line.unit_cost)}
+                            </td>
+                            <td className="number-cell">
+                              {line.line_cost == null ? "—" : money(line.line_cost)}
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              ) : (
+                <p>No hay insumos registrados en esta entrada.</p>
+              )}
+            </section>
+            {detail.notes && (
+              <section>
+                <h3>Notas</h3>
+                <p>{detail.notes}</p>
+              </section>
+            )}
+          </div>
+        )}
+      </Drawer>
       <Drawer
         open={Boolean(draft)}
         onOpenChange={(open) => {
