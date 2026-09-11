@@ -24,7 +24,12 @@ function OperationalPanel({ open, onOpenChange, title, eyebrow, description, chi
       <Dialog.Overlay className={cn("ui-dialog-overlay purchasing-overlay", !drawer && "purchasing-overlay--modal")} />
       <Dialog.Content className={cn("purchasing-surface purchasing-panel", drawer ? "purchasing-panel--drawer" : "purchasing-panel--modal", className)}
         aria-describedby={description ? descriptionId : undefined}
-        onEscapeKeyDown={preventDialogDismissForOpenSelect}
+        onEscapeKeyDown={event => {
+          preventDialogDismissForOpenSelect(event);
+          // Base UI selectors portal outside Radix dialogs. Let Escape close only
+          // the selector first, without dismissing the collaborator's draft.
+          if (className?.includes("collaborator-surface") && document.querySelector('[data-slot="autocomplete-popup"]:not([data-closed]),.collaborator-surface .satrapy-calendar,.collaborator-surface .payroll-adjustment__results')) event.preventDefault();
+        }}
         onOpenAutoFocus={() => { previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; }}
         onCloseAutoFocus={event => {
           const target = returnFocusRef?.current ?? previousFocus.current;
@@ -45,8 +50,8 @@ function OperationalPanel({ open, onOpenChange, title, eyebrow, description, chi
   </Dialog.Root>;
 }
 
-export function OperationalDrawer(props: ComponentProps<typeof LegacyDrawer>) { return <OperationalPanel {...props} drawer />; }
-export function OperationalModal(props: ComponentProps<typeof LegacyModal>) { return <OperationalPanel {...props} />; }
+export function OperationalDrawer(props: ComponentProps<typeof LegacyDrawer> & { footer?: ReactNode; closeDisabled?: boolean }) { return <OperationalPanel {...props} drawer />; }
+export function OperationalModal(props: ComponentProps<typeof LegacyModal> & { returnFocusRef?: { current: HTMLElement | null } }) { return <OperationalPanel {...props} />; }
 
 export function OperationalTabs({ items, ariaLabel, className, ...props }: ComponentProps<typeof LegacyTabs>) {
   return <Tabs {...props} className={cn("purchasing-tabs", className)}><TabsList aria-label={ariaLabel ?? "Secciones"}>

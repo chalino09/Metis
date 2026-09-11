@@ -451,10 +451,11 @@ export function SatrapyShell({ children }: { children: ReactNode }) {
   const isSalesWorkspace = activeArea === "sales" || activeView === "sales_settings";
   const isPurchasingWorkspace = activeArea === "purchasing";
   const isInventoryWorkspace = activeArea === "inventory";
-  const usesReuiShell = isSalesWorkspace || isPurchasingWorkspace || isInventoryWorkspace;
+  const isCollaboratorsWorkspace = activeArea === "collaborators";
+  const usesReuiShell = isSalesWorkspace || isPurchasingWorkspace || isInventoryWorkspace || isCollaboratorsWorkspace;
   return (
     <ToastProvider>
-    <main className={`app-shell ${isPosRoute ? "app-shell--pos" : ""} ${isSalesWorkspace ? "app-shell--sales" : ""} ${isPurchasingWorkspace ? "app-shell--purchasing" : ""} ${isInventoryWorkspace ? "app-shell--inventory" : ""}`}>
+    <main className={`app-shell ${isPosRoute ? "app-shell--pos" : ""} ${isSalesWorkspace ? "app-shell--sales" : ""} ${isPurchasingWorkspace ? "app-shell--purchasing" : ""} ${isInventoryWorkspace ? "app-shell--inventory" : ""} ${isCollaboratorsWorkspace ? "app-shell--collaborators" : ""}`}>
       <header className="global-header">
         <div className="brand-lockup">
           <span className="brand-mark">S</span>
@@ -699,8 +700,8 @@ export function SatrapyRouteContent() {
   if (activeView === "collection_automation") return <CollectionAutomationModule companyId={appState.membership.companyId} />;
   if (activeView === "cash") return <CashDeskView companyId={appState.membership.companyId} />;
   if (activeView === "sales_settings") return <SalesSettingsView companyId={appState.membership.companyId} permissions={appState.membership.permissions} experience={experience} />;
-  if (activeView === "collaborators_directory") return <CollaboratorsDirectoryView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
-  if (activeView === "payroll") return <PayrollView companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
+  if (activeView === "collaborators_directory") return <CollaboratorsDirectoryView key={appState.membership.companyId} companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
+  if (activeView === "payroll") return <PayrollView key={appState.membership.companyId} companyId={appState.membership.companyId} permissions={appState.membership.permissions} />;
   if (activeView === "bi_summary") return <BiModule companyId={appState.membership.companyId} view="summary" />;
   if (activeView === "restaurant_costs") return <RestaurantCostAnalysis companyId={appState.membership.companyId} />;
   if (activeView === "bi_alerts") return <BiModule companyId={appState.membership.companyId} view="alerts" />;

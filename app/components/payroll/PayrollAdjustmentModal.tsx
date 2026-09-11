@@ -2,7 +2,8 @@
 
 import { CircleDollarSign, Plus, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, CurrencyInput, Field, Input, Modal, useToast } from "@/app/components/ui/primitives";
+import { CurrencyInput, useToast } from "@/app/components/ui/primitives";
+import { Button, Field, Input, Modal } from "@/app/components/reui/collaborator-controls";
 import { getSupabaseClient } from "@/app/lib/supabase";
 
 export type PayrollAdjustmentKind = "overtime" | "absence" | "commission" | "bonus";
@@ -120,6 +121,7 @@ export function PayrollAdjustmentModal({
   const [options, setOptions] = useState<CollaboratorOption[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchRetry, setSearchRetry] = useState(0);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [lastAddedName, setLastAddedName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -150,6 +152,7 @@ export function PayrollAdjustmentModal({
     const timer = window.setTimeout(() => {
       const next = query.trim();
       setDebounced(next);
+      setSearchRetry(value=>value+1);
       setSearching(next.length >= 2);
       if (next.length < 2) setOptions([]);
     }, 250);
@@ -157,8 +160,9 @@ export function PayrollAdjustmentModal({
   }, [query]);
 
   useEffect(() => {
+    const gate = requestId;
+    const current = ++gate.current;
     if (debounced.length < 2) return;
-    const current = ++requestId.current;
     void getSupabaseClient()
       .rpc("search_collaborators", {
         p_company_id: companyId,
@@ -173,7 +177,8 @@ export function PayrollAdjustmentModal({
         setSearchError(error?.message ?? null);
         setOptions((data as { items?: CollaboratorOption[] } | null)?.items ?? []);
       });
-  }, [companyId, debounced]);
+    return () => { gate.current++; };
+  }, [companyId, debounced, searchRetry]);
 
   const availableOptions = useMemo(
     () => options.filter(option => !rows.some(row => row.collaboratorId === option.id)),
@@ -320,6 +325,7 @@ export function PayrollAdjustmentModal({
   return (
     <Modal
       open
+      closeDisabled={saving}
       onOpenChange={open => !open && !saving && close()}
       className="payroll-adjustment-dialog"
       eyebrow="Nómina · Movimientos"
@@ -351,7 +357,7 @@ export function PayrollAdjustmentModal({
             <small>Busca por nombre o código y presiona Enter para agregar la primera coincidencia. Hasta 100 filas por operación. Si eliges una fecha anterior al periodo vigente, indica el motivo.</small>
           </div>
           <div className="payroll-adjustment__controls">
-            <div className="payroll-adjustment__search">
+            <div className="payroll-adjustment__search" onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget))setSearchOpen(false);}} onKeyDown={event=>{if(event.key==="Escape"&&searchOpen&&query.trim().length>=2){event.preventDefault();event.stopPropagation();setSearchOpen(false);}}}>
               <label htmlFor="payroll-adjustment-query">Colaborador</label>
               <div>
                 <Search size={16} aria-hidden="true" />
@@ -359,8 +365,8 @@ export function PayrollAdjustmentModal({
                   id="payroll-adjustment-query"
                   value={query}
                   onFocus={() => setSearchOpen(true)}
-                  onBlur={() => window.setTimeout(() => setSearchOpen(false), 120)}
-                  onChange={event => { setQuery(event.target.value); setSearchOpen(true); setSearchError(null); }}
+                  onBlur={event => { if (!event.currentTarget.closest(".payroll-adjustment__search")?.contains(event.relatedTarget)) setSearchOpen(false); }}
+                  onChange={event => { requestId.current++; setSearching(event.target.value.trim().length >= 2); setOptions([]); setQuery(event.target.value); setSearchOpen(true); setSearchError(null); }}
                   onKeyDown={event => {
                     if (event.key === "Enter" && !event.metaKey && !event.ctrlKey && !event.nativeEvent.isComposing && searchOpen && !searching && availableOptions.length > 0) {
                       event.preventDefault();
@@ -377,7 +383,7 @@ export function PayrollAdjustmentModal({
                     <span><strong>{option.display_name}</strong><small>{option.code}{option.position_name ? ` · ${option.position_name}` : ""}</small></span>
                     <Plus size={15} aria-hidden="true" />
                   </button>,
-                ) : <p>{searchError ?? "No hay colaboradores activos que coincidan."}</p>}
+                ) : searchError ? <div role="alert"><p>{searchError}</p><Button onClick={()=>{setSearching(true);setSearchRetry(value=>value+1);}}>Reintentar</Button></div> : <p>No hay colaboradores activos que coincidan.</p>}
               </div>}
               <span className="sr-only" role="status" aria-live="polite">{lastAddedName}</span>
             </div>
