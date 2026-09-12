@@ -50,5 +50,7 @@ test("periodo y ubicación se conservan al navegar dentro de BI", () => {
   assert.match(ui, /query\.set\("from",next\.dateFrom\)/);
   assert.match(ui, /query\.set\("to",next\.dateTo\)/);
   assert.match(ui, /query\.set\("location",next\.locationId\)/);
-  assert.match(app, /activeSection\?\.id === "bi" \? `\$\{item\.href\}\$\{window\.location\.search\}`/);
+  assert.match(app, /activeSection\?\.id === "bi" \? BiContextLink : Link/);
+  assert.match(app, /const query = useSearchParams\(\)\.toString\(\)/);
+  assert.doesNotMatch(app, /window\.location\.search/);
 });

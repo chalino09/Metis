@@ -37,10 +37,10 @@ import {
   WalletCards,
   Cable,
 } from "lucide-react";
-import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Fragment, Suspense, useCallback, useEffect, useRef, useState, type ComponentProps, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DataPagination, DataState, DataToolbar, InteractiveTableRow, PageHeading } from "@/app/components/ui/data";
 import { Badge, Button, Field, Input, Modal, ToastProvider, useToast } from "@/app/components/ui/primitives";
 import { OperationalSelect as Select } from "@/app/components/reui/operational-controls";
@@ -48,7 +48,7 @@ import { Button as InventoryButton, Input as InventoryInput, Select as Inventory
 import { LoadingPlaceholder } from "./reui/loading-placeholder";
 import { Button as ReuiButton } from "@/app/components/reui/button";
 import { Card as ReuiCard } from "@/app/components/reui/card";
-import { Autocomplete, AutocompleteContent, AutocompleteInput, AutocompleteItem, AutocompleteList } from "@/components/reui/autocomplete";
+import { CompactSelect } from "@/components/reui/compact-select";
 import { useDismissiblePopover } from "@/app/components/ui/use-dismissible-popover";
 import { getSupabaseClient } from "@/app/lib/supabase";
 import { classifyAlphaUpload, isPurchasingAlphaUpload } from "@/app/lib/alpha-upload-routing";
@@ -426,6 +426,15 @@ function getAllowedNavigation(permissions: string[], previewRole: AppRoleCode | 
   return { navigation, views: [...navigation.flatMap((section) => section.views), ...INTERNAL_VIEWS.filter(isAllowed)] };
 }
 
+function BiContextLinkContent({ href, ...props }: Omit<ComponentProps<typeof Link>, "href"> & { href: string }) {
+  const query = useSearchParams().toString();
+  return <Link {...props} href={`${href}${query ? `?${query}` : ""}`} />;
+}
+
+function BiContextLink(props: Omit<ComponentProps<typeof Link>, "href"> & { href: string }) {
+  return <Suspense fallback={<Link {...props} />}><BiContextLinkContent {...props} /></Suspense>;
+}
+
 export function SatrapyShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -452,10 +461,11 @@ export function SatrapyShell({ children }: { children: ReactNode }) {
   const isPurchasingWorkspace = activeArea === "purchasing";
   const isInventoryWorkspace = activeArea === "inventory";
   const isCollaboratorsWorkspace = activeArea === "collaborators";
-  const usesReuiShell = isSalesWorkspace || isPurchasingWorkspace || isInventoryWorkspace || isCollaboratorsWorkspace;
+  const isBiWorkspace = activeArea === "bi" && experience !== "restaurant";
+  const usesReuiShell = isSalesWorkspace || isPurchasingWorkspace || isInventoryWorkspace || isCollaboratorsWorkspace || isBiWorkspace;
   return (
     <ToastProvider>
-    <main className={`app-shell ${isPosRoute ? "app-shell--pos" : ""} ${isSalesWorkspace ? "app-shell--sales" : ""} ${isPurchasingWorkspace ? "app-shell--purchasing" : ""} ${isInventoryWorkspace ? "app-shell--inventory" : ""} ${isCollaboratorsWorkspace ? "app-shell--collaborators" : ""}`}>
+    <main className={`app-shell ${isPosRoute ? "app-shell--pos" : ""} ${isSalesWorkspace ? "app-shell--sales" : ""} ${isPurchasingWorkspace ? "app-shell--purchasing" : ""} ${isInventoryWorkspace ? "app-shell--inventory" : ""} ${isCollaboratorsWorkspace ? "app-shell--collaborators" : ""} ${isBiWorkspace ? "app-shell--bi" : ""}`}>
       <header className="global-header">
         <div className="brand-lockup">
           <span className="brand-mark">S</span>
@@ -494,7 +504,7 @@ export function SatrapyShell({ children }: { children: ReactNode }) {
             <strong>{appState.membership.companyName}</strong>
             <span>{activeSection?.label ?? "Operación"}</span>
           </div>
-          {activeSection?.id === "accounting" ? <div className="context-nav__links accounting-context-nav">{contextViews?.map((name) => { const item = VIEW_META[name]; const Icon = item.icon; return <Link className={`context-nav__item ${activeView === name ? "is-active" : ""}`} aria-current={activeView === name ? "page" : undefined} href={item.href} key={name}><Icon size={16} />{viewLabel(name, experience)}</Link>; })}</div> : <div className="context-nav__links">{contextViews?.map((name) => { const item = VIEW_META[name]; const Icon = item.icon; const active = navigationViewIsActive(name, activeView); const href = activeSection?.id === "bi" ? `${item.href}${window.location.search}` : item.href; return <Link className={`context-nav__item ${active ? "is-active" : ""}`} aria-current={active ? "page" : undefined} href={href} key={name}><Icon size={16} />{viewLabel(name, experience)}</Link>; })}</div>}
+          {activeSection?.id === "accounting" ? <div className="context-nav__links accounting-context-nav">{contextViews?.map((name) => { const item = VIEW_META[name]; const Icon = item.icon; return <Link className={`context-nav__item ${activeView === name ? "is-active" : ""}`} aria-current={activeView === name ? "page" : undefined} href={item.href} key={name}><Icon size={16} />{viewLabel(name, experience)}</Link>; })}</div> : <div className="context-nav__links">{contextViews?.map((name) => { const item = VIEW_META[name]; const Icon = item.icon; const active = navigationViewIsActive(name, activeView); const NavigationLink = activeSection?.id === "bi" ? BiContextLink : Link; return <NavigationLink className={`context-nav__item ${active ? "is-active" : ""}`} aria-current={active ? "page" : undefined} href={item.href} key={name}><Icon size={16} />{viewLabel(name, experience)}</NavigationLink>; })}</div>}
           <span className="topbar__status">Operación en orden</span>
         </nav>}
         {previewRole && (
@@ -611,27 +621,8 @@ function PosCompanySwitcher({
   companyName: string;
   onChange: (companyId: string) => void | Promise<void>;
 }) {
-  const [query, setQuery] = useState(companyName);
-  const [open, setOpen] = useState(false);
-
-  const matchingCompanies = companies.filter((company) => company.display_name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
-
-  function handleOpenChange(nextOpen: boolean) {
-    setOpen(nextOpen);
-    setQuery(nextOpen ? "" : companyName);
-  }
-
   return <ReuiCard size="sm" className="pos-company-switcher">
-    <Autocomplete items={matchingCompanies} value={query} open={open} onOpenChange={handleOpenChange} onValueChange={setQuery} itemToStringValue={(company) => company.display_name} openOnInputClick>
-      <AutocompleteInput aria-label="Cambiar empresa" placeholder="Buscar empresa" showTrigger />
-      <AutocompleteContent className="pos-company-results">
-        <AutocompleteList>
-          {matchingCompanies.map((company) => <AutocompleteItem value={company} key={company.id} onClick={() => { setQuery(company.display_name); void onChange(company.id); }}>
-            <span>{company.display_name}</span>{company.id === companyId && <small>Actual</small>}
-          </AutocompleteItem>)}
-        </AutocompleteList>
-      </AutocompleteContent>
-    </Autocomplete>
+    <CompactSelect value={companyId} onValueChange={id => { void onChange(id); }} options={companies.map(company => ({ value: company.id, label: company.display_name }))} ariaLabel="Cambiar empresa" placeholder={companyName} />
   </ReuiCard>;
 }
 

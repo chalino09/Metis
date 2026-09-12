@@ -1,12 +1,13 @@
 # Rediseño Satrapy
 
-Actualizado: 7 de septiembre de 2026.
+Actualizado: 11 de septiembre de 2026.
 
 ## Estado
 
 - **Ventas:** rediseño visual completado y verificado para escritorio y tablet.
 - **Compras:** rediseño extendido a proveedores, solicitudes, cotizaciones/órdenes, recepciones, facturas, CxP y pagos, incluidos paneles y confirmaciones.
 - **Inventario:** rediseño ReUI aplicado a sus cinco vistas, paneles y estados de carga. Evidencia y límites en `docs/planes/rediseno-inventario-y-cargas.md`.
+- **BI (núcleo):** shell y controles ReUI, resumen ejecutivo y Pulso operativo de rentabilidad, inventario y cartera. Alcance y evidencia en `docs/qa/bi-core-redesign-2026-09-11.md`.
 - **Resto de Satrapy:** pendiente de rediseño por módulo.
 
 Este documento es la referencia visual para las siguientes fases. Cada módulo se actualizará sin alterar su lógica de negocio, datos ni permisos.

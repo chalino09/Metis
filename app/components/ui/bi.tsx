@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { Table } from "./data";
-import { Drawer } from "./primitives";
+import { OperationalDrawer as Drawer } from "../reui/operational-panels";
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -184,10 +184,9 @@ export function BiDrawer({
   footer?: ReactNode;
   className?: string;
 }) {
-  return <Drawer open={open} onOpenChange={onOpenChange} title={title} className={cx("bi-drawer", className)}>
-    {(eyebrow || description) && <header className="bi-drawer__intro">{eyebrow && <span className="eyebrow">{eyebrow}</span>}{description && <p>{description}</p>}</header>}
+  return <Drawer open={open} onOpenChange={onOpenChange} title={title} eyebrow={eyebrow} description={typeof description==="string"?description:undefined} footer={footer} className={cx("bi-drawer", className)}>
+    {description && typeof description!=="string" && <header className="bi-drawer__intro"><p>{description}</p></header>}
     <div className="bi-drawer__content">{children}</div>
-    {footer && <footer className="bi-drawer__footer">{footer}</footer>}
   </Drawer>;
 }
 

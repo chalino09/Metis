@@ -13,7 +13,7 @@ test("Fase 0 expone una sola familia de componentes BI sobre primitives existent
     assert.match(components, new RegExp(`export function ${name}`));
   }
   assert.match(components, /import \{ Table \} from "\.\/data"/);
-  assert.match(components, /import \{ Drawer \} from "\.\/primitives"/);
+  assert.match(components, /import \{ OperationalDrawer as Drawer \} from "\.\.\/reui\/operational-panels"/);
   assert.match(contract, /No crea un tema, una paleta ni una librería paralela/);
 });
 

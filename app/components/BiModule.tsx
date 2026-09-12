@@ -1,22 +1,25 @@
 "use client";
 
 import { Activity, AlertCircle, ChevronLeft, ChevronRight, CircleHelp, Copy, Database, Download, GitFork, LayoutDashboard, LoaderCircle, Plus, RefreshCw, Save, Search, ShieldAlert, Target, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
-import { DataPagination, DataState, DataToolbar, PageHeading, Table } from "@/app/components/ui/data";
-import { Badge, Button, Input, Modal } from "@/app/components/ui/primitives";
-import { OperationalSelect as Select } from "@/app/components/reui/operational-controls";
+import { DataPagination, DataState, PageHeading, Table } from "@/app/components/ui/data";
+import { Badge } from "@/app/components/ui/primitives";
+import { OperationalButton as Button, OperationalInput as Input, OperationalDataToolbar as DataToolbar, OperationalSelect as Select } from "@/app/components/reui/operational-controls";
+import { OperationalModal as Modal } from "@/app/components/reui/operational-panels";
 import { AnalyticsCellBar, AnalyticsSortHeader, AnalyticsTable, AttentionItem, BiDrawer, BiFilterBar, BiState, ChartContainer, MetricCard, MetricDelta, type AnalyticsSortDirection } from "@/app/components/ui/bi";
 import { getSupabaseClient } from "@/app/lib/supabase";
 import { useSatrapy } from "@/app/components/SatrapyProvider";
 import { BiBudgetsModule } from "@/app/components/BiBudgetsModule";
 import { BiDependencyNetwork } from "@/app/components/BiDependencyNetwork";
-import { neutralMetricValue, type NeutralValueState } from "@/app/lib/neutral-start";
+import { type NeutralValueState } from "@/app/lib/neutral-start";
+import { getBiPeriodRange, presentBiKpi, classifyBiMetric } from "@/app/lib/bi-core-decisions";
+import { BiCoreOperations } from "@/app/components/bi/BiCoreOperations";
 
 export type BiView = "summary" | "alerts" | "explorer" | "reports" | "budgets" | "network";
 
-type FilterOption = { id: string; label: string; secondary?: string };
+type FilterOption = { id: string; label: string; secondary?: string | null };
 type FilterSelection = FilterOption | null;
 type BiFilters = {
   dateFrom: string;
@@ -27,14 +30,15 @@ type BiFilters = {
   supplier: FilterSelection;
   comparisonMode: "previous_period" | "previous_year";
 };
-type ExecutivePeriodPreset = "today" | "last7" | "last30" | "last90" | "thisMonth" | "previousMonth" | "thisQuarter" | "custom";
-type BiMetric = { code: string; value: number | null; previous_value?: number | null; available: boolean; reason?: string | null; coverage?: number | null; value_state?: NeutralValueState; comparison_available?: boolean };
+type ExecutivePeriodPreset = "today" | "last7" | "last30" | "last90" | "lastCompletedWeek" | "thisMonth" | "previousMonth" | "thisQuarter" | "custom";
+type BiMetric = { as_of?: string; code: string; value: number | null; previous_value?: number | null; available: boolean; reason?: string | null; coverage?: number | null; value_state?: NeutralValueState; comparison_available?: boolean };
 type BiChartPoint = { index?: number; date: string; value: number | null; previous_date?: string; previous_value?: number | null; period?: "current" | "previous" };
 type BiChart = {
   code: "sales" | "gross_margin" | "cash_flow" | "receivables" | "payables" | "inventory";
   metric_code: string;
   kind: "Devengado" | "Efectivo" | "Operativo";
   visualization: "line" | "area" | "bars";
+  aggregate?: boolean;
   available: boolean;
   reason?: string | null;
   points: BiChartPoint[];
@@ -238,25 +242,14 @@ function initialFilters(search?: { get(name: string): string | null }): BiFilter
   return { dateFrom, dateTo, locationId: search?.get("location") ?? "", product:selected("product"), customer:selected("customer"), supplier:selected("supplier"), comparisonMode:search?.get("comparison")==="previous_year"?"previous_year":"previous_period" };
 }
 function executivePeriodRange(preset:Exclude<ExecutivePeriodPreset,"custom">){
-  const today=new Date(),from=new Date(today),to=new Date(today);
-  if(preset==="last7")from.setDate(from.getDate()-6);
-  if(preset==="last30")from.setDate(from.getDate()-29);
-  if(preset==="last90")from.setDate(from.getDate()-89);
-  if(preset==="thisMonth")from.setDate(1);
-  if(preset==="previousMonth"){
-    from.setMonth(from.getMonth()-1,1);
-    to.setDate(0);
-  }
-  if(preset==="thisQuarter"){
-    from.setMonth(Math.floor(from.getMonth()/3)*3,1);
-  }
-  return{dateFrom:isoDate(from),dateTo:isoDate(to)};
+  return getBiPeriodRange(preset);
 }
 function inferExecutivePeriod(filters:Pick<BiFilters,"dateFrom"|"dateTo">):ExecutivePeriodPreset{
-  const presets=(["today","last7","last30","last90","thisMonth","previousMonth","thisQuarter"] as const);
+  const presets=(["today","lastCompletedWeek","last7","last30","last90","thisMonth","previousMonth","thisQuarter"] as const);
   return presets.find(preset=>{const range=executivePeriodRange(preset);return range.dateFrom===filters.dateFrom&&range.dateTo===filters.dateTo;})??"custom";
 }
 const EXECUTIVE_PERIOD_OPTIONS=[
+  {value:"lastCompletedWeek",label:"Semana anterior · lunes a domingo"},
   {value:"today",label:"Hoy"},
   {value:"last7",label:"Últimos 7 días"},
   {value:"last30",label:"Últimos 30 días"},
@@ -273,15 +266,10 @@ function formatMoney(value: number | null | undefined, currencyCode?: string | n
 }
 function formatMetric(metric: BiMetric, currencyCode?: string | null) {
   const meta = METRICS[metric.code];
-  const neutralValue = neutralMetricValue(metric.value_state, meta?.format === "integer" ? "integer" : meta?.format === "percent" ? "percent" : "currency");
-  if (neutralValue) return neutralValue;
-  if (!metric.available || metric.value == null) return "No disponible";
-  if (meta?.format === "integer") return metric.value.toLocaleString("es-MX", { maximumFractionDigits: 0 });
-  if (meta?.format === "percent") return `${metric.value.toLocaleString("es-MX", { maximumFractionDigits: 1 })}%`;
-  return formatMoney(metric.value, currencyCode);
+  return presentBiKpi(metric,{currencyCode,format:meta?.format??"currency",includeQualityLabel:false}).text;
 }
 function comparison(metric: BiMetric) {
-  if (!metric.available || metric.value == null || metric.previous_value == null) return null;
+  if (!metric.available || metric.comparison_available===false || metric.value == null || metric.previous_value == null) return null;
   const absolute=metric.value-metric.previous_value;
   return { absolute,percent:metric.previous_value===0?null:(absolute/Math.abs(metric.previous_value))*100 };
 }
@@ -297,16 +285,16 @@ function fallbackCharts(summary: BiSummary): BiChart[] {
   const comparisonPoints=(code:string):BiChartPoint[]=>{
     const item=metric(code);if(!item)return[];
     return [
-      ...(item.previous_value==null?[]:[{date:summary.period.previous_to,period:"previous" as const,value:item.previous_value}]),
+      ...(item.previous_value==null||item.comparison_available===false?[]:[{date:summary.period.previous_to,period:"previous" as const,value:item.previous_value}]),
       {date:summary.period.to,period:"current" as const,value:item.value},
     ];
   };
   return [
-    {code:"sales",metric_code:"net_sales",kind:"Devengado",visualization:"line",available:Boolean(metric("net_sales")?.available),reason:metric("net_sales")?.reason,
-      points:summary.series.map((point,index)=>({index,date:point.date,value:point.sales}))},
-    {code:"gross_margin",metric_code:"gross_margin",kind:"Devengado",visualization:"line",available:Boolean(metric("gross_margin")?.available),
+    {code:"sales",metric_code:"net_sales",kind:"Devengado",visualization:"bars",aggregate:true,available:Boolean(metric("net_sales")?.available),reason:metric("net_sales")?.reason,
+      points:comparisonPoints("net_sales")},
+    {code:"gross_margin",metric_code:"gross_margin",kind:"Devengado",visualization:"bars",aggregate:true,available:Boolean(metric("gross_margin")?.available),
       reason:metric("gross_margin")?.reason,points:comparisonPoints("gross_margin")},
-    {code:"cash_flow",metric_code:"bank_net_flow",kind:"Efectivo",visualization:"bars",available:Boolean(metric("bank_net_flow")?.available),reason:metric("bank_net_flow")?.reason,points:comparisonPoints("bank_net_flow")},
+    {code:"cash_flow",metric_code:"bank_net_flow",kind:"Efectivo",visualization:"bars",aggregate:true,available:Boolean(metric("bank_net_flow")?.available),reason:metric("bank_net_flow")?.reason,points:comparisonPoints("bank_net_flow")},
     {code:"receivables",metric_code:"receivables",kind:"Devengado",visualization:"bars",available:Boolean(metric("receivables")?.available),reason:metric("receivables")?.reason,points:comparisonPoints("receivables")},
     {code:"payables",metric_code:"payables",kind:"Devengado",visualization:"bars",available:Boolean(metric("payables")?.available),reason:metric("payables")?.reason,points:comparisonPoints("payables")},
     {code:"inventory",metric_code:"inventory_value",kind:"Operativo",visualization:"bars",available:Boolean(metric("inventory_value")?.available),reason:metric("inventory_value")?.reason,points:comparisonPoints("inventory_value")},
@@ -396,7 +384,7 @@ export function BiModule({ companyId, view }: { companyId: string; view: BiView 
 
 const EXPLORER_KIND={accrual:"Devengada",cash:"Efectiva",operational:"Operativa"} as const;
 const EXPLORER_VIZ={line:"Línea",bar:"Barras",area:"Área",scatter:"Dispersión"} as const;
-const EXPLORER_COLORS=["#1f5c53","#417ca0","#b8782d","#76568f"];
+const EXPLORER_COLORS=["#2563eb","#64748b","#7c3aed","#0891b2"];
 
 function explorerFilters(search:{get(name:string):string|null}):BiFilters{
   const base=initialFilters(search);
@@ -615,8 +603,8 @@ function BiWorkspace({companyId}:{companyId:string}){
     <div className="bi-workspace-tabs"><button className={tab==="dashboards"?"is-active":""}onClick={()=>setTab("dashboards")}><LayoutDashboard size={15}/>Tableros</button><button className={tab==="views"?"is-active":""}onClick={()=>setTab("views")}><Save size={15}/>Vistas guardadas</button></div>
     {error&&<div className="bi-partial-state"><AlertCircle size={15}/><span><strong>No se completó la operación</strong>{error}</span></div>}
     {notice&&<div className="bi-success-state"><span>{notice}</span></div>}
-    {tab==="views"?<div className="bi-saved-view-grid">{views.map(view=><article key={view.id}><header><div><Badge tone={view.visibility==="company"?"info":"neutral"}>{view.visibility==="company"?"Empresa":"Privada"}</Badge><small>v{view.current_version}</small></div><h2>{view.name}</h2><p>{view.description??"Sin descripción"}</p></header>{!view.availability.available&&<div className="bi-view-warning"><AlertCircle size={14}/>{view.availability.warnings.join(" ")}</div>}<footer><Button size="sm" variant="secondary" onClick={()=>{const d=view.definition as Record<string,unknown>;if(d.kind==="network"){const q=new URLSearchParams({from:String(d.date_from),to:String(d.date_to),saved_view:view.id,size:String(d.size_metric??"purchases"),color:String(d.color_metric??"node_type"),edge:String(d.edge_metric??"amount"),perspective:String(d.perspective??"supplier_dependency")});for(const[key,param]of Object.entries({location:"location_id",category:"category_id",supplier:"supplier_id",product:"product_id",state:"operational_state",concentration:"concentration_level"}))if(d[param])q.set(key,String(d[param]));const relation=(d.relation_types as string[]|undefined)?.[0];if(relation)q.set("relation",relation);router.push(`/satrapy/bi/red?${q}`);return;}const q=new URLSearchParams({metrics:((d.metric_codes as string[])??[]).join(","),dimension:String(d.dimension),visualization:String(d.visualization),from:String(d.date_from),to:String(d.date_to),saved_view:view.id,view_version:String(view.current_version),view_name:view.name,view_description:view.description??"",view_visibility:view.visibility});for(const key of["location_id","product_id","customer_id","supplier_id"])if(d[key])q.set(key.replace("_id",""),String(d[key]));router.push(`/satrapy/bi/explorador?${q}`);}}>Abrir</Button>{can("manage_own_bi_views")&&<Button size="sm" variant="ghost" onClick={async()=>{const response=await getSupabaseClient().rpc("bi_duplicate_view",{p_company_id:companyId,p_view_id:view.id,p_name:`Copia de ${view.name}`,p_client_request_id:crypto.randomUUID()});if(response.error)setError(response.error.message);else await loadCatalog();}}><Copy size={13}/></Button>}{view.owner_id===appState?.userId&&<Button size="sm" variant="ghost" onClick={async()=>{if(!window.confirm(`Eliminar ${view.name}?`))return;const response=await getSupabaseClient().rpc("bi_delete_view",{p_company_id:companyId,p_view_id:view.id});if(response.error)setError(response.error.message);else await loadCatalog();}}><Trash2 size={13}/></Button>}</footer></article>)}</div>:
-      <div className={`bi-dashboard-shell${!dashboards.length&&!loading?" is-empty":""}`}><aside>{dashboards.map(item=><button key={item.id}className={item.id===selectedId?"is-active":""}onClick={()=>setSelectedId(item.id)}><strong>{item.name}</strong><small>{item.widget_count} componentes · revisión {item.revision}</small></button>)}</aside><main>{active?<><div className="bi-dashboard-toolbar"><div><h2>{active.name}</h2><p>{active.description??"Tablero interactivo"}</p></div><label>Desde<Input type="date"value={globalFrom}onChange={e=>setGlobalFrom(e.target.value)}/></label><label>Hasta<Input type="date"value={globalTo}onChange={e=>setGlobalTo(e.target.value)}/></label><label>Ubicación<Select showAllOnOpen ariaLabel="Ubicación global"value={globalLocation||"all"}onValueChange={value=>setGlobalLocation(value==="all"?"":value)}options={[{value:"all",label:"Todas"},...accessibleLocations.map(l=>({value:l.id,label:l.name}))]}/></label><Button size="sm"variant="secondary"onClick={()=>void refreshDashboard()}><RefreshCw size={13}/>Actualizar todo</Button>{can("manage_bi_dashboards")&&<><Button size="sm"variant="secondary"onClick={()=>{setEditingDashboard(active);setName(active.name);setDescription(active.description??"");setDialog("dashboard");}}><Save size={13}/>Renombrar</Button><Button size="sm"onClick={()=>setDialog("widget")}><Plus size={13}/>Componente</Button><Button size="sm"variant="ghost"onClick={async()=>{if(!window.confirm(`Eliminar ${active.name}?`))return;const response=await getSupabaseClient().rpc("bi_delete_dashboard",{p_company_id:companyId,p_dashboard_id:active.id});if(response.error)setError(response.error.message);else{setSnapshot(null);await loadCatalog();}}}><Trash2 size={13}/></Button></>}{can("export_bi_reports")&&<ExportButtons id={active.id}target="dashboard"exporting={exporting}onExport={exportTarget}/>}</div>{snapshot&&!snapshot.widgets.length?<div className="bi-dashboard-empty"><LayoutDashboard size={24}/><strong>Este tablero todavía está vacío</strong><p>Agrega KPI, gráficas o tablas desde un análisis guardado.</p><div>{can("manage_bi_dashboards")&&<Button size="sm"onClick={()=>setDialog("widget")}><Plus size={13}/>Agregar componente</Button>}<Button size="sm"variant="secondary"onClick={()=>router.push("/satrapy/bi/explorador")}>Abrir análisis <ChevronRight size={13}/></Button></div></div>:<div className="bi-widget-grid">{snapshot?.widgets.map(widget=><article key={widget.id}style={{gridColumn:`span ${Math.min(widget.width,4)}`,minHeight:`${230+(widget.height-1)*90}px`}}className={`bi-dashboard-widget is-${widget.status}`}><header><div><small>{widget.widget_type} · {widget.filter_mode==="inherit"?"filtros globales":"filtros propios de la vista"}</small><h3>{widget.title??widget.view_name}</h3></div>{can("manage_bi_dashboards")&&<div className="bi-widget-controls"><button title={widget.filter_mode==="inherit"?"Usar filtros propios de la vista":"Usar filtros globales del tablero"}aria-label={widget.filter_mode==="inherit"?"Usar filtros propios de la vista":"Usar filtros globales del tablero"}onClick={()=>void updateLayout(widget,"filter")}>{widget.filter_mode==="inherit"?"Filtros: tablero":"Filtros: vista"}</button><button title="Mover a la izquierda"aria-label="Mover a la izquierda"onClick={()=>void updateLayout(widget,"left")}><ChevronLeft size={13}/></button><button title="Mover a la derecha"aria-label="Mover a la derecha"onClick={()=>void updateLayout(widget,"right")}><ChevronRight size={13}/></button><button title="Cambiar ancho"aria-label="Cambiar ancho"onClick={()=>void updateLayout(widget,"size")}>Ancho</button><button title="Cambiar alto"aria-label="Cambiar alto"onClick={()=>void updateLayout(widget,"height")}>Alto</button><button title="Eliminar componente"aria-label="Eliminar componente"onClick={async()=>{await getSupabaseClient().rpc("bi_remove_dashboard_widget",{p_company_id:companyId,p_widget_id:widget.id});await loadCatalog();await refreshDashboard();}}><X size={13}/></button></div>}</header>{widget.status==="error"?<div className="bi-widget-state"><AlertCircle size={16}/>{widget.error}</div>:<WidgetContent widget={widget}/>}<footer><button onClick={()=>{const d=widget.definition??{};const q=new URLSearchParams({metrics:String((d.metric_codes as string[]??[]).join(",")),dimension:String(d.dimension??""),visualization:String(d.visualization??""),from:String(d.date_from??globalFrom),to:String(d.date_to??globalTo)});router.push(`/satrapy/bi/explorador?${q}`);}}>Abrir análisis <ChevronRight size={13}/></button>{can("export_bi_reports")&&<ExportButtons id={widget.id}target="widget"exporting={exporting}onExport={exportTarget}/>}</footer></article>)}</div>}</>:!loading&&<div className="bi-dashboard-empty"><LayoutDashboard size={24}/><strong>Reúne tus indicadores en un tablero</strong><p>Organiza KPI, gráficas y tablas creados desde Análisis y consúltalos con los mismos filtros.</p><div>{can("manage_bi_dashboards")&&<Button size="sm"onClick={()=>{setEditingDashboard(null);setName("");setDescription("");setDialog("dashboard");}}><Plus size={13}/>Crear tablero</Button>}<Button size="sm"variant="secondary"onClick={()=>router.push("/satrapy/bi/explorador")}>Abrir análisis <ChevronRight size={13}/></Button></div></div>}</main></div>}
+    {tab==="views"?<div className="bi-saved-view-grid">{views.map(view=><article key={view.id}><header><div><Badge tone={view.visibility==="company"?"info":"neutral"}>{view.visibility==="company"?"Empresa":"Privada"}</Badge><small>v{view.current_version}</small></div><h2>{view.name}</h2><p>{view.description??"Sin descripción"}</p></header>{!view.availability.available&&<div className="bi-view-warning"><AlertCircle size={14}/>{view.availability.warnings.join(" ")}</div>}<footer><Button size="sm" variant="secondary" onClick={()=>{const d=view.definition as Record<string,unknown>;if(d.kind==="network"){const q=new URLSearchParams({from:String(d.date_from),to:String(d.date_to),saved_view:view.id,size:String(d.size_metric??"purchases"),color:String(d.color_metric??"node_type"),edge:String(d.edge_metric??"amount"),perspective:String(d.perspective??"supplier_dependency")});for(const[key,param]of Object.entries({location:"location_id",category:"category_id",supplier:"supplier_id",product:"product_id",state:"operational_state",concentration:"concentration_level"}))if(d[param])q.set(key,String(d[param]));const relation=(d.relation_types as string[]|undefined)?.[0];if(relation)q.set("relation",relation);router.push(`/satrapy/bi/red?${q}`);return;}const q=new URLSearchParams({metrics:((d.metric_codes as string[])??[]).join(","),dimension:String(d.dimension),visualization:String(d.visualization),from:String(d.date_from),to:String(d.date_to),saved_view:view.id,view_version:String(view.current_version),view_name:view.name,view_description:view.description??"",view_visibility:view.visibility});for(const key of["location_id","product_id","customer_id","supplier_id"])if(d[key])q.set(key.replace("_id",""),String(d[key]));router.push(`/satrapy/bi/explorador?${q}`);}}>Abrir</Button>{can("manage_own_bi_views")&&<Button size="sm" variant="ghost" aria-label={`Duplicar ${view.name}`} onClick={async()=>{const response=await getSupabaseClient().rpc("bi_duplicate_view",{p_company_id:companyId,p_view_id:view.id,p_name:`Copia de ${view.name}`,p_client_request_id:crypto.randomUUID()});if(response.error)setError(response.error.message);else await loadCatalog();}}><Copy size={13}/></Button>}{view.owner_id===appState?.userId&&<Button size="sm" variant="ghost" aria-label={`Eliminar ${view.name}`} onClick={async()=>{if(!window.confirm(`Eliminar ${view.name}?`))return;const response=await getSupabaseClient().rpc("bi_delete_view",{p_company_id:companyId,p_view_id:view.id});if(response.error)setError(response.error.message);else await loadCatalog();}}><Trash2 size={13}/></Button>}</footer></article>)}</div>:
+      <div className={`bi-dashboard-shell${!dashboards.length&&!loading?" is-empty":""}`}><aside>{dashboards.map(item=><button key={item.id}className={item.id===selectedId?"is-active":""}onClick={()=>setSelectedId(item.id)}><strong>{item.name}</strong><small>{item.widget_count} componentes · revisión {item.revision}</small></button>)}</aside><main>{active?<><div className="bi-dashboard-toolbar"><div><h2>{active.name}</h2><p>{active.description??"Tablero interactivo"}</p></div><label>Desde<Input type="date"value={globalFrom}onChange={e=>setGlobalFrom(e.target.value)}/></label><label>Hasta<Input type="date"value={globalTo}onChange={e=>setGlobalTo(e.target.value)}/></label><label>Ubicación<Select showAllOnOpen ariaLabel="Ubicación global"value={globalLocation||"all"}onValueChange={value=>setGlobalLocation(value==="all"?"":value)}options={[{value:"all",label:"Todas"},...accessibleLocations.map(l=>({value:l.id,label:l.name}))]}/></label><Button size="sm"variant="secondary"onClick={()=>void refreshDashboard()}><RefreshCw size={13}/>Actualizar todo</Button>{can("manage_bi_dashboards")&&<><Button size="sm"variant="secondary"onClick={()=>{setEditingDashboard(active);setName(active.name);setDescription(active.description??"");setDialog("dashboard");}}><Save size={13}/>Renombrar</Button><Button size="sm"onClick={()=>setDialog("widget")}><Plus size={13}/>Componente</Button><Button size="sm"variant="ghost"aria-label={`Eliminar tablero ${active.name}`}onClick={async()=>{if(!window.confirm(`Eliminar ${active.name}?`))return;const response=await getSupabaseClient().rpc("bi_delete_dashboard",{p_company_id:companyId,p_dashboard_id:active.id});if(response.error)setError(response.error.message);else{setSnapshot(null);await loadCatalog();}}}><Trash2 size={13}/></Button></>}{can("export_bi_reports")&&<ExportButtons id={active.id}target="dashboard"exporting={exporting}onExport={exportTarget}/>}</div>{snapshot&&!snapshot.widgets.length?<div className="bi-dashboard-empty"><LayoutDashboard size={24}/><strong>Este tablero todavía está vacío</strong><p>Agrega KPI, gráficas o tablas desde un análisis guardado.</p><div>{can("manage_bi_dashboards")&&<Button size="sm"onClick={()=>setDialog("widget")}><Plus size={13}/>Agregar componente</Button>}<Button size="sm"variant="secondary"onClick={()=>router.push("/satrapy/bi/explorador")}>Abrir análisis <ChevronRight size={13}/></Button></div></div>:<div className="bi-widget-grid">{snapshot?.widgets.map(widget=><article key={widget.id}style={{gridColumn:`span ${Math.min(widget.width,4)}`,minHeight:`${230+(widget.height-1)*90}px`}}className={`bi-dashboard-widget is-${widget.status}`}><header><div><small>{widget.widget_type} · {widget.filter_mode==="inherit"?"filtros globales":"filtros propios de la vista"}</small><h3>{widget.title??widget.view_name}</h3></div>{can("manage_bi_dashboards")&&<div className="bi-widget-controls"><button title={widget.filter_mode==="inherit"?"Usar filtros propios de la vista":"Usar filtros globales del tablero"}aria-label={widget.filter_mode==="inherit"?"Usar filtros propios de la vista":"Usar filtros globales del tablero"}onClick={()=>void updateLayout(widget,"filter")}>{widget.filter_mode==="inherit"?"Filtros: tablero":"Filtros: vista"}</button><button title="Mover a la izquierda"aria-label="Mover a la izquierda"onClick={()=>void updateLayout(widget,"left")}><ChevronLeft size={13}/></button><button title="Mover a la derecha"aria-label="Mover a la derecha"onClick={()=>void updateLayout(widget,"right")}><ChevronRight size={13}/></button><button title="Cambiar ancho"aria-label="Cambiar ancho"onClick={()=>void updateLayout(widget,"size")}>Ancho</button><button title="Cambiar alto"aria-label="Cambiar alto"onClick={()=>void updateLayout(widget,"height")}>Alto</button><button title="Eliminar componente"aria-label="Eliminar componente"onClick={async()=>{await getSupabaseClient().rpc("bi_remove_dashboard_widget",{p_company_id:companyId,p_widget_id:widget.id});await loadCatalog();await refreshDashboard();}}><X size={13}/></button></div>}</header>{widget.status==="error"?<div className="bi-widget-state"><AlertCircle size={16}/>{widget.error}</div>:<WidgetContent widget={widget}/>}<footer><button onClick={()=>{const d=widget.definition??{};const q=new URLSearchParams({metrics:String((d.metric_codes as string[]??[]).join(",")),dimension:String(d.dimension??""),visualization:String(d.visualization??""),from:String(d.date_from??globalFrom),to:String(d.date_to??globalTo)});router.push(`/satrapy/bi/explorador?${q}`);}}>Abrir análisis <ChevronRight size={13}/></button>{can("export_bi_reports")&&<ExportButtons id={widget.id}target="widget"exporting={exporting}onExport={exportTarget}/>}</footer></article>)}</div>}</>:!loading&&<div className="bi-dashboard-empty"><LayoutDashboard size={24}/><strong>Reúne tus indicadores en un tablero</strong><p>Organiza KPI, gráficas y tablas creados desde Análisis y consúltalos con los mismos filtros.</p><div>{can("manage_bi_dashboards")&&<Button size="sm"onClick={()=>{setEditingDashboard(null);setName("");setDescription("");setDialog("dashboard");}}><Plus size={13}/>Crear tablero</Button>}<Button size="sm"variant="secondary"onClick={()=>router.push("/satrapy/bi/explorador")}>Abrir análisis <ChevronRight size={13}/></Button></div></div>}</main></div>}
     <Modal open={dialog==="dashboard"}onOpenChange={open=>{if(!open){setDialog(null);setEditingDashboard(null);}}}eyebrow="Tablero" title={editingDashboard?"Editar tablero":"Crear tablero"}description={editingDashboard?"Actualiza el nombre y la descripción del tablero.":"Reúne y organiza KPI, gráficas y tablas de Análisis. Podrás agregar componentes después de crearlo."}footer={<><Button variant="secondary"onClick={()=>{setDialog(null);setEditingDashboard(null);}}>Cancelar</Button><Button disabled={!name.trim()}onClick={()=>void saveDashboard()}>{editingDashboard?"Guardar":"Crear"}</Button></>}><div className="bi-save-form"><label><span>Nombre</span><Input value={name}onChange={e=>setName(e.target.value)} placeholder="Ej. Seguimiento comercial mensual"/></label><label><span>Descripción</span><Input value={description}onChange={e=>setDescription(e.target.value)} placeholder="Indica qué decisiones apoyará este tablero"/></label></div></Modal>
     <Modal open={dialog==="widget"}onOpenChange={open=>!open&&setDialog(null)}eyebrow="Widget" title="Agregar desde una vista"description="El widget vuelve a consultar las fuentes canónicas. Las redes sólo se agregan cuando su vista está acotada."footer={<><Button variant="secondary"onClick={()=>setDialog(null)}>Cancelar</Button><Button disabled={!widgetView}onClick={()=>void addWidget()}>Agregar</Button></>}><div className="bi-save-form"><label><span>Vista guardada</span><Select showAllOnOpen ariaLabel="Vista guardada"value={widgetView||"none"}onValueChange={value=>{setWidgetView(value);const selected=views.find(v=>v.id===value);if(selected?.definition.kind==="network")setWidgetType("network");}}options={[{value:"none",label:"Selecciona una vista"},...views.filter(v=>v.availability.available).map(v=>({value:v.id,label:v.name}))]}/></label><label><span>Tipo</span><Select showAllOnOpen ariaLabel="Tipo de widget"value={widgetType}onValueChange={v=>setWidgetType(v as typeof widgetType)}options={[{value:"kpi",label:"KPI"},{value:"chart",label:"Gráfica"},{value:"table",label:"Tabla"},{value:"network",label:"Red acotada"}]}/></label></div></Modal>
   </section>;
@@ -657,12 +645,20 @@ function BiExecutiveSummary({ companyId }: { companyId: string }) {
   const [activeChart,setActiveChart]=useState<BiChart["code"]>("sales");
   const [periodPreset,setPeriodPreset]=useState<ExecutivePeriodPreset>(()=>inferExecutivePeriod(filters));
   const [advancedFiltersOpen,setAdvancedFiltersOpen]=useState(false);
+  const [currentInventory,setCurrentInventory]=useState<BiMetric|null>(null);
+  const receiveInventory=useCallback((metric:{value:number|null;available:boolean;reason?:string|null;coverage?:number|null},asOf:string)=>setCurrentInventory({code:"inventory_value",...metric,as_of:asOf,previous_value:null,comparison_available:false}),[]);
+  const loadSequence=useRef(0);
+  const loadedScope=useRef("");
   const canViewBudgets=!isRestaurant&&Boolean(appState?.membership.permissions.includes("*")||appState?.membership.permissions.includes("view_bi_budgets"));
   const canViewAlerts=Boolean(appState?.membership.permissions.includes("*")||appState?.membership.permissions.includes("view_bi_alerts"));
   const canManageAlerts=Boolean(appState?.membership.permissions.includes("*")||appState?.membership.permissions.includes("manage_bi_alerts"));
   const canExport=Boolean(appState?.membership.permissions.includes("*")||appState?.membership.permissions.includes("export_bi_reports"));
 
   const load = useCallback(async (next: BiFilters) => {
+    const sequence=++loadSequence.current;
+    const scope=JSON.stringify([companyId,next]);
+    if(loadedScope.current!==scope){setSummary(null);setAnalytics(null);setAttentionAlerts([]);setBudgetSummary(null);setCurrentInventory(null);}
+    loadedScope.current=scope;
     setLoading(true);setError(null);
     const args={
       p_company_id: companyId,p_date_from: next.dateFrom,p_date_to: next.dateTo,p_location_id: next.locationId || null,
@@ -672,10 +668,11 @@ function BiExecutiveSummary({ companyId }: { companyId: string }) {
     const alertsPromise=canViewAlerts?getSupabaseClient().rpc("bi_get_attention_alerts",{p_company_id:companyId,p_limit:5}):Promise.resolve({data:[],error:null});
     const [summaryResult,analyticsResult,budgetResult,alertsResult]=await Promise.all([
       getSupabaseClient().rpc("bi_get_executive_summary_compared",{...args,p_comparison_mode:next.comparisonMode}),
-      getSupabaseClient().rpc("bi_get_executive_charts",args),
+      next.comparisonMode==="previous_period"?getSupabaseClient().rpc("bi_get_executive_charts",args):Promise.resolve({data:null,error:null}),
       budgetPromise,
       alertsPromise,
     ]);
+    if(sequence!==loadSequence.current)return;
     if (summaryResult.error) setError(summaryResult.error.message);
     else setSummary(summaryResult.data as BiSummary);
     if(analyticsResult.error){
@@ -697,14 +694,14 @@ function BiExecutiveSummary({ companyId }: { companyId: string }) {
     setLoading(false);
   }, [canViewAlerts,canViewBudgets,companyId]);
 
-  useEffect(() => { void Promise.resolve().then(() => load(applied)); }, [applied, load]);
+  useEffect(() => { void Promise.resolve().then(() => load(applied)); return()=>{loadSequence.current+=1;}; }, [applied, load]);
   const activeFilterCount = [applied.locationId, applied.product, applied.customer, applied.supplier].filter(Boolean).length;
   const advancedFilterCount = [applied.product, applied.customer, applied.supplier].filter(Boolean).length;
   const dirty = JSON.stringify(filters) !== JSON.stringify(applied);
-  const metrics=useMemo(()=>{const all=summary?.metrics.map(metric=>({...(analytics?.comparisons?.[metric.code]??{}),...metric}))??[];return isRestaurant?all.filter(metric=>["net_sales","tickets","average_ticket","gross_margin"].includes(metric.code)):all;},[analytics,isRestaurant,summary]);
+  const metrics=useMemo(()=>{const all=summary?.metrics.map(metric=>!isRestaurant&&currentInventory&&metric.code==="inventory_value"?currentInventory:{...(analytics?.comparisons?.[metric.code]??{}),...metric})??[];return isRestaurant?all.filter(metric=>["net_sales","tickets","average_ticket","gross_margin"].includes(metric.code)):all;},[analytics,currentInventory,isRestaurant,summary]);
   const charts=useMemo(()=>{const all=analytics?.charts??(summary?fallbackCharts({...summary,metrics}):[]);return isRestaurant?all.filter(chart=>chart.code==="sales"||chart.code==="gross_margin"):all;},[analytics,isRestaurant,metrics,summary]);
   const heroMetric=metrics.find(metric=>metric.code==="net_sales")??metrics[0];
-  const secondaryMetrics=metrics.filter(metric=>metric.code!==heroMetric?.code&&["tickets","average_ticket","gross_margin","collections","receivables"].includes(metric.code)&&metric.available).slice(0,3);
+  const secondaryMetrics=isRestaurant?metrics.filter(metric=>metric.code!==heroMetric?.code&&["tickets","average_ticket","gross_margin"].includes(metric.code)&&metric.available).slice(0,3):["gross_margin","receivables","inventory_value"].flatMap(code=>metrics.find(metric=>metric.code===code)??[]);
   const selectedMetricCodes=new Set([heroMetric?.code,...secondaryMetrics.map(metric=>metric.code)]);
   const remainingMetrics=metrics.filter(metric=>!selectedMetricCodes.has(metric.code));
   const salesChart=charts.find(chart=>chart.code==="sales")??charts[0];
@@ -737,7 +734,8 @@ function BiExecutiveSummary({ companyId }: { companyId: string }) {
     const chart=CHART_FOR_METRIC[code];if(chart)setActiveChart(chart);
   }
   function openInvestigation(request:DrillRequest){
-    const context=createInvestigationContext(request,applied);
+    const currentRequest=request.code==="inventory_value"&&currentInventory?.as_of&&!request.asOf&&!request.dateFrom?{...request,dateFrom:currentInventory.as_of,dateTo:currentInventory.as_of,asOf:currentInventory.as_of}:request;
+    const context=createInvestigationContext(currentRequest,applied);
     if(request.locationId) context.path[0]={dimension:"location",id:request.locationId,label:accessibleLocations.find(location=>location.id===request.locationId)?.name??"Sucursal seleccionada"};
     setSelectedMetric(context);
   }
@@ -749,7 +747,7 @@ function BiExecutiveSummary({ companyId }: { companyId: string }) {
   }
 
   return <section className="content-frame module-page bi-module">
-    <PageHeading eyebrow={isRestaurant?"Operación del restaurante":"Business Intelligence"} title={isRestaurant?"Indicadores":"Resumen ejecutivo"} description={isRestaurant?"Ventas, tickets, ticket promedio y margen para dar seguimiento al piloto.":"Lectura transversal con distinción entre devengado, efectivo y operación. Cada cifra conserva fórmula, fuente y acceso al origen."} action={<Button variant="secondary" size="sm" onClick={() => void load(applied)} disabled={loading}><RefreshCw size={14} /> Actualizar</Button>} />
+    <PageHeading eyebrow={isRestaurant?"Operación del restaurante":"Inteligencia de negocio"} title={isRestaurant?"Indicadores":"Resumen ejecutivo"} description={isRestaurant?"Ventas, tickets, ticket promedio y margen para dar seguimiento al piloto.":"Resultados, pendientes y decisiones para dirigir la operación."} action={<Button variant="secondary" size="sm" onClick={() => void load(applied)} disabled={loading}><RefreshCw size={14} /> Actualizar</Button>} />
     <BiFilterBar className="bi-executive-filterbar" pending={dirty} ariaLabel="Filtros del Resumen ejecutivo">
       <div className="bi-executive-filterbar__primary">
         <label><span>Periodo</span><Select showAllOnOpen ariaLabel="Periodo del resumen" value={periodPreset} onValueChange={changePeriod} options={EXECUTIVE_PERIOD_OPTIONS} /></label>
@@ -758,7 +756,7 @@ function BiExecutiveSummary({ companyId }: { companyId: string }) {
         {!isRestaurant&&<Button className="bi-executive-filterbar__more" variant="secondary" size="sm" aria-expanded={advancedFiltersOpen} aria-controls="bi-executive-advanced-filters" onClick={()=>setAdvancedFiltersOpen(current=>!current)}><Plus size={14}/><span>Más filtros{advancedFilterCount>0?` · ${advancedFilterCount}`:""}</span></Button>}
         <div className="bi-executive-filterbar__actions">
           {(activeFilterCount>0||dirty)&&<Button variant="ghost" size="sm" onClick={resetFilters}>Restablecer</Button>}
-          <Button variant={dirty?"primary":"secondary"} size="sm" disabled={!dirty||!filters.dateFrom||!filters.dateTo} onClick={()=>applyFilters(filters)}>Aplicar cambios</Button>
+          <Button variant={dirty?"primary":"secondary"} size="sm" disabled={loading||!dirty||!filters.dateFrom||!filters.dateTo||filters.dateFrom>filters.dateTo} onClick={()=>applyFilters(filters)}>Aplicar cambios</Button>
         </div>
       </div>
       {periodPreset==="custom"&&<div className="bi-executive-filterbar__custom">
@@ -767,7 +765,7 @@ function BiExecutiveSummary({ companyId }: { companyId: string }) {
         <label><span>Hasta</span><Input type="date" value={filters.dateTo} min={filters.dateFrom} max={isoDate(new Date())} onChange={event=>setFilters(current=>({...current,dateTo:event.target.value}))} aria-label="Periodo hasta"/></label>
       </div>}
       {!isRestaurant&&advancedFiltersOpen&&<div id="bi-executive-advanced-filters" className="bi-executive-filterbar__advanced">
-        <header><div><strong>Filtros de detalle</strong><span>Las opciones se consultan conforme escribes; no se cargan catálogos completos.</span></div><button type="button" aria-label="Cerrar filtros de detalle" onClick={()=>setAdvancedFiltersOpen(false)}><X size={15}/></button></header>
+        <header><div><strong>Filtros de detalle</strong><span>Busca un producto, cliente o proveedor.</span></div><button type="button" aria-label="Cerrar filtros de detalle" onClick={()=>setAdvancedFiltersOpen(false)}><X size={15}/></button></header>
         <div>
           <BiEntityFilter companyId={companyId} dimension="product" label="Producto" value={filters.product} onChange={value=>setFilters(current=>({...current,product:value}))}/>
           <BiEntityFilter companyId={companyId} dimension="customer" label="Cliente" value={filters.customer} onChange={value=>setFilters(current=>({...current,customer:value}))}/>
@@ -791,7 +789,6 @@ function BiExecutiveSummary({ companyId }: { companyId: string }) {
     <DataState loading={loading && !summary} error={error} hasData={summary?.metrics.length ?? 0} empty="No hay métricas disponibles para este acceso." errorAction={<Button size="sm" onClick={() => void load(applied)}>Reintentar</Button>}>
       {summary && <>
         {loading && <div className="bi-refreshing"><LoaderCircle className="spin" size={14} /> Actualizando indicadores…</div>}
-        {canViewAlerts&&<ExecutiveAttention items={attentionAlerts} error={attentionError} canManage={canManageAlerts} onReview={reviewAttention} onInspect={alert=>setSelectedMetric(alertInvestigationContext(alert))} onOpenAll={()=>router.push("/satrapy/bi/alertas")}/>}
         <section className="bi-executive-kpis" aria-labelledby="bi-executive-kpis-title">
           <header><div><span className="eyebrow">Qué está pasando</span><h2 id="bi-executive-kpis-title">Lectura del periodo</h2><p>Actual: {formatSourceDate(summary.period.from)}–{formatSourceDate(summary.period.to)} · {comparisonLabel(applied.comparisonMode)}: {formatSourceDate(summary.period.previous_from)}–{formatSourceDate(summary.period.previous_to)}.</p></div></header>
           <div className="bi-executive-kpis__primary">{heroMetric&&<BiKpiCard metric={heroMetric} currencyCode={summary.currency_code} active={CHART_FOR_METRIC[heroMetric.code]===activeChart} featured onFocus={() => focusMetric(heroMetric.code)} onOpen={() => heroMetric.available && openInvestigation({code:heroMetric.code})} onDefinition={() => setDefinitionMetric(heroMetric.code)} />}
@@ -799,18 +796,22 @@ function BiExecutiveSummary({ companyId }: { companyId: string }) {
           </div>
           {remainingMetrics.length>0&&<details className="bi-secondary-metrics"><summary>Métricas secundarias <span>{remainingMetrics.length}</span></summary><div>{remainingMetrics.map(metric=><BiKpiCard key={metric.code} metric={metric} compact currencyCode={summary.currency_code} active={CHART_FOR_METRIC[metric.code]===activeChart} onFocus={()=>focusMetric(metric.code)} onOpen={()=>metric.available&&openInvestigation({code:metric.code})} onDefinition={()=>setDefinitionMetric(metric.code)}/>)}</div></details>}
         </section>
-        {canViewBudgets&&<ExecutiveBudgetPanel data={budgetSummary} error={budgetSummaryError} currencyCode={summary.currency_code} onOpen={()=>router.push("/satrapy/bi/metas-presupuestos")}/>}
+        <div className="bi-executive-middle">
         <div className="bi-chart-section">
-          <header><div><span className="eyebrow">Análisis visual</span><h2>Actual contra periodo anterior</h2><p>Selecciona un punto o barra para preparar una investigación con el mismo contexto.</p></div><div className="bi-chart-tabs" aria-label="Métricas visualizadas">{charts.map(chart=><button type="button" key={chart.code} className={activeChart===chart.code?"is-active":""} onClick={()=>setActiveChart(chart.code)}>{CHART_META[chart.code].title}</button>)}</div></header>
+          <header><div><span className="eyebrow">Evolución del negocio</span><h2>Actual contra {applied.comparisonMode==="previous_year"?"año anterior":"periodo anterior"}</h2><p>Abre un punto para ver las operaciones que explican el resultado.</p></div><div className="bi-chart-tabs" aria-label="Métricas visualizadas">{charts.map(chart=><button type="button" key={chart.code} aria-pressed={activeChart===chart.code} className={activeChart===chart.code?"is-active":""} onClick={()=>setActiveChart(chart.code)}>{CHART_META[chart.code].title}</button>)}</div></header>
           <div className="bi-chart-grid">
-            {salesChart&&<ExecutiveTrendChart chart={salesChart} currencyCode={summary.currency_code} period={summary.period} onInspect={openInvestigation} onDefinition={()=>setDefinitionMetric(salesChart.metric_code)}/>}
+            {salesChart&&activeChart==="sales"&&(salesChart.visualization==="line"?<ExecutiveTrendChart chart={salesChart} currencyCode={summary.currency_code} period={summary.period} onInspect={openInvestigation} onDefinition={()=>setDefinitionMetric(salesChart.metric_code)}/>:<BiExecutiveChart chart={salesChart} active currencyCode={summary.currency_code} period={summary.period} updatedAt={summary.updated_at} onDefinition={()=>setDefinitionMetric(salesChart.metric_code)} onInspect={openInvestigation}/>)}
             {charts.filter(chart=>chart.code!=="sales"&&chart.code===activeChart).map(chart=><BiExecutiveChart key={chart.code} chart={chart} active currencyCode={summary.currency_code} period={summary.period} updatedAt={analytics?.updated_at??summary.updated_at} onDefinition={()=>setDefinitionMetric(chart.metric_code)} onInspect={openInvestigation}/>)}
           </div>
         </div>
-        <ExecutiveOperationalSummary rows={operationalRows} currencyCode={summary.currency_code} onInspect={openInvestigation} />
+        {canViewAlerts&&<ExecutiveAttention items={attentionAlerts} error={attentionError} canManage={canManageAlerts} onReview={reviewAttention} onInspect={alert=>setSelectedMetric(alertInvestigationContext(alert))} onOpenAll={()=>router.push("/satrapy/bi/alertas")}/>}
+        </div>
+        {canViewBudgets&&<ExecutiveBudgetPanel data={budgetSummary} error={budgetSummaryError} currencyCode={summary.currency_code} onOpen={()=>router.push("/satrapy/bi/metas-presupuestos")}/>}
+        {!isRestaurant&&<BiCoreOperations key={JSON.stringify([companyId,applied])} companyId={companyId} dateFrom={applied.dateFrom} dateTo={applied.dateTo} locationId={applied.locationId} comparisonMode={applied.comparisonMode} hasDetailFilters={advancedFilterCount>0} refreshKey={summary.updated_at} onInventory={receiveInventory} onClearDetailFilters={()=>applyFilters({...applied,product:null,customer:null,supplier:null})} onInspect={(code,locationId)=>openInvestigation({code,locationId})}/>}
+        {isRestaurant&&<ExecutiveOperationalSummary rows={operationalRows} currencyCode={summary.currency_code} onInspect={openInvestigation} />}
         <OperationalAnalyticsSection companyId={companyId} filters={applied} currencyCode={summary.currency_code} canExport={canExport} onInspect={setSelectedMetric}/>
         {!isRestaurant&&<article className="bi-accrual-note"><AlertCircle size={18} /><div><strong>Devengado no es efectivo</strong><p>Ventas reconoce la operación cuando se completa; cobranza, pagos y bancos reconocen movimientos efectivos. El margen usa sólo el costo reconocido congelado por partida; una comparación sin base histórica queda “No disponible” y nunca se sustituye con una estimación.</p></div></article>}
-        {!isRestaurant&&<div className="bi-trace"><Database size={15} /><span><strong>Trazabilidad de consulta</strong>{summary.trace.query}{analytics?` + ${analytics.trace.query}`:""} · {[...summary.trace.sources,...(analytics?.trace.sources??[])].filter((source,index,all)=>all.indexOf(source)===index).join(", ")}</span></div>}
+        {!isRestaurant&&<details className="bi-source-details"><summary><Database size={15} /> Fuentes y trazabilidad</summary><div className="bi-trace"><span><strong>Trazabilidad de consulta</strong>{summary.trace.query}{analytics?` + ${analytics.trace.query}`:""} · {[...summary.trace.sources,...(analytics?.trace.sources??[])].filter((source,index,all)=>all.indexOf(source)===index).join(", ")}</span></div></details>}
       </>}
     </DataState>
     <MetricDefinition code={definitionMetric} summary={summary} onClose={() => setDefinitionMetric(null)} />
@@ -819,11 +820,11 @@ function BiExecutiveSummary({ companyId }: { companyId: string }) {
 }
 
 function ExecutiveAttention({items,error,canManage,onReview,onInspect,onOpenAll}:{items:BiOperationalAlert[];error:string|null;canManage:boolean;onReview:(alert:BiOperationalAlert)=>Promise<void>;onInspect:(alert:BiOperationalAlert)=>void;onOpenAll:()=>void}) {
-  return <section className="bi-executive-attention" aria-labelledby="bi-executive-attention-title"><header><div><span className="eyebrow">Qué necesita atención</span><h2 id="bi-executive-attention-title">Alertas operativas</h2></div><Button size="sm" variant="ghost" onClick={onOpenAll}>Ver todas <ChevronRight size={13}/></Button></header>{error&&<BiState kind="partial" compact title="Alertas temporalmente no disponibles" description={error}/>} {items.length?<div>{items.map(alert=>{const visual=alertSeverity(alert);return <AttentionItem key={alert.id} tone={visual.tone==="danger"?"danger":visual.tone==="warning"?"warning":"accent"} title={alert.entity_label??(METRICS[alert.metric_code]?.label??alert.metric_code)} description={alert.explanation} action={<div className="bi-attention-actions">{canManage&&alert.status==="active"&&<Button size="sm" variant="ghost" onClick={()=>void onReview(alert)}>Marcar revisada</Button>}<Button size="sm" variant="secondary" onClick={()=>onInspect(alert)}>Revisar <ChevronRight size={13}/></Button></div>}/>;})}</div>:!error?<BiState kind="empty" compact title="Sin alertas activas" description="La última evaluación programada no encontró condiciones prioritarias."></BiState>:null}</section>;
+  return <section className="bi-executive-attention" aria-labelledby="bi-executive-attention-title"><header><div><span className="eyebrow">Qué necesita atención</span><h2 id="bi-executive-attention-title">Alertas operativas</h2><p className="bi-alert-scope-note">Alertas guardadas de la empresa, cada una con su propio periodo.</p></div><Button size="sm" variant="ghost" onClick={onOpenAll}>Ver todas <ChevronRight size={13}/></Button></header>{error&&<BiState kind="partial" compact title="Alertas temporalmente no disponibles" description={error}/>} {items.length?<div>{items.map(alert=>{const visual=alertSeverity(alert);return <AttentionItem key={alert.id} tone={visual.tone==="danger"?"danger":visual.tone==="warning"?"warning":"accent"} title={alert.entity_label??(METRICS[alert.metric_code]?.label??alert.metric_code)} description={<>{alert.explanation}<small className="bi-alert-period">{formatSourceDate(alert.period_from)}–{formatSourceDate(alert.period_to)}</small></>} action={<div className="bi-attention-actions">{canManage&&alert.status==="active"&&<Button size="sm" variant="ghost" onClick={()=>void onReview(alert)}>Marcar revisada</Button>}<Button size="sm" variant="secondary" onClick={()=>onInspect(alert)}>Revisar <ChevronRight size={13}/></Button></div>}/>;})}</div>:!error?<BiState kind="empty" compact title="Sin alertas activas" description="No hay alertas guardadas activas para este acceso."></BiState>:null}</section>;
 }
 
 function ExecutiveTrendChart({ chart, currencyCode, period, onInspect, onDefinition }: { chart: BiChart; currencyCode?: string | null; period: BiSummary["period"]; onInspect: (request: DrillRequest) => void; onDefinition: () => void }) {
-  const copy=CHART_META[chart.code], points=chart.points.map(point=>({...point,label:formatSourceDate(point.date),current:point.value??0,previous:point.previous_value??0}));
+  const copy=CHART_META[chart.code], points=chart.points.map(point=>({...point,label:formatSourceDate(point.date),current:point.value,previous:point.previous_value??null}));
   const inspect=(point:BiChartPoint)=>onInspect({code:chart.metric_code,dateFrom:point.date,dateTo:point.date});
   const tooltip=(props:unknown)=>{const {active,payload}=props as {active?:boolean;payload?:ReadonlyArray<{payload?:BiChartPoint&{label:string;current:number;previous:number}}>} ;const point=payload?.[0]?.payload;if(!active||!point)return null;return <div className="bi-recharts-tooltip"><strong>{point.label}</strong><span>Actual <b>{formatMoney(point.current,currencyCode)}</b></span><span>Anterior <b>{formatMoney(point.previous,currencyCode)}</b></span><small>Haz clic para investigar este día.</small></div>;};
   return <ChartContainer className="bi-chart-card bi-executive-trend" eyebrow="Devengado · línea" title={copy.title} description="Serie diaria contra el periodo equivalente anterior." action={<button type="button" aria-label={`Definición de ${copy.title}`} onClick={onDefinition}><CircleHelp size={15}/></button>}>
@@ -916,7 +917,7 @@ function OperationalAnalyticsSection({companyId,filters,currencyCode,canExport,o
   const contributionMax=Math.max(1,...(result?.items.map(row=>Math.abs(row.contribution_percent??0))??[]));
   const tableDirty=dimension!=="location"||effectiveMetricCode!=="net_sales"||Boolean(search)||sortBy!=="negative_impact"||sortDirection!=="desc";
   return <section className="bi-operational-analytics" aria-labelledby="bi-operational-analytics-title">
-    <header><div><span className="eyebrow">Priorizar y actuar</span><h2 id="bi-operational-analytics-title">Tablas analíticas operativas</h2><p>Compara agregados reales por dimensión sin descargar transacciones. “Revisar” continúa en la investigación contextual.</p></div>{canExport&&<Button variant="secondary" size="sm" disabled={!result||exporting} onClick={()=>void exportTable()}>{exporting?<LoaderCircle className="spin" size={14}/>:<Download size={14}/>} Exportar CSV</Button>}</header>
+    <header><div><span className="eyebrow">Priorizar y actuar</span><h2 id="bi-operational-analytics-title">Tablas analíticas operativas</h2><p>Encuentra qué sucursales, categorías y productos explican el resultado. Abre el detalle para revisar sus operaciones.</p></div>{canExport&&<Button variant="secondary" size="sm" disabled={!result||exporting} onClick={()=>void exportTable()}>{exporting?<LoaderCircle className="spin" size={14}/>:<Download size={14}/>} Exportar CSV</Button>}</header>
     <div className="bi-operational-analytics__controls">
       <div className="bi-operational-analytics__dimensions" aria-label="Dimensión de la tabla">{(Object.keys(OPERATIONAL_DIMENSION_LABEL) as OperationalDimension[]).map(item=><button type="button" key={item} aria-pressed={dimension===item} onClick={()=>changeDimension(item)}>{OPERATIONAL_DIMENSION_LABEL[item]}</button>)}</div>
       <label><span>Métrica</span><Select showAllOnOpen ariaLabel="Métrica de la tabla operativa" value={effectiveMetricCode} onValueChange={changeMetric} options={metrics.map(metric=>({value:metric.code,label:metric.name}))}/></label>
@@ -943,7 +944,7 @@ function OperationalAnalyticsSection({companyId,filters,currencyCode,canExport,o
         <tbody>{result.items.map(row=>{const state=operationalStatus(row.status);const reviewable=row.group_key!=="uncategorized";return <tr key={row.group_key}>
           <td><strong title={row.group_label}>{row.group_label}</strong>{row.reason&&<small>{row.reason}</small>}</td>
           <td className="number-cell">{row.available?formatOperationalValue(row.current_value,result.metric.unit,result.currency_code??currencyCode):"—"}</td>
-          <td className="number-cell">{row.available?formatOperationalValue(row.previous_value??0,result.metric.unit,result.currency_code??currencyCode):"—"}</td>
+          <td className="number-cell">{row.available?formatOperationalValue(row.previous_value,result.metric.unit,result.currency_code??currencyCode):"—"}</td>
           <td className={`number-cell is-${row.status}`}>{row.change_value==null?"—":formatDifference({code:effectiveMetricCode,available:true,value:row.current_value},row.change_value,result.currency_code??currencyCode)}</td>
           <td className="number-cell">{row.comparison_state==="previous_zero"?"Base anterior en cero":formatOperationalPercent(row.change_percent)}</td>
           <td className="number-cell"><AnalyticsCellBar value={row.share_percent}>{row.share_percent==null?"—":`${row.share_percent.toLocaleString("es-MX",{maximumFractionDigits:1})}%`}</AnalyticsCellBar></td>
@@ -963,36 +964,150 @@ function BiEntityFilter({ companyId, dimension, label, value, onChange }: { comp
   const [options, setOptions] = useState<FilterOption[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const requestVersion = useRef(0);
+  const scope = `${companyId}:${dimension}`;
+  const scopeRef = useRef(scope);
+  const idPart = `${dimension}-${companyId.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+  const inputId = `bi-entity-filter-${idPart}`;
+  const labelId = `${inputId}-label`;
+  const listboxId = `${inputId}-listbox`;
+  const statusId = `${inputId}-status`;
+
   useEffect(() => {
-    if (!open) return;
-    const timer = window.setTimeout(async () => {
-      setLoading(true);
-      const { data } = await getSupabaseClient().rpc("bi_search_filter_options", { p_company_id: companyId, p_dimension: dimension, p_query: query || null, p_page: 1, p_page_size: 20 });
-      setOptions(((data as { items?: FilterOption[] } | null)?.items ?? []));setLoading(false);
-    }, 180);
+    if (scopeRef.current === scope) return;
+    scopeRef.current = scope;
+    requestVersion.current += 1;
+    const timer = window.setTimeout(() => {
+      setQuery("");
+      setOptions([]);
+      setOpen(false);
+      setLoading(false);
+      setSearchError(null);
+      setHighlightedIndex(-1);
+      onChange(null);
+    }, 0);
     return () => window.clearTimeout(timer);
-  }, [companyId, dimension, open, query]);
-  return <label className="bi-entity-filter"><span>{label}</span><div onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}>
+  }, [onChange, scope]);
+
+  useEffect(() => {
+    if (!open || value) return;
+    const version = ++requestVersion.current;
+    const timer = window.setTimeout(async () => {
+      if (version !== requestVersion.current) return;
+      setLoading(true);
+      setSearchError(null);
+      try {
+        const { data, error } = await getSupabaseClient().rpc("bi_search_filter_options", { p_company_id: companyId, p_dimension: dimension, p_query: query || null, p_page: 1, p_page_size: 20 });
+        if (version !== requestVersion.current) return;
+        if (error) {
+          setOptions([]);
+          setHighlightedIndex(-1);
+          setSearchError("No se pudieron cargar las opciones.");
+          return;
+        }
+        const items = (data as { items?: unknown } | null)?.items;
+        const nextOptions = Array.isArray(items)
+          ? items.filter((item): item is FilterOption => {
+            if (!item || typeof item !== "object") return false;
+            const option = item as { id?: unknown; label?: unknown; secondary?: unknown };
+            return typeof option.id === "string" && typeof option.label === "string" && (option.secondary == null || typeof option.secondary === "string");
+          })
+          : [];
+        setOptions(nextOptions);
+        setHighlightedIndex(nextOptions.length ? 0 : -1);
+      } catch {
+        if (version !== requestVersion.current) return;
+        setOptions([]);
+        setHighlightedIndex(-1);
+        setSearchError("No se pudieron cargar las opciones.");
+      } finally {
+        if (version === requestVersion.current) setLoading(false);
+      }
+    }, 180);
+    return () => {
+      window.clearTimeout(timer);
+      if (version === requestVersion.current) requestVersion.current += 1;
+    };
+  }, [companyId, dimension, open, query, value]);
+
+  const choose = (option: FilterOption) => {
+    onChange(option);
+    setQuery("");
+    setOptions([]);
+    setSearchError(null);
+    setHighlightedIndex(-1);
+    setOpen(false);
+  };
+  const optionId = (option: FilterOption, index: number) => `${listboxId}-option-${index}-${option.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+  const activeOption = highlightedIndex >= 0 ? options[highlightedIndex] : undefined;
+  const statusMessage = open && !value
+    ? loading
+      ? "Buscando opciones…"
+      : searchError
+        ? searchError
+        : options.length === 1 ? "1 resultado disponible." : options.length > 1 ? `${options.length} resultados disponibles.` : ""
+    : "";
+
+  return <div className="bi-entity-filter"><label htmlFor={inputId}><span id={labelId}>{label}</span></label><div onBlur={event => {
+    const nextFocus = event.relatedTarget as Node | null;
+    if (!nextFocus || !event.currentTarget.contains(nextFocus)) {
+      setOpen(false);
+      setHighlightedIndex(-1);
+    }
+  }}>
     <Search size={14} />
-    <input aria-label={`Filtrar por ${label.toLowerCase()}`} value={value ? value.label : query} placeholder={`Todos · buscar ${label.toLowerCase()}`} onFocus={() => setOpen(true)} onChange={event => { onChange(null);setQuery(event.target.value);setOpen(true); }} />
-    {value && <button type="button" aria-label={`Quitar ${label.toLowerCase()}`} onClick={() => { onChange(null);setQuery(""); }}><X size={13} /></button>}
-    {open && !value && <div className="bi-entity-filter__menu">{loading ? <span><LoaderCircle className="spin" size={14} /> Buscando…</span> : options.length ? options.map(option => <button type="button" key={option.id} onMouseDown={event => event.preventDefault()} onClick={() => { onChange(option);setQuery("");setOpen(false); }}><strong>{option.label}</strong><small>{option.secondary}</small></button>) : <span>Sin coincidencias</span>}</div>}
-  </div></label>;
+    <input id={inputId} role="combobox" aria-labelledby={labelId} aria-autocomplete="list" aria-haspopup="listbox" aria-expanded={Boolean(open && !value)} aria-controls={listboxId} aria-activedescendant={open && !value && activeOption ? optionId(activeOption, highlightedIndex) : undefined} aria-describedby={statusId} value={value ? value.label : query} placeholder={`Todos · buscar ${label.toLowerCase()}`} onFocus={() => setOpen(true)} onChange={event => { onChange(null);setQuery(event.target.value);setOptions([]);setSearchError(null);setHighlightedIndex(-1);setOpen(true); }} onKeyDown={event => {
+      if (event.key === "Escape") {
+        if (open) {
+          event.preventDefault();
+          setOpen(false);
+          setHighlightedIndex(-1);
+        }
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        if (!open) setOpen(true);
+        if (options.length) {
+          event.preventDefault();
+          setHighlightedIndex(current => Math.min(current < 0 ? 0 : current + 1, options.length - 1));
+        }
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        if (!open) setOpen(true);
+        if (options.length) {
+          event.preventDefault();
+          setHighlightedIndex(current => Math.max(current < 0 ? options.length - 1 : current - 1, 0));
+        }
+        return;
+      }
+      if (event.key === "Enter" && open && !value && activeOption) {
+        event.preventDefault();
+        choose(activeOption);
+      }
+    }} />
+    {value && <button type="button" aria-label={`Quitar ${label.toLowerCase()}`} onMouseDown={event => event.preventDefault()} onClick={() => { onChange(null);setQuery("");setOptions([]);setSearchError(null);setHighlightedIndex(-1);setOpen(true); }}><X size={13} /></button>}
+    {open && !value && options.length > 0 && <div id={listboxId} className="bi-entity-filter__menu" role="listbox" aria-labelledby={labelId}>{options.map((option, index) => <button type="button" role="option" aria-selected={index === highlightedIndex} tabIndex={-1} id={optionId(option, index)} key={`${option.id}:${index}`} onMouseDown={event => event.preventDefault()} onMouseEnter={() => setHighlightedIndex(index)} onClick={() => choose(option)}><strong>{option.label}</strong><small>{option.secondary}</small></button>)}</div>}
+    {open && !value && options.length === 0 && <div className="bi-entity-filter__menu"><span>{loading ? <><LoaderCircle className="spin" size={14} /> Buscando…</> : searchError ?? "Sin coincidencias"}</span></div>}
+  </div><span id={statusId} className="sr-only" role="status" aria-live="polite" aria-atomic="true">{statusMessage}</span></div>;
 }
 
 function BiKpiCard({ metric, currencyCode, active, featured=false, compact=false, onFocus, onOpen, onDefinition }: { metric: BiMetric; currencyCode?: string | null; active: boolean; featured?: boolean; compact?: boolean; onFocus: () => void; onOpen: () => void; onDefinition: () => void }) {
   const meta = METRICS[metric.code];if (!meta) return null;
+  const quality=classifyBiMetric(metric);
   const delta = comparison(metric);
-  return <MetricCard className={`bi-kpi${compact?" is-compact":""}`} label={meta.label} value={formatMetric(metric,currencyCode)} selected={active} unavailable={!metric.available} featured={featured} onSelect={CHART_FOR_METRIC[metric.code]?onFocus:undefined}
-    eyebrow={<Badge tone={meta.kind === "Efectivo" ? "info" : meta.kind === "Devengado" ? "primary" : "neutral"}>{meta.kind}</Badge>}
+  return <MetricCard className={`bi-kpi${compact?" is-compact":""}`} label={meta.label} value={formatMetric(metric,currencyCode)} selected={active} unavailable={!quality.available} featured={featured} onSelect={CHART_FOR_METRIC[metric.code]?onFocus:undefined}
+    eyebrow={<Badge tone={quality.isPartial?"warning":meta.kind === "Efectivo" ? "info" : meta.kind === "Devengado" ? "primary" : "neutral"}>{quality.isPartial?"Dato parcial":meta.kind}</Badge>}
     headerAction={<button type="button" aria-label={`Definición de ${meta.label}`} onClick={onDefinition}><CircleHelp size={15} /></button>}
     description={delta == null ? <small>{metric.reason ?? (metric.available ? "Comparación no disponible" : "No disponible")}</small> : <div className="bi-kpi__comparison">
       <span>Anterior <b>{formatMetric({...metric,value:metric.previous_value??null},currencyCode)}</b></span>
       <span>Diferencia <b>{formatDifference(metric,delta.absolute,currencyCode)}</b></span>
       <MetricDelta direction={delta.absolute>=0?"up":"down"} value={delta.percent==null?"Base anterior en cero":`${Math.abs(delta.percent).toLocaleString("es-MX",{maximumFractionDigits:1})}%`}/>
     </div>}
-    delta={(metric.code === "inventory_value" || metric.code === "gross_margin") && metric.coverage != null ? <small>Cobertura de costo: {metric.coverage}%</small> : undefined}
-    footerAction={<button type="button" className="bi-kpi__drill" disabled={!metric.available} onClick={onOpen}>Ver operaciones <ChevronRight size={14} /></button>}
+    delta={(metric.code === "inventory_value" || metric.code === "gross_margin") ? <small>{metric.coverage != null ? `Cobertura de costo actual: ${metric.coverage}%` : ""}{metric.code==="inventory_value"?" · Posición actual":""}</small> : undefined}
+    footerAction={<button type="button" className="bi-kpi__drill" disabled={!quality.available} onClick={onOpen}>Ver operaciones <ChevronRight size={14} /></button>}
   />;
 }
 
@@ -1033,10 +1148,11 @@ function BiExecutiveChart({chart,active,currencyCode,period,updatedAt,onDefiniti
   const minimum=Math.min(0,...values),maximum=Math.max(1,...values),range=Math.max(maximum-minimum,1);
   const x=(index:number)=>pad+(index*Math.max(1,width-pad*2))/Math.max(chart.points.length-1,1);
   const y=(value:number|null|undefined)=>pad+((maximum-(value??0))/range)*(height-pad*2);
-  const path=(previous=false)=>chart.points.map((point,index)=>`${index?"L":"M"} ${x(index)} ${y(previous?point.previous_value:point.value)}`).join(" ");
+  const path=(previous=false)=>{let connected=false;return chart.points.map((point,index)=>{const value=previous?point.previous_value:point.value;if(value==null){connected=false;return "";}const command=connected?"L":"M";connected=true;return `${command} ${x(index)} ${y(value)}`;}).join(" ");};
   const inspect=(point:BiChartPoint,previous=false)=>{
     const date=previous?point.previous_date:point.date;
     if(!date||!chart.available)return;
+    if(chart.aggregate){const prior=point.period==="previous";onInspect({code:chart.metric_code,dateFrom:prior?period.previous_from:period.from,dateTo:prior?period.previous_to:period.to});return;}
     onInspect(chart.visualization==="bars"?{code:chart.metric_code,asOf:date}:{code:chart.metric_code,dateFrom:date,dateTo:date});
   };
   const tooltip=hovered?<div className="bi-chart-tooltip" role="status">
@@ -1047,15 +1163,15 @@ function BiExecutiveChart({chart,active,currencyCode,period,updatedAt,onDefiniti
   return <ChartContainer className={`bi-chart-card bi-executive-chart ${chart.available?"":"is-unavailable"}`} selected={active} eyebrow={`${chart.kind} · ${chart.visualization==="area"?"Área":chart.visualization==="bars"?"Barras":"Línea"}`} title={copy.title} description={copy.description} action={<button type="button" aria-label={`Definición de ${copy.title}`} onClick={onDefinition}><CircleHelp size={15}/></button>}>
     {!chart.available?<div className="bi-chart-unavailable"><AlertCircle size={17}/><strong>No disponible</strong><p>{chart.reason}</p></div>:chart.points.length===0?<div className="bi-chart-empty">No hay datos para los filtros seleccionados.</div>:chart.visualization==="bars"?<div className="bi-comparison-bars">
       {chart.points.map((point,index)=>{const max=Math.max(...chart.points.map(item=>Math.abs(item.value??0)),1);const previous=point.period==="previous";return <button type="button" key={`${point.date}:${index}`} onMouseEnter={()=>setHovered({point,previous:false})} onMouseLeave={()=>setHovered(null)} onFocus={()=>setHovered({point,previous:false})} onBlur={()=>setHovered(null)} onClick={()=>inspect(point)}>
-        <span>{previous?"Periodo anterior":"Periodo actual"}<small>{formatSourceDate(point.date)}</small></span><i><b style={{width:`${Math.max(3,100*Math.abs(point.value??0)/max)}%`}}/></i><strong>{formatMoney(point.value,currencyCode)}</strong>
+        <span>{previous?"Periodo anterior":"Periodo actual"}<small>{formatSourceDate(point.date)}</small></span><i><b style={{width:`${100*Math.abs(point.value??0)/max}%`}}/></i><strong>{formatMoney(point.value,currencyCode)}</strong>
       </button>;})}
-    </div>:<div className="bi-line-chart"><div className="bi-chart-legend"><span className="sales">Periodo actual</span><span className="previous">Periodo anterior</span></div><svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${copy.title}, periodo actual contra anterior`}>
+    </div>:<div className="bi-line-chart"><div className="bi-chart-legend"><span className="sales">Periodo actual</span>{chart.points.some(point=>point.previous_value!=null)&&<span className="previous">Periodo anterior</span>}</div><svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${copy.title}, periodo actual contra anterior`}>
       <line x1={pad} y1={y(0)} x2={width-pad} y2={y(0)}/>
       {chart.visualization==="area"&&<path className="area" d={`${path(false)} L ${x(chart.points.length-1)} ${y(0)} L ${x(0)} ${y(0)} Z`}/>}
-      <path className="previous" d={path(true)}/><path className="sales" d={path(false)}/>
+      {chart.points.some(point=>point.previous_value!=null)&&<path className="previous" d={path(true)}/>}<path className="sales" d={path(false)}/>
       {chart.points.map((point,index)=><g key={`${point.date}:${index}`}>
         {point.previous_value!=null&&<circle className="previous" tabIndex={0} cx={x(index)} cy={y(point.previous_value)} r="7" onMouseEnter={()=>setHovered({point,previous:true})} onMouseLeave={()=>setHovered(null)} onFocus={()=>setHovered({point,previous:true})} onBlur={()=>setHovered(null)} onClick={()=>inspect(point,true)} onKeyDown={event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();inspect(point,true);}}}/>}
-        <circle className="sales" tabIndex={0} cx={x(index)} cy={y(point.value)} r="7" onMouseEnter={()=>setHovered({point,previous:false})} onMouseLeave={()=>setHovered(null)} onFocus={()=>setHovered({point,previous:false})} onBlur={()=>setHovered(null)} onClick={()=>inspect(point)} onKeyDown={event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();inspect(point);}}}/>
+        {point.value!=null&&<circle className="sales" tabIndex={0} cx={x(index)} cy={y(point.value)} r="7" onMouseEnter={()=>setHovered({point,previous:false})} onMouseLeave={()=>setHovered(null)} onFocus={()=>setHovered({point,previous:false})} onBlur={()=>setHovered(null)} onClick={()=>inspect(point)} onKeyDown={event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();inspect(point);}}}/>}
       </g>)}
     </svg></div>}
     {tooltip}
@@ -1112,7 +1228,7 @@ function BiDrilldown({ companyId, context, currencyCode, onClose }: { companyId:
           <section className="bi-investigation__summary" aria-label="Resumen de variación"><div><span>Actual</span><strong>{formatMetric({code:current.metricCode,available:true,value:investigation.summary.current_value},sourceCurrency)}</strong></div><div><span>Anterior</span><strong>{formatMetric({code:current.metricCode,available:true,value:investigation.summary.previous_value},sourceCurrency)}</strong></div><div><span>Variación</span><strong className={investigation.summary.change_value<0?"is-negative":"is-positive"}>{formatDifference({code:current.metricCode,available:true,value:investigation.summary.current_value},investigation.summary.change_value,sourceCurrency)}</strong></div></section>
           <section className="bi-investigation__definition"><strong>{investigation.metric.name} · evidencia y método</strong><p>{investigation.metric.formula}</p><small>{investigation.metric.source} · {investigation.metric.limitations}</small></section>
           <ContributionChart factors={investigation.chart} metricCode={current.metricCode} currencyCode={sourceCurrency} dimension={current.activeDimension} onSelect={advance}/>
-          <section className="bi-investigation__factors" aria-labelledby="bi-investigation-factors-title"><header><div><span className="eyebrow">Desglose por {INVESTIGATION_LABEL[current.activeDimension].toLowerCase()}</span><h2 id="bi-investigation-factors-title">Factores de mayor impacto</h2><p>Ordenados por impacto absoluto. “Mejoró” y “deterioró” describen el movimiento de la métrica, no una causa comprobada.</p></div></header><AnalyticsTable caption="Contribuciones al cambio de la métrica"><thead><tr><th>Factor</th><th>Actual</th><th>Anterior</th><th>Variación</th><th>Participación</th><th>Contribución</th><th>Estado</th><th><span className="sr-only">Avanzar</span></th></tr></thead><tbody>{investigation.factors.map(factor=><tr key={factor.group_key}><td><strong>{factor.group_label}</strong></td><td>{formatMetric({code:current.metricCode,available:true,value:factor.current_value},sourceCurrency)}</td><td>{formatMetric({code:current.metricCode,available:true,value:factor.previous_value},sourceCurrency)}</td><td className={factor.change_value<0?"is-negative":"is-positive"}>{formatDifference({code:current.metricCode,available:true,value:factor.current_value},factor.change_value,sourceCurrency)}</td><td>{factor.current_share_percent==null?"—":`${factor.current_share_percent.toLocaleString("es-MX",{maximumFractionDigits:1})}%`}</td><td>{factor.contribution_percent==null?"—":`${factor.contribution_percent.toLocaleString("es-MX",{maximumFractionDigits:1})}%`}</td><td><Badge tone={factor.status==="deteriorated"?"warning":factor.status==="improved"?"success":"neutral"}>{factor.status==="deteriorated"?"Deterioró":factor.status==="improved"?"Mejoró":"Sin cambio significativo"}</Badge></td><td><Button size="sm" variant="ghost" onClick={()=>advance(factor)}>{nextInvestigationDimension(current.metricCode,current.activeDimension!)?"Desglosar":"Ver registros"} <ChevronRight size={13}/></Button></td></tr>)}</tbody></AnalyticsTable><DataPagination page={investigation.pagination.page} pageSize={investigation.pagination.page_size} total={investigation.pagination.total} onChange={setPage} label="factores"/><p className="bi-investigation__reconciliation"><strong>{investigation.reconciliation.reconciled?"Reconciliado":"Pendiente de reconciliar"}.</strong> Variación total {formatDifference({code:current.metricCode,available:true,value:investigation.summary.current_value},investigation.reconciliation.total_change,sourceCurrency)}; todos los factores suman el mismo valor. Esta página representa {formatDifference({code:current.metricCode,available:true,value:investigation.summary.current_value},investigation.reconciliation.visible_page_change,sourceCurrency)}.</p></section>
+          <section className="bi-investigation__factors" aria-labelledby="bi-investigation-factors-title"><header><div><span className="eyebrow">Desglose por {INVESTIGATION_LABEL[current.activeDimension].toLowerCase()}</span><h2 id="bi-investigation-factors-title">Factores de mayor impacto</h2><p>Ordenados por impacto absoluto. Un aumento o una disminución describe el cambio; su efecto depende de la métrica.</p></div></header><AnalyticsTable caption="Contribuciones al cambio de la métrica"><thead><tr><th>Factor</th><th>Actual</th><th>Anterior</th><th>Variación</th><th>Participación</th><th>Contribución</th><th>Estado</th><th><span className="sr-only">Avanzar</span></th></tr></thead><tbody>{investigation.factors.map(factor=><tr key={factor.group_key}><td><strong>{factor.group_label}</strong></td><td>{formatMetric({code:current.metricCode,available:true,value:factor.current_value},sourceCurrency)}</td><td>{formatMetric({code:current.metricCode,available:true,value:factor.previous_value},sourceCurrency)}</td><td className={factor.change_value<0?"is-negative":"is-positive"}>{formatDifference({code:current.metricCode,available:true,value:factor.current_value},factor.change_value,sourceCurrency)}</td><td>{factor.current_share_percent==null?"—":`${factor.current_share_percent.toLocaleString("es-MX",{maximumFractionDigits:1})}%`}</td><td>{factor.contribution_percent==null?"—":`${factor.contribution_percent.toLocaleString("es-MX",{maximumFractionDigits:1})}%`}</td><td><Badge tone="neutral">{factor.change_value<0?"Disminuyó":factor.change_value>0?"Aumentó":"Sin cambio"}</Badge></td><td><Button size="sm" variant="ghost" onClick={()=>advance(factor)}>{nextInvestigationDimension(current.metricCode,current.activeDimension!)?"Desglosar":"Ver registros"} <ChevronRight size={13}/></Button></td></tr>)}</tbody></AnalyticsTable><DataPagination page={investigation.pagination.page} pageSize={investigation.pagination.page_size} total={investigation.pagination.total} onChange={setPage} label="factores"/><p className="bi-investigation__reconciliation"><strong>{investigation.reconciliation.reconciled?"Reconciliado":"Pendiente de reconciliar"}.</strong> Variación total {formatDifference({code:current.metricCode,available:true,value:investigation.summary.current_value},investigation.reconciliation.total_change,sourceCurrency)}; todos los factores suman el mismo valor. Esta página representa {formatDifference({code:current.metricCode,available:true,value:investigation.summary.current_value},investigation.reconciliation.visible_page_change,sourceCurrency)}.</p></section>
           <section className="bi-investigation__trace"><Database size={15}/><span><strong>Trazabilidad</strong>{investigation.trace.query} · {investigation.trace.sources} · cálculo server-side.</span></section>
         </>}
       </>:recordsLoading?<BiState kind="loading" title="Cargando registros de respaldo…"/>:recordsError?<BiState kind="partial" title="Evidencia parcial" description={recordsError}/>:records?.items.length?<section className="bi-investigation__records"><header><span className="eyebrow">Evidencia</span><h2>Registros de respaldo</h2><p>Operaciones canónicas, ordenadas y paginadas en servidor.</p></header><AnalyticsTable className="bi-drill-table" caption="Registros que respaldan la métrica"><thead><tr><th>Fecha</th><th>Origen</th><th>Contexto</th><th className="number-cell">Importe</th></tr></thead><tbody>{records.items.map(item=><tr key={item.id}><td>{formatSourceDate(item.occurred_at)}</td><td><strong>{item.party??item.location_name??"Operación"}</strong></td><td>{item.detail??item.sale_type??item.location_name??"—"}</td><td className="number-cell">{formatMoney(item.amount,sourceCurrency)}</td></tr>)}</tbody></AnalyticsTable><DataPagination page={records.pagination.page} pageSize={records.pagination.page_size} total={records.pagination.total} onChange={setPage} label="registros"/></section>:records?<BiState kind="empty" title="Sin registros de respaldo" description="No hay operaciones canónicas con este contexto."/>:null}
@@ -1125,5 +1241,5 @@ function ContributionChart({ factors, metricCode, currencyCode, dimension, onSel
   const data=factors.map(factor=>({...factor,label:factor.group_label}));
   const tooltip=(props:unknown)=>{const {active,payload}=props as {active?:boolean;payload?:ReadonlyArray<{payload?:InvestigationFactor}>};const factor=payload?.[0]?.payload;if(!active||!factor)return null;return <div className="bi-recharts-tooltip"><strong>{factor.group_label}</strong><span>Actual <b>{formatMetric({code:metricCode,available:true,value:factor.current_value},currencyCode)}</b></span><span>Anterior <b>{formatMetric({code:metricCode,available:true,value:factor.previous_value},currencyCode)}</b></span><span>Contribución <b>{factor.contribution_percent==null?"—":`${factor.contribution_percent.toLocaleString("es-MX",{maximumFractionDigits:1})}%`}</b></span><small>Selecciona para desglosar o ver evidencia.</small></div>;};
   const chartHeight=Math.min(264,Math.max(152,data.length*34+28));
-  return <ChartContainer className="bi-chart-card bi-contribution-chart" eyebrow="Explicación descriptiva" title={`Contribución por ${INVESTIGATION_LABEL[dimension].toLowerCase()}`} description="Barras divergentes: arriba mejora la métrica; abajo la deteriora."><div className="bi-recharts-ranking"><ResponsiveContainer width="100%" height={chartHeight}><BarChart data={data} layout="vertical" margin={{top:4,right:30,left:4,bottom:8}} onClick={(event:unknown)=>{const factor=(event as {activePayload?:Array<{payload?:InvestigationFactor}>})?.activePayload?.[0]?.payload;if(factor)onSelect(factor);}}><CartesianGrid horizontal={false} stroke="var(--bi-border)"/><XAxis type="number" tickCount={4} tickMargin={8} tickFormatter={value=>formatDifference({code:metricCode,available:true,value:Number(value)},Number(value),currencyCode)} tickLine={false} axisLine={false}/><YAxis dataKey="label" type="category" width={118} tickLine={false} axisLine={false}/><RechartsTooltip content={tooltip}/><Bar dataKey="change_value" name="Variación" fill="var(--accent)" maxBarSize={24} radius={3} isAnimationActive={false}/></BarChart></ResponsiveContainer></div></ChartContainer>;
+  return <ChartContainer className="bi-chart-card bi-contribution-chart" eyebrow="Explicación descriptiva" title={`Contribución por ${INVESTIGATION_LABEL[dimension].toLowerCase()}`} description="Cada barra muestra cuánto aporta el factor al aumento o a la disminución del total."><div className="bi-recharts-ranking"><ResponsiveContainer width="100%" height={chartHeight}><BarChart data={data} layout="vertical" margin={{top:4,right:30,left:4,bottom:8}} onClick={(event:unknown)=>{const factor=(event as {activePayload?:Array<{payload?:InvestigationFactor}>})?.activePayload?.[0]?.payload;if(factor)onSelect(factor);}}><CartesianGrid horizontal={false} stroke="var(--bi-border)"/><XAxis type="number" tickCount={4} tickMargin={8} tickFormatter={value=>formatDifference({code:metricCode,available:true,value:Number(value)},Number(value),currencyCode)} tickLine={false} axisLine={false}/><YAxis dataKey="label" type="category" width={118} tickLine={false} axisLine={false}/><RechartsTooltip content={tooltip}/><Bar dataKey="change_value" name="Variación" fill="var(--accent)" maxBarSize={24} radius={3} isAnimationActive={false}/></BarChart></ResponsiveContainer></div></ChartContainer>;
 }

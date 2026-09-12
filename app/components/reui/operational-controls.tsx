@@ -46,7 +46,7 @@ export const OperationalInput = React.forwardRef<HTMLInputElement, InputHTMLAttr
   return <ReuiInput ref={ref} type={type} className={inputClassName} {...props} />;
 });
 
-/** ReUI autocomplete-backed select, preserving the Select props used by RPC forms. */
+/** ReUI fixed-option select, preserving the Select props used by RPC forms. */
 export function OperationalSelect({ value, onValueChange, options, placeholder = "Seleccionar", ariaLabel, disabled = false, className, style, showAllOnOpen }: {
   value: string;
   onValueChange: (value: string) => void;
